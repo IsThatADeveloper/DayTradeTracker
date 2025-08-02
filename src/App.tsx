@@ -84,7 +84,7 @@ function App() {
             <div className="flex items-center">
               <TrendingUp className="h-8 w-8 text-blue-600 mr-3" />
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                Day Trade Tracker
+                DayTradeTracker
               </h1>
             </div>
             <div className="flex items-center space-x-4">
