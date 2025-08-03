@@ -24,22 +24,35 @@ export const SyncModal: React.FC<SyncModalProps> = ({
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   if (!isOpen) return null;
 
-  const handleSync = async (syncFunction: () => Promise<void>, action: string) => {
+  const handleSync = async (syncFunction: () => Promise<void>, action: string, retryCount = 0) => {
     setIsLoading(true);
     setSyncStatus('idle');
     
     try {
       await syncFunction();
       setSyncStatus('success');
+      setErrorMessage('');
       setTimeout(() => {
         onClose();
       }, 1500);
     } catch (error) {
       console.error(`Error ${action}:`, error);
+      
+      // Retry logic for transient errors
+      if (retryCount < 2 && !error.message.includes('Permission denied')) {
+        console.log(`🔄 Retrying ${action} (attempt ${retryCount + 1})`);
+        setTimeout(() => {
+          handleSync(syncFunction, action, retryCount + 1);
+        }, 1000 * (retryCount + 1));
+        return;
+      }
+      
       setSyncStatus('error');
+      setErrorMessage(error.message || `Failed to ${action}. Please try again.`);
     } finally {
       setIsLoading(false);
     }
@@ -75,9 +88,12 @@ export const SyncModal: React.FC<SyncModalProps> = ({
           )}
 
           {syncStatus === 'error' && (
-            <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/20 rounded-lg flex items-center">
-              <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
-              <span className="text-red-800 dark:text-red-200">Sync failed. Please try again.</span>
+            <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/20 rounded-lg flex items-start">
+              <AlertTriangle className="h-5 w-5 text-red-600 mr-2 mt-0.5 flex-shrink-0" />
+              <div className="text-red-800 dark:text-red-200">
+                <p className="font-medium">Sync failed</p>
+                <p className="text-sm mt-1">{errorMessage}</p>
+              </div>
             </div>
           )}
 

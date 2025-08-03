@@ -11,6 +11,7 @@ import { TradeTable } from './components/TradeTable';
 import { EquityCurve } from './components/EquityCurve';
 import { AuthComponent } from './components/AuthComponent';
 import { SyncModal } from './components/SyncModal';
+import { DebugPanel } from './components/DebugPanel';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
 import { isSameDay } from 'date-fns';
@@ -53,7 +54,10 @@ function AppContent() {
   useEffect(() => {
     if (currentUser) {
       console.log('👤 User signed in, loading cloud data for:', currentUser.email);
-      loadCloudTrades();
+      // Small delay to ensure auth state is fully established
+      setTimeout(() => {
+        loadCloudTrades();
+      }, 100);
     } else {
       console.log('👤 User signed out, clearing cloud data');
       setCloudTrades([]);
@@ -69,7 +73,7 @@ function AppContent() {
     }
   }, [currentUser, localTrades.length, cloudTrades.length, isLoadingCloudData, lastSyncTime]);
 
-  const loadCloudTrades = async () => {
+  const loadCloudTrades = async (retryCount = 0) => {
     if (!currentUser) {
       console.log('❌ No user, cannot load cloud trades');
       return;
@@ -83,8 +87,20 @@ function AppContent() {
       console.log(`✅ Loaded ${userTrades.length} trades from cloud for ${currentUser.email}`);
     } catch (error) {
       console.error('❌ Failed to load cloud trades:', error);
-      // Don't clear cloud trades on error, just show the error
-      alert('Failed to load cloud data. Please try refreshing.');
+      
+      // Retry logic for transient errors
+      if (retryCount < 2 && !error.message.includes('Permission denied')) {
+        console.log(`🔄 Retrying cloud data load (attempt ${retryCount + 1})`);
+        setTimeout(() => loadCloudTrades(retryCount + 1), 1000 * (retryCount + 1));
+        return;
+      }
+      
+      // Show user-friendly error message
+      const errorMessage = error.message.includes('Permission denied') 
+        ? 'Permission denied. Please sign out and sign in again.'
+        : 'Failed to load cloud data. Please try refreshing the page.';
+      
+      alert(errorMessage);
     } finally {
       setIsLoadingCloudData(false);
     }
@@ -95,20 +111,26 @@ function AppContent() {
     
     try {
       console.log('📤 Syncing local trades to cloud...');
-      // Clear existing cloud data
-      await Promise.all(cloudTrades.map(trade => tradeService.deleteTrade(trade.id)));
       
-      // Upload all local trades
-      const uploadPromises = localTrades.map(trade => tradeService.addTrade(currentUser.uid, trade));
-      await Promise.all(uploadPromises);
+      // Clear existing cloud data if any
+      if (cloudTrades.length > 0) {
+        console.log(`🗑️ Clearing ${cloudTrades.length} existing cloud trades`);
+        await Promise.allSettled(cloudTrades.map(trade => tradeService.deleteTrade(trade.id)));
+      }
       
-      // Reload cloud data
-      await loadCloudTrades();
+      // Upload all local trades using the improved sync method
+      const syncedTrades = await tradeService.syncLocalTrades(currentUser.uid, localTrades);
+      
+      // Update cloud trades state with synced trades
+      setCloudTrades(syncedTrades);
       setLastSyncTime(new Date().toISOString());
-      console.log('✅ Successfully synced local data to cloud');
+      console.log(`✅ Successfully synced ${syncedTrades.length} trades to cloud`);
     } catch (error) {
       console.error('❌ Failed to sync to cloud:', error);
-      throw error;
+      const errorMessage = error.message.includes('Permission denied')
+        ? 'Permission denied. Please sign out and sign in again.'
+        : 'Sync failed. Please try again or check your internet connection.';
+      throw new Error(errorMessage);
     }
   };
 
@@ -122,7 +144,10 @@ function AppContent() {
       console.log('✅ Successfully synced cloud data');
     } catch (error) {
       console.error('❌ Failed to sync from cloud:', error);
-      throw error;
+      const errorMessage = error.message.includes('Permission denied')
+        ? 'Permission denied. Please sign out and sign in again.'
+        : 'Failed to sync from cloud. Please try again or check your internet connection.';
+      throw new Error(errorMessage);
     }
   };
 
@@ -152,16 +177,30 @@ function AppContent() {
       
       // Upload new trades to cloud
       if (newTrades.length > 0) {
-        await Promise.all(newTrades.map(trade => tradeService.addTrade(currentUser.uid, trade)));
+        console.log(`📤 Uploading ${newTrades.length} new trades to cloud`);
+        const results = await Promise.allSettled(
+          newTrades.map(trade => tradeService.addTrade(currentUser.uid, trade))
+        );
+        
+        const successCount = results.filter(r => r.status === 'fulfilled').length;
+        const failCount = results.length - successCount;
+        
+        if (failCount > 0) {
+          console.warn(`⚠️ ${failCount} trades failed to upload during merge`);
+        }
+        console.log(`✅ ${successCount} new trades uploaded successfully`);
       }
       
-      // Reload cloud data
+      // Reload cloud data to get the complete merged dataset
       await loadCloudTrades();
       setLastSyncTime(new Date().toISOString());
       console.log(`✅ Merged data: ${newTrades.length} new trades added to cloud`);
     } catch (error) {
       console.error('❌ Failed to merge data:', error);
-      throw error;
+      const errorMessage = error.message.includes('Permission denied')
+        ? 'Permission denied. Please sign out and sign in again.'
+        : 'Failed to merge data. Please try again or check your internet connection.';
+      throw new Error(errorMessage);
     }
   };
 
@@ -195,7 +234,14 @@ function AppContent() {
         console.log('✅ Trade added to cloud successfully');
       } catch (error) {
         console.error('❌ Failed to add trade to cloud:', error);
-        alert('Failed to save trade to cloud. Please try again.');
+        const errorMessage = error.message.includes('Permission denied')
+          ? 'Permission denied. Please sign out and sign in again.'
+          : 'Failed to save trade to cloud. Please try again.';
+        alert(errorMessage);
+        
+        // Optionally save to local storage as backup if cloud fails
+        console.log('💾 Saving trade to local storage as backup');
+        setLocalTrades(prevTrades => [newTrade, ...prevTrades]);
       }
     } else {
       console.log('📝 Adding trade to local storage');
@@ -217,7 +263,10 @@ function AppContent() {
         console.log('✅ Trade updated in cloud successfully');
       } catch (error) {
         console.error('❌ Failed to update trade in cloud:', error);
-        alert('Failed to update trade in cloud. Please try again.');
+        const errorMessage = error.message.includes('Permission denied')
+          ? 'Permission denied. Please sign out and sign in again.'
+          : 'Failed to update trade in cloud. Please try again.';
+        alert(errorMessage);
       }
     } else {
       console.log('✏️ Updating trade in local storage:', tradeId);
@@ -239,7 +288,10 @@ function AppContent() {
         console.log('✅ Trade deleted from cloud successfully');
       } catch (error) {
         console.error('❌ Failed to delete trade from cloud:', error);
-        alert('Failed to delete trade from cloud. Please try again.');
+        const errorMessage = error.message.includes('Permission denied')
+          ? 'Permission denied. Please sign out and sign in again.'
+          : 'Failed to delete trade from cloud. Please try again.';
+        alert(errorMessage);
       }
     } else {
       console.log('🗑️ Deleting trade from local storage:', tradeId);
@@ -283,9 +335,9 @@ function AppContent() {
               <div className="ml-4 flex items-center space-x-2">
                 {currentUser ? (
                   <div className="flex items-center space-x-1 px-2 py-1 bg-green-100 dark:bg-green-900/20 rounded-full">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <div className={`w-2 h-2 rounded-full ${isLoadingCloudData ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`}></div>
                     <span className="text-xs text-green-800 dark:text-green-200">
-                      Cloud ({cloudTrades.length})
+                      {isLoadingCloudData ? 'Loading...' : `Cloud (${cloudTrades.length})`}
                     </span>
                   </div>
                 ) : (
@@ -463,6 +515,12 @@ function AppContent() {
         onSyncToCloud={syncToCloud}
         onSyncFromCloud={syncFromCloud}
         onMergeData={mergeData}
+      />
+
+      <DebugPanel
+        cloudTrades={cloudTrades}
+        localTrades={localTrades}
+        isLoadingCloudData={isLoadingCloudData}
       />
     </div>
   );
