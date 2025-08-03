@@ -29,15 +29,33 @@ const ensureAuthenticated = async () => {
     throw new Error('User not authenticated. Please sign in first.');
   }
   
-  // Ensure the user's token is fresh and valid
+  // Check if user has been signed out recently
+  if (!user.uid) {
+    throw new Error('User session is invalid. Please sign out and sign in again.');
+  }
+  
+  // Ensure the user's token is fresh and valid with timeout
   try {
-    await user.getIdToken(true);
+    // Add timeout to prevent hanging requests
+    const tokenPromise = user.getIdToken(true);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Authentication timeout')), 10000)
+    );
+    
+    await Promise.race([tokenPromise, timeoutPromise]);
   } catch (error) {
     console.error('❌ Authentication token error:', error);
-    if (error.code === 'auth/user-token-expired' || error.code === 'auth/invalid-user-token') {
+    
+    if (error.message === 'Authentication timeout') {
+      throw new Error('Authentication timeout. Please check your connection and try again.');
+    } else if (error.code === 'auth/user-token-expired' || error.code === 'auth/invalid-user-token') {
       throw new Error('Authentication token expired. Please sign out and sign in again.');
     } else if (error.code === 'auth/network-request-failed') {
       throw new Error('Network error during authentication. Please check your connection and try again.');
+    } else if (error.code === 'auth/user-disabled') {
+      throw new Error('User account has been disabled. Please contact support.');
+    } else if (error.code === 'auth/too-many-requests') {
+      throw new Error('Too many authentication requests. Please wait a moment and try again.');
     } else {
       throw new Error('Authentication failed. Please sign out and sign in again.');
     }

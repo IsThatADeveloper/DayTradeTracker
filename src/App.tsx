@@ -17,7 +17,7 @@ import { tradeService } from './services/tradeService';
 import { isSameDay } from 'date-fns';
 
 function AppContent() {
-  const { currentUser } = useAuth();
+  const { currentUser, signOut } = useAuth();
   const [localTrades, setLocalTrades] = useLocalStorage<Trade[]>('day-trader-trades', []);
   const [cloudTrades, setCloudTrades] = useState<Trade[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -28,6 +28,12 @@ function AppContent() {
   const [isLoadingCloudData, setIsLoadingCloudData] = useState(false);
   const [cloudDataError, setCloudDataError] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useLocalStorage<string | null>('last-sync-time', null);
+  // Circuit breaker state to prevent excessive retries
+  const [isCircuitBreakerOpen, setIsCircuitBreakerOpen] = useState(false);
+  const [lastFailureTime, setLastFailureTime] = useState<number | null>(null);
+  const [consecutiveFailures, setConsecutiveFailures] = useState(0);
+  // Debouncing state to prevent multiple simultaneous requests
+  const [isLoadingInProgress, setIsLoadingInProgress] = useState(false);
 
   // FIXED: Always use the correct data source - if authenticated, use cloud data, otherwise local
   const activeTrades = currentUser ? cloudTrades : localTrades;
@@ -51,41 +57,84 @@ function AppContent() {
     }
   }, [darkMode]);
 
+  // Circuit breaker constants
+  const CIRCUIT_BREAKER_THRESHOLD = 3; // failures
+  const CIRCUIT_BREAKER_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+  const MAX_CONSECUTIVE_FAILURES = 5; // Stop trying after 5 consecutive failures
+
+  // Check if circuit breaker should be reset
+  useEffect(() => {
+    if (isCircuitBreakerOpen && lastFailureTime) {
+      const timeSinceLastFailure = Date.now() - lastFailureTime;
+      if (timeSinceLastFailure > CIRCUIT_BREAKER_TIMEOUT) {
+        console.log('🔄 Circuit breaker timeout elapsed, resetting');
+        setIsCircuitBreakerOpen(false);
+        setConsecutiveFailures(0);
+        setLastFailureTime(null);
+      }
+    }
+  }, [isCircuitBreakerOpen, lastFailureTime]);
+
   // FIXED: Load cloud data when user signs in and handle sign out properly
   useEffect(() => {
     if (currentUser) {
       console.log('👤 User signed in, loading cloud data for:', currentUser.email);
+      
+      // Check circuit breaker before attempting to load
+      if (isCircuitBreakerOpen) {
+        const timeRemaining = lastFailureTime ? Math.ceil((CIRCUIT_BREAKER_TIMEOUT - (Date.now() - lastFailureTime)) / 1000 / 60) : 0;
+        console.log(`🚫 Circuit breaker is open, waiting ${timeRemaining} more minutes before retry`);
+        setCloudDataError(`Too many failed attempts. Please wait ${timeRemaining} minutes before trying again, or sign out and back in.`);
+        return;
+      }
+
+      // Check if we've exceeded maximum consecutive failures
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        console.log('🚫 Maximum consecutive failures reached, stopping automatic retries');
+        setCloudDataError('Multiple failed attempts detected. Please sign out and sign back in, or contact support if the issue persists.');
+        return;
+      }
+
+      // Prevent multiple simultaneous requests
+      if (isLoadingInProgress) {
+        console.log('⏳ Cloud data loading already in progress, skipping duplicate request');
+        return;
+      }
+
       // Wait for authentication token to be available before loading data
       const loadDataWhenReady = async () => {
         try {
+          setIsLoadingInProgress(true);
           // Ensure the user's token is available and valid
           await currentUser.getIdToken(true);
           console.log('✅ Authentication token confirmed, loading cloud data');
-          loadCloudTrades();
+          await loadCloudTrades();
+          
+          // Reset failure counters on success
+          setConsecutiveFailures(0);
+          setLastFailureTime(null);
+          setIsCircuitBreakerOpen(false);
         } catch (error) {
           console.error('❌ Failed to get authentication token:', error);
-          // Retry once after a delay
-          setTimeout(async () => {
-            try {
-              await currentUser.getIdToken(true);
-              console.log('✅ Authentication token confirmed on retry, loading cloud data');
-              loadCloudTrades();
-            } catch (retryError) {
-              console.error('❌ Authentication token still not available:', retryError);
-              setCloudDataError('Authentication issue. Please sign out and sign in again.');
-            }
-          }, 1000);
+          handleCloudDataFailure('Authentication issue. Please sign out and sign in again.');
+        } finally {
+          setIsLoadingInProgress(false);
         }
       };
       
       loadDataWhenReady();
     } else {
-      console.log('👤 User signed out, clearing cloud data');
+      console.log('👤 User signed out, clearing cloud data and resetting failure states');
       setCloudTrades([]);
       setCloudDataError(null); // Clear any cloud data errors
       setIsLoadingCloudData(false);
+      setIsLoadingInProgress(false);
+      // Reset circuit breaker state on sign out
+      setIsCircuitBreakerOpen(false);
+      setConsecutiveFailures(0);
+      setLastFailureTime(null);
     }
-  }, [currentUser]);
+  }, [currentUser, isCircuitBreakerOpen, consecutiveFailures, isLoadingInProgress]);
 
   // IMPROVED: Show sync modal logic with better timing checks
   useEffect(() => {
@@ -100,9 +149,29 @@ function AppContent() {
     }
   }, [currentUser, localTrades.length, cloudTrades.length, isLoadingCloudData, lastSyncTime]);
 
+  // Handle cloud data loading failures with circuit breaker logic
+  const handleCloudDataFailure = (errorMessage: string) => {
+    const newFailureCount = consecutiveFailures + 1;
+    setConsecutiveFailures(newFailureCount);
+    setLastFailureTime(Date.now());
+    
+    if (newFailureCount >= CIRCUIT_BREAKER_THRESHOLD) {
+      console.log(`🚫 Circuit breaker triggered after ${newFailureCount} failures`);
+      setIsCircuitBreakerOpen(true);
+    }
+    
+    setCloudDataError(errorMessage);
+  };
+
   const loadCloudTrades = async (retryCount = 0) => {
     if (!currentUser) {
       console.log('❌ No user, cannot load cloud trades');
+      return;
+    }
+    
+    // Check circuit breaker before proceeding
+    if (isCircuitBreakerOpen) {
+      console.log('🚫 Circuit breaker is open, skipping cloud data load');
       return;
     }
     
@@ -117,6 +186,11 @@ function AppContent() {
       setCloudDataError(null); // Clear any previous errors on success
       console.log(`✅ Loaded ${userTrades.length} trades from cloud for ${currentUser.email}`);
       
+      // Reset failure counters on success
+      setConsecutiveFailures(0);
+      setLastFailureTime(null);
+      setIsCircuitBreakerOpen(false);
+      
       // Store successful load time to avoid unnecessary retries
       setLastSyncTime(new Date().toISOString());
     } catch (error) {
@@ -125,10 +199,14 @@ function AppContent() {
       // Improved retry logic with better error categorization
       const isPermissionError = error.message.includes('Permission denied') || error.code === 'permission-denied';
       const isNetworkError = error.message.includes('network') || error.code === 'unavailable';
+      const isAuthError = error.message.includes('Authentication') || error.code === 'unauthenticated';
       
-      if (retryCount < 3 && !isPermissionError) {
+      // Reduce automatic retries to prevent excessive reloading - only retry once for network errors
+      const maxRetries = isNetworkError ? 1 : 0;
+      
+      if (retryCount < maxRetries && !isPermissionError && !isAuthError) {
         console.log(`🔄 Retrying cloud data load (attempt ${retryCount + 1}) - ${isNetworkError ? 'Network' : 'Unknown'} error`);
-        setTimeout(() => loadCloudTrades(retryCount + 1), 1000 * Math.pow(2, retryCount)); // Exponential backoff
+        setTimeout(() => loadCloudTrades(retryCount + 1), 2000 * Math.pow(2, retryCount)); // Longer exponential backoff
         return;
       }
       
@@ -136,17 +214,20 @@ function AppContent() {
       let errorMessage;
       if (isPermissionError) {
         errorMessage = 'Permission denied. Please sign out and sign in again, or check your Firebase security rules.';
+      } else if (isAuthError) {
+        errorMessage = 'Authentication expired. Please sign out and sign in again.';
       } else if (isNetworkError) {
-        errorMessage = 'Network error. Please check your internet connection and try again.';
+        errorMessage = 'Network error. Please check your internet connection and try again manually.';
       } else {
         errorMessage = 'Failed to load cloud data. Please try refreshing the page or contact support if the issue persists.';
       }
       
-      setCloudDataError(errorMessage);
+      // Use circuit breaker failure handler instead of direct error setting
+      handleCloudDataFailure(errorMessage);
       
-      // Only show alert if this is the final retry attempt
-      if (retryCount >= 3 || isPermissionError) {
-        alert(errorMessage);
+      // Don't show alert for retryable errors, only for final failures
+      if (isPermissionError || isAuthError || retryCount >= maxRetries) {
+        console.log('🚨 Final failure reached, user intervention required');
       }
     } finally {
       setIsLoadingCloudData(false);
@@ -453,14 +534,41 @@ function AppContent() {
 
               {currentUser && (
                 <button
-                  onClick={() => loadCloudTrades(0)}
-                  disabled={isLoadingCloudData}
+                  onClick={() => {
+                    if (isCircuitBreakerOpen) {
+                      const timeRemaining = lastFailureTime ? Math.ceil((CIRCUIT_BREAKER_TIMEOUT - (Date.now() - lastFailureTime)) / 1000 / 60) : 0;
+                      alert(`Please wait ${timeRemaining} more minutes before trying again, or sign out and back in to reset the connection.`);
+                      return;
+                    }
+                    
+                    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                      const shouldReset = confirm('Multiple failures detected. Would you like to reset the error counter and try again? (Consider signing out and back in if this continues)');
+                      if (shouldReset) {
+                        setConsecutiveFailures(0);
+                        setLastFailureTime(null);
+                        setCloudDataError(null);
+                        loadCloudTrades(0);
+                      }
+                      return;
+                    }
+                    
+                    loadCloudTrades(0);
+                  }}
+                  disabled={isLoadingCloudData || isLoadingInProgress}
                   className={`p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md disabled:opacity-50 ${
                     cloudDataError ? 'text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-200' : ''
-                  }`}
-                  title={cloudDataError ? `Retry loading cloud data - ${cloudDataError}` : 'Refresh cloud data'}
+                  } ${isCircuitBreakerOpen ? 'cursor-not-allowed' : ''}`}
+                  title={
+                    isCircuitBreakerOpen 
+                      ? `Circuit breaker active - wait ${lastFailureTime ? Math.ceil((CIRCUIT_BREAKER_TIMEOUT - (Date.now() - lastFailureTime)) / 1000 / 60) : 0} minutes`
+                      : consecutiveFailures >= MAX_CONSECUTIVE_FAILURES
+                      ? 'Multiple failures detected - click to reset and retry'
+                      : cloudDataError 
+                      ? `Retry loading cloud data - ${cloudDataError}` 
+                      : 'Refresh cloud data'
+                  }
                 >
-                  <RefreshCw className={`h-5 w-5 ${isLoadingCloudData ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`h-5 w-5 ${isLoadingCloudData || isLoadingInProgress ? 'animate-spin' : ''} ${isCircuitBreakerOpen ? 'text-red-500' : ''}`} />
                 </button>
               )}
 
@@ -484,21 +592,60 @@ function AppContent() {
             <div className="flex items-center justify-between">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
-                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                  <div className={`w-3 h-3 rounded-full ${isCircuitBreakerOpen ? 'bg-red-600' : 'bg-red-500'}`}></div>
                 </div>
                 <div className="ml-3">
                   <p className="text-sm text-red-800 dark:text-red-200">
                     <strong>Cloud data error:</strong> {cloudDataError}
+                    {isCircuitBreakerOpen && (
+                      <span className="block mt-1 text-xs">
+                        Too many failures detected. Wait {lastFailureTime ? Math.ceil((CIRCUIT_BREAKER_TIMEOUT - (Date.now() - lastFailureTime)) / 1000 / 60) : 0} minutes or sign out/in to reset.
+                      </span>
+                    )}
+                    {consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isCircuitBreakerOpen && (
+                      <span className="block mt-1 text-xs">
+                        Multiple failures detected. Consider signing out and back in.
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
               <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => loadCloudTrades(0)}
-                  className="text-sm bg-red-100 dark:bg-red-800 text-red-800 dark:text-red-200 px-3 py-1 rounded-md hover:bg-red-200 dark:hover:bg-red-700 transition-colors"
-                >
-                  Retry
-                </button>
+                {!isCircuitBreakerOpen && (
+                  <>
+                    {consecutiveFailures >= MAX_CONSECUTIVE_FAILURES ? (
+                      <button
+                        onClick={() => {
+                          setConsecutiveFailures(0);
+                          setLastFailureTime(null);
+                          setCloudDataError(null);
+                          loadCloudTrades(0);
+                        }}
+                        className="text-sm bg-yellow-100 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 px-3 py-1 rounded-md hover:bg-yellow-200 dark:hover:bg-yellow-700 transition-colors"
+                      >
+                        Reset & Retry
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => loadCloudTrades(0)}
+                        disabled={isLoadingInProgress}
+                        className="text-sm bg-red-100 dark:bg-red-800 text-red-800 dark:text-red-200 px-3 py-1 rounded-md hover:bg-red-200 dark:hover:bg-red-700 transition-colors disabled:opacity-50"
+                      >
+                        Retry
+                      </button>
+                    )}
+                                         <button
+                       onClick={() => {
+                         if (confirm('Sign out and back in to reset the connection? This will clear local state.')) {
+                           signOut();
+                         }
+                       }}
+                       className="text-sm bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-3 py-1 rounded-md hover:bg-blue-200 dark:hover:bg-blue-700 transition-colors"
+                     >
+                       Sign Out & Reset
+                     </button>
+                  </>
+                )}
                 <button
                   onClick={() => setCloudDataError(null)}
                   className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-200"
