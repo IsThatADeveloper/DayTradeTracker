@@ -26,6 +26,7 @@ function AppContent() {
   const [darkMode, setDarkMode] = useLocalStorage('day-trader-dark-mode', false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [isLoadingCloudData, setIsLoadingCloudData] = useState(false);
+  const [cloudDataError, setCloudDataError] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useLocalStorage<string | null>('last-sync-time', null);
 
   // FIXED: Always use the correct data source - if authenticated, use cloud data, otherwise local
@@ -54,21 +55,27 @@ function AppContent() {
   useEffect(() => {
     if (currentUser) {
       console.log('👤 User signed in, loading cloud data for:', currentUser.email);
-      // Small delay to ensure auth state is fully established
+      // Increased delay to ensure auth state is fully established and token is available
       setTimeout(() => {
         loadCloudTrades();
-      }, 100);
+      }, 250);
     } else {
       console.log('👤 User signed out, clearing cloud data');
       setCloudTrades([]);
+      setCloudDataError(null); // Clear any cloud data errors
       setIsLoadingCloudData(false);
     }
   }, [currentUser]);
 
-  // FIXED: Show sync modal logic - only show if user has local data when they first sign in
+  // IMPROVED: Show sync modal logic with better timing checks
   useEffect(() => {
-    if (currentUser && localTrades.length > 0 && cloudTrades.length === 0 && !isLoadingCloudData && !lastSyncTime) {
-      console.log('🔄 Showing sync modal - user has local data and no cloud data');
+    // Only show sync modal if:
+    // 1. User is authenticated
+    // 2. Has local trades
+    // 3. Cloud data has finished loading (either has trades or is empty)
+    // 4. Haven't synced before
+    if (currentUser && localTrades.length > 0 && !isLoadingCloudData && !lastSyncTime) {
+      console.log('🔄 Showing sync modal - user has local data, cloud loading complete');
       setShowSyncModal(true);
     }
   }, [currentUser, localTrades.length, cloudTrades.length, isLoadingCloudData, lastSyncTime]);
@@ -80,27 +87,50 @@ function AppContent() {
     }
     
     setIsLoadingCloudData(true);
+    setCloudDataError(null); // Clear previous errors
+    
     try {
       console.log('☁️ Loading trades for user:', currentUser.uid);
+      
+      // Wait for authentication token to be fully available
+      await currentUser.getIdToken(true);
+      
       const userTrades = await tradeService.getUserTrades(currentUser.uid);
       setCloudTrades(userTrades);
+      setCloudDataError(null); // Clear any previous errors on success
       console.log(`✅ Loaded ${userTrades.length} trades from cloud for ${currentUser.email}`);
+      
+      // Store successful load time to avoid unnecessary retries
+      setLastSyncTime(new Date().toISOString());
     } catch (error) {
       console.error('❌ Failed to load cloud trades:', error);
       
-      // Retry logic for transient errors
-      if (retryCount < 2 && !error.message.includes('Permission denied')) {
-        console.log(`🔄 Retrying cloud data load (attempt ${retryCount + 1})`);
-        setTimeout(() => loadCloudTrades(retryCount + 1), 1000 * (retryCount + 1));
+      // Improved retry logic with better error categorization
+      const isPermissionError = error.message.includes('Permission denied') || error.code === 'permission-denied';
+      const isNetworkError = error.message.includes('network') || error.code === 'unavailable';
+      
+      if (retryCount < 3 && !isPermissionError) {
+        console.log(`🔄 Retrying cloud data load (attempt ${retryCount + 1}) - ${isNetworkError ? 'Network' : 'Unknown'} error`);
+        setTimeout(() => loadCloudTrades(retryCount + 1), 1000 * Math.pow(2, retryCount)); // Exponential backoff
         return;
       }
       
-      // Show user-friendly error message
-      const errorMessage = error.message.includes('Permission denied') 
-        ? 'Permission denied. Please sign out and sign in again.'
-        : 'Failed to load cloud data. Please try refreshing the page.';
+      // Show user-friendly error message based on error type
+      let errorMessage;
+      if (isPermissionError) {
+        errorMessage = 'Permission denied. Please sign out and sign in again, or check your Firebase security rules.';
+      } else if (isNetworkError) {
+        errorMessage = 'Network error. Please check your internet connection and try again.';
+      } else {
+        errorMessage = 'Failed to load cloud data. Please try refreshing the page or contact support if the issue persists.';
+      }
       
-      alert(errorMessage);
+      setCloudDataError(errorMessage);
+      
+      // Only show alert if this is the final retry attempt
+      if (retryCount >= 3 || isPermissionError) {
+        alert(errorMessage);
+      }
     } finally {
       setIsLoadingCloudData(false);
     }
@@ -331,13 +361,32 @@ function AppContent() {
                 DayTradeTracker
               </h1>
               
-              {/* FIXED: Data Source Indicator */}
+              {/* IMPROVED: Data Source Indicator with Error States */}
               <div className="ml-4 flex items-center space-x-2">
                 {currentUser ? (
-                  <div className="flex items-center space-x-1 px-2 py-1 bg-green-100 dark:bg-green-900/20 rounded-full">
-                    <div className={`w-2 h-2 rounded-full ${isLoadingCloudData ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`}></div>
-                    <span className="text-xs text-green-800 dark:text-green-200">
-                      {isLoadingCloudData ? 'Loading...' : `Cloud (${cloudTrades.length})`}
+                  <div className={`flex items-center space-x-1 px-2 py-1 rounded-full ${
+                    cloudDataError 
+                      ? 'bg-red-100 dark:bg-red-900/20' 
+                      : 'bg-green-100 dark:bg-green-900/20'
+                  }`}>
+                    <div className={`w-2 h-2 rounded-full ${
+                      isLoadingCloudData 
+                        ? 'bg-blue-500 animate-pulse' 
+                        : cloudDataError 
+                        ? 'bg-red-500' 
+                        : 'bg-green-500'
+                    }`}></div>
+                    <span className={`text-xs ${
+                      cloudDataError 
+                        ? 'text-red-800 dark:text-red-200' 
+                        : 'text-green-800 dark:text-green-200'
+                    }`}>
+                      {isLoadingCloudData 
+                        ? 'Loading...' 
+                        : cloudDataError 
+                        ? 'Error' 
+                        : `Cloud (${cloudTrades.length})`
+                      }
                     </span>
                   </div>
                 ) : (
@@ -387,10 +436,12 @@ function AppContent() {
 
               {currentUser && (
                 <button
-                  onClick={loadCloudTrades}
+                  onClick={() => loadCloudTrades(0)}
                   disabled={isLoadingCloudData}
-                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md disabled:opacity-50"
-                  title="Refresh cloud data"
+                  className={`p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md disabled:opacity-50 ${
+                    cloudDataError ? 'text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-200' : ''
+                  }`}
+                  title={cloudDataError ? `Retry loading cloud data - ${cloudDataError}` : 'Refresh cloud data'}
                 >
                   <RefreshCw className={`h-5 w-5 ${isLoadingCloudData ? 'animate-spin' : ''}`} />
                 </button>
@@ -408,6 +459,41 @@ function AppContent() {
           </div>
         </div>
       </header>
+
+      {/* Cloud Data Error Banner */}
+      {currentUser && cloudDataError && !isLoadingCloudData && (
+        <div className="bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-800">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-red-800 dark:text-red-200">
+                    <strong>Cloud data error:</strong> {cloudDataError}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => loadCloudTrades(0)}
+                  className="text-sm bg-red-100 dark:bg-red-800 text-red-800 dark:text-red-200 px-3 py-1 rounded-md hover:bg-red-200 dark:hover:bg-red-700 transition-colors"
+                >
+                  Retry
+                </button>
+                <button
+                  onClick={() => setCloudDataError(null)}
+                  className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-200"
+                  title="Dismiss error"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="space-y-8">
