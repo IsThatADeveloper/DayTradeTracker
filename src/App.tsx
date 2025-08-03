@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw } from 'lucide-react';
+import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, User, LogOut } from 'lucide-react';
 import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { calculateDailyStats, calculateHourlyStats, getWeeklyStats } from './utils/tradeUtils';
@@ -17,7 +17,7 @@ import { isSameDay } from 'date-fns';
 
 function AppContent() {
   const { currentUser } = useAuth();
-  const [trades, setTrades] = useLocalStorage<Trade[]>('day-trader-trades', []);
+  const [localTrades, setLocalTrades] = useLocalStorage<Trade[]>('day-trader-trades', []);
   const [cloudTrades, setCloudTrades] = useState<Trade[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -28,8 +28,20 @@ function AppContent() {
   const [hasLoadedCloudData, setHasLoadedCloudData] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useLocalStorage<string | null>('last-sync-time', null);
 
-  // Use cloud data if user is authenticated and data is loaded, otherwise use local data
-  const activeTrades = currentUser && hasLoadedCloudData ? cloudTrades : trades;
+  // CRITICAL: Always use the correct data source based on authentication state
+  const activeTrades = currentUser && hasLoadedCloudData ? cloudTrades : localTrades;
+  const isUsingCloudData = !!currentUser && hasLoadedCloudData;
+
+  console.log('🔍 Data Source Debug:', {
+    isAuthenticated: !!currentUser,
+    userEmail: currentUser?.email,
+    hasLoadedCloudData,
+    localTradesCount: localTrades.length,
+    cloudTradesCount: cloudTrades.length,
+    activeTradesCount: activeTrades.length,
+    dataSource: currentUser && hasLoadedCloudData ? 'CLOUD' : 'LOCAL',
+    isLoadingCloudData
+  });
 
   React.useEffect(() => {
     if (darkMode) {
@@ -42,8 +54,10 @@ function AppContent() {
   // Load cloud data when user signs in
   useEffect(() => {
     if (currentUser && !hasLoadedCloudData) {
+      console.log('👤 User signed in, loading cloud data for:', currentUser.email);
       loadCloudTrades();
     } else if (!currentUser) {
+      console.log('👤 User signed out, clearing cloud data');
       setCloudTrades([]);
       setHasLoadedCloudData(false);
     }
@@ -51,26 +65,28 @@ function AppContent() {
 
   // Show sync modal when user first signs in and has local data
   useEffect(() => {
-    if (currentUser && trades.length > 0 && hasLoadedCloudData && !lastSyncTime) {
-      // Check if there's a significant difference between local and cloud data
-      if (cloudTrades.length === 0 || Math.abs(trades.length - cloudTrades.length) > 1) {
-        setShowSyncModal(true);
-      }
+    if (currentUser && localTrades.length > 0 && hasLoadedCloudData && !lastSyncTime) {
+      console.log('🔄 Showing sync modal - user has local data');
+      setShowSyncModal(true);
     }
-  }, [currentUser, trades.length, cloudTrades.length, hasLoadedCloudData, lastSyncTime]);
+  }, [currentUser, localTrades.length, hasLoadedCloudData, lastSyncTime]);
 
   const loadCloudTrades = async () => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      console.log('❌ No user, cannot load cloud trades');
+      return;
+    }
     
     setIsLoadingCloudData(true);
     try {
+      console.log('☁️ Loading trades for user:', currentUser.uid);
       const userTrades = await tradeService.getUserTrades(currentUser.uid);
       setCloudTrades(userTrades);
       setHasLoadedCloudData(true);
-      console.log(`Loaded ${userTrades.length} trades from cloud`);
+      console.log(`✅ Loaded ${userTrades.length} trades from cloud for ${currentUser.email}`);
     } catch (error) {
-      console.error('Failed to load cloud trades:', error);
-      // Don't set hasLoadedCloudData to true if there was an error
+      console.error('❌ Failed to load cloud trades:', error);
+      setHasLoadedCloudData(false);
     } finally {
       setIsLoadingCloudData(false);
     }
@@ -80,19 +96,20 @@ function AppContent() {
     if (!currentUser) return;
     
     try {
+      console.log('📤 Syncing local trades to cloud...');
       // Clear existing cloud data
       await Promise.all(cloudTrades.map(trade => tradeService.deleteTrade(trade.id)));
       
       // Upload all local trades
-      const uploadPromises = trades.map(trade => tradeService.addTrade(currentUser.uid, trade));
+      const uploadPromises = localTrades.map(trade => tradeService.addTrade(currentUser.uid, trade));
       await Promise.all(uploadPromises);
       
       // Reload cloud data
       await loadCloudTrades();
       setLastSyncTime(new Date().toISOString());
-      console.log('Successfully synced local data to cloud');
+      console.log('✅ Successfully synced local data to cloud');
     } catch (error) {
-      console.error('Failed to sync to cloud:', error);
+      console.error('❌ Failed to sync to cloud:', error);
       throw error;
     }
   };
@@ -101,12 +118,13 @@ function AppContent() {
     if (!currentUser) return;
     
     try {
+      console.log('📥 Syncing cloud trades to local...');
       await loadCloudTrades();
-      setTrades(cloudTrades);
+      // Don't update local storage when using cloud data
       setLastSyncTime(new Date().toISOString());
-      console.log('Successfully synced cloud data to local');
+      console.log('✅ Successfully synced cloud data');
     } catch (error) {
-      console.error('Failed to sync from cloud:', error);
+      console.error('❌ Failed to sync from cloud:', error);
       throw error;
     }
   };
@@ -115,6 +133,7 @@ function AppContent() {
     if (!currentUser) return;
     
     try {
+      console.log('🔀 Merging local and cloud data...');
       // Create a map to avoid duplicates based on timestamp, ticker, and prices
       const tradeMap = new Map<string, Trade>();
       
@@ -126,7 +145,7 @@ function AppContent() {
       
       // Add local trades that don't exist in cloud
       const newTrades: Trade[] = [];
-      trades.forEach(trade => {
+      localTrades.forEach(trade => {
         const key = `${trade.timestamp.getTime()}_${trade.ticker}_${trade.entryPrice}_${trade.exitPrice}_${trade.quantity}`;
         if (!tradeMap.has(key)) {
           newTrades.push(trade);
@@ -142,9 +161,9 @@ function AppContent() {
       // Reload cloud data
       await loadCloudTrades();
       setLastSyncTime(new Date().toISOString());
-      console.log(`Merged data: ${newTrades.length} new trades added to cloud`);
+      console.log(`✅ Merged data: ${newTrades.length} new trades added to cloud`);
     } catch (error) {
-      console.error('Failed to merge data:', error);
+      console.error('❌ Failed to merge data:', error);
       throw error;
     }
   };
@@ -163,25 +182,31 @@ function AppContent() {
   const weeklyStats = useMemo(() => getWeeklyStats(activeTrades, selectedDate), [activeTrades, selectedDate]);
 
   const handleTradeAdded = async (newTrade: Trade) => {
-    if (currentUser && hasLoadedCloudData) {
+    if (currentUser) {
       try {
+        console.log('📝 Adding trade to cloud for user:', currentUser.email);
         const tradeId = await tradeService.addTrade(currentUser.uid, newTrade);
         const tradeWithId = { ...newTrade, id: tradeId };
-        setCloudTrades(prev => [tradeWithId, ...prev]);
-        console.log('Trade added to cloud successfully');
+        setCloudTrades(prev => {
+          const updated = [tradeWithId, ...prev];
+          console.log('✅ Cloud trades updated, new count:', updated.length);
+          return updated;
+        });
+        console.log('✅ Trade added to cloud successfully');
       } catch (error) {
-        console.error('Failed to add trade to cloud:', error);
+        console.error('❌ Failed to add trade to cloud:', error);
         alert('Failed to save trade to cloud. Please try again.');
       }
     } else {
-      setTrades(prevTrades => [...prevTrades, newTrade]);
-      console.log('Trade added to local storage');
+      console.log('📝 Adding trade to local storage');
+      setLocalTrades(prevTrades => [...prevTrades, newTrade]);
     }
   };
 
   const handleUpdateTrade = async (tradeId: string, updates: Partial<Trade>) => {
-    if (currentUser && hasLoadedCloudData) {
+    if (currentUser) {
       try {
+        console.log('✏️ Updating trade in cloud:', tradeId);
         await tradeService.updateTrade(tradeId, updates);
         setCloudTrades(prev =>
           prev.map(trade =>
@@ -189,11 +214,12 @@ function AppContent() {
           )
         );
       } catch (error) {
-        console.error('Failed to update trade in cloud:', error);
+        console.error('❌ Failed to update trade in cloud:', error);
         alert('Failed to update trade in cloud. Please try again.');
       }
     } else {
-      setTrades(prevTrades =>
+      console.log('✏️ Updating trade in local storage:', tradeId);
+      setLocalTrades(prevTrades =>
         prevTrades.map(trade =>
           trade.id === tradeId ? { ...trade, ...updates } : trade
         )
@@ -202,16 +228,18 @@ function AppContent() {
   };
 
   const handleDeleteTrade = async (tradeId: string) => {
-    if (currentUser && hasLoadedCloudData) {
+    if (currentUser) {
       try {
+        console.log('🗑️ Deleting trade from cloud:', tradeId);
         await tradeService.deleteTrade(tradeId);
         setCloudTrades(prev => prev.filter(trade => trade.id !== tradeId));
       } catch (error) {
-        console.error('Failed to delete trade from cloud:', error);
+        console.error('❌ Failed to delete trade from cloud:', error);
         alert('Failed to delete trade from cloud. Please try again.');
       }
     } else {
-      setTrades(prevTrades => prevTrades.filter(trade => trade.id !== tradeId));
+      console.log('🗑️ Deleting trade from local storage:', tradeId);
+      setLocalTrades(prevTrades => prevTrades.filter(trade => trade.id !== tradeId));
     }
   };
 
@@ -236,18 +264,6 @@ function AppContent() {
     window.URL.revokeObjectURL(url);
   };
 
-  // Debug information
-  const debugInfo = {
-    currentUser: !!currentUser,
-    hasLoadedCloudData,
-    localTradesCount: trades.length,
-    cloudTradesCount: cloudTrades.length,
-    activeTradesCount: activeTrades.length,
-    isLoadingCloudData,
-  };
-
-  console.log('Debug Info:', debugInfo);
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
       <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
@@ -258,6 +274,25 @@ function AppContent() {
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">
                 DayTradeTracker
               </h1>
+              
+              {/* Data Source Indicator */}
+              <div className="ml-4 flex items-center space-x-2">
+                {currentUser ? (
+                  <div className="flex items-center space-x-1 px-2 py-1 bg-green-100 dark:bg-green-900/20 rounded-full">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span className="text-xs text-green-800 dark:text-green-200">
+                      Cloud ({cloudTrades.length})
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-1 px-2 py-1 bg-yellow-100 dark:bg-yellow-900/20 rounded-full">
+                    <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                    <span className="text-xs text-yellow-800 dark:text-yellow-200">
+                      Local ({localTrades.length})
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
             
             <div className="flex items-center space-x-4">
@@ -299,7 +334,7 @@ function AppContent() {
                   onClick={loadCloudTrades}
                   disabled={isLoadingCloudData}
                   className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md disabled:opacity-50"
-                  title="Sync data"
+                  title="Refresh cloud data"
                 >
                   <RefreshCw className={`h-5 w-5 ${isLoadingCloudData ? 'animate-spin' : ''}`} />
                 </button>
@@ -330,7 +365,7 @@ function AppContent() {
               onMonthChange={setCurrentMonth}
               currentMonth={currentMonth}
             />
-          ) : activeTrades.length === 0 && !isLoadingCloudData ? (
+          ) : activeTrades.length === 0 ? (
             <div className="text-center py-12">
               <TrendingUp className="mx-auto h-12 w-12 text-gray-400 mb-4" />
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
@@ -346,15 +381,22 @@ function AppContent() {
                   </p>
                 </div>
               )}
+              {currentUser && hasLoadedCloudData && (
+                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 max-w-md mx-auto">
+                  <p className="text-green-800 dark:text-green-200 text-sm">
+                    ✅ You're signed in as {currentUser.email}. Your trades will be saved to the cloud!
+                  </p>
+                </div>
+              )}
             </div>
           ) : isLoadingCloudData ? (
             <div className="text-center py-12">
               <RefreshCw className="mx-auto h-12 w-12 text-blue-600 animate-spin mb-4" />
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                Loading Your Trades
+                Loading Your Cloud Data
               </h2>
               <p className="text-gray-600 dark:text-gray-400">
-                Syncing your data from the cloud...
+                Syncing trades for {currentUser?.email}...
               </p>
             </div>
           ) : (
@@ -412,7 +454,7 @@ function AppContent() {
       <SyncModal
         isOpen={showSyncModal}
         onClose={() => setShowSyncModal(false)}
-        localTrades={trades}
+        localTrades={localTrades}
         cloudTrades={cloudTrades}
         onSyncToCloud={syncToCloud}
         onSyncFromCloud={syncFromCloud}
