@@ -33,7 +33,14 @@ const ensureAuthenticated = async () => {
   try {
     await user.getIdToken(true);
   } catch (error) {
-    throw new Error('Authentication token expired. Please sign out and sign in again.');
+    console.error('❌ Authentication token error:', error);
+    if (error.code === 'auth/user-token-expired' || error.code === 'auth/invalid-user-token') {
+      throw new Error('Authentication token expired. Please sign out and sign in again.');
+    } else if (error.code === 'auth/network-request-failed') {
+      throw new Error('Network error during authentication. Please check your connection and try again.');
+    } else {
+      throw new Error('Authentication failed. Please sign out and sign in again.');
+    }
   }
   
   return user;

@@ -55,10 +55,30 @@ function AppContent() {
   useEffect(() => {
     if (currentUser) {
       console.log('👤 User signed in, loading cloud data for:', currentUser.email);
-      // Increased delay to ensure auth state is fully established and token is available
-      setTimeout(() => {
-        loadCloudTrades();
-      }, 250);
+      // Wait for authentication token to be available before loading data
+      const loadDataWhenReady = async () => {
+        try {
+          // Ensure the user's token is available and valid
+          await currentUser.getIdToken(true);
+          console.log('✅ Authentication token confirmed, loading cloud data');
+          loadCloudTrades();
+        } catch (error) {
+          console.error('❌ Failed to get authentication token:', error);
+          // Retry once after a delay
+          setTimeout(async () => {
+            try {
+              await currentUser.getIdToken(true);
+              console.log('✅ Authentication token confirmed on retry, loading cloud data');
+              loadCloudTrades();
+            } catch (retryError) {
+              console.error('❌ Authentication token still not available:', retryError);
+              setCloudDataError('Authentication issue. Please sign out and sign in again.');
+            }
+          }, 1000);
+        }
+      };
+      
+      loadDataWhenReady();
     } else {
       console.log('👤 User signed out, clearing cloud data');
       setCloudTrades([]);
@@ -91,9 +111,6 @@ function AppContent() {
     
     try {
       console.log('☁️ Loading trades for user:', currentUser.uid);
-      
-      // Wait for authentication token to be fully available
-      await currentUser.getIdToken(true);
       
       const userTrades = await tradeService.getUserTrades(currentUser.uid);
       setCloudTrades(userTrades);
