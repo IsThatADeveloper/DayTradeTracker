@@ -72,9 +72,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     console.log('🔍 Setting up auth state listener...');
     
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       console.log('🔄 Auth state changed:', user ? `Signed in as ${user.email}` : 'Signed out');
-      setCurrentUser(user);
+      
+      if (user) {
+        // For signed-in users, ensure their token is ready before setting as current user
+        try {
+          await user.getIdToken(true);
+          console.log('✅ User token confirmed, setting as current user');
+          setCurrentUser(user);
+        } catch (error) {
+          console.error('❌ Failed to get user token on auth state change:', error);
+          // Set user anyway, but the token issue will be handled in the data loading
+          setCurrentUser(user);
+        }
+      } else {
+        // For signed-out users, immediately update state
+        setCurrentUser(null);
+      }
+      
       setLoading(false);
     });
 
