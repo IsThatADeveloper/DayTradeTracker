@@ -14,6 +14,65 @@ import { SyncModal } from './components/SyncModal';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
 import { isSameDay } from 'date-fns';
+import { collection, addDoc, getDocs } from 'firebase/firestore';
+import { db } from './config/firebase';
+
+// Firebase Test Component (temporary for debugging)
+const FirebaseTestComponent: React.FC = () => {
+  const { currentUser } = useAuth();
+
+  const testFirebaseConnection = async () => {
+    if (!currentUser) {
+      alert('Please sign in first');
+      return;
+    }
+
+    try {
+      console.log('🧪 Testing Firebase connection...');
+      console.log('User:', currentUser.uid, currentUser.email);
+
+      // Test write
+      const testDoc = {
+        userId: currentUser.uid,
+        test: true,
+        timestamp: new Date(),
+        message: 'Hello Firebase!'
+      };
+
+      console.log('🧪 Adding test document...');
+      const docRef = await addDoc(collection(db, 'test'), testDoc);
+      console.log('✅ Test document added with ID:', docRef.id);
+
+      // Test read
+      console.log('🧪 Reading test documents...');
+      const snapshot = await getDocs(collection(db, 'test'));
+      console.log('✅ Found', snapshot.size, 'test documents');
+
+      alert(`Firebase test successful! Added doc: ${docRef.id}, Found ${snapshot.size} docs`);
+    } catch (error: any) {
+      console.error('❌ Firebase test failed:', error);
+      alert(`Firebase test failed: ${error.message}`);
+    }
+  };
+
+  if (!currentUser) {
+    return null;
+  }
+
+  return (
+    <div className="bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-4">
+      <h3 className="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
+        Firebase Connection Test (Remove after testing)
+      </h3>
+      <button
+        onClick={testFirebaseConnection}
+        className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700"
+      >
+        Test Firebase Connection
+      </button>
+    </div>
+  );
+};
 
 function AppContent() {
   const { currentUser } = useAuth();
@@ -81,10 +140,10 @@ function AppContent() {
       const userTrades = await tradeService.getUserTrades(currentUser.uid);
       setCloudTrades(userTrades);
       console.log(`✅ Loaded ${userTrades.length} trades from cloud for ${currentUser.email}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Failed to load cloud trades:', error);
-      // Don't clear cloud trades on error, just show the error
-      alert('Failed to load cloud data. Please try refreshing.');
+      // Show more specific error message
+      alert(`Failed to load cloud data: ${error.message}. Please check your connection and try again.`);
     } finally {
       setIsLoadingCloudData(false);
     }
@@ -193,9 +252,9 @@ function AppContent() {
           return updated;
         });
         console.log('✅ Trade added to cloud successfully');
-      } catch (error) {
+      } catch (error: any) {
         console.error('❌ Failed to add trade to cloud:', error);
-        alert('Failed to save trade to cloud. Please try again.');
+        alert(`Failed to save trade to cloud: ${error.message}. Please try again.`);
       }
     } else {
       console.log('📝 Adding trade to local storage');
@@ -215,9 +274,9 @@ function AppContent() {
           )
         );
         console.log('✅ Trade updated in cloud successfully');
-      } catch (error) {
+      } catch (error: any) {
         console.error('❌ Failed to update trade in cloud:', error);
-        alert('Failed to update trade in cloud. Please try again.');
+        alert(`Failed to update trade in cloud: ${error.message}. Please try again.`);
       }
     } else {
       console.log('✏️ Updating trade in local storage:', tradeId);
@@ -237,9 +296,9 @@ function AppContent() {
         await tradeService.deleteTrade(tradeId);
         setCloudTrades(prev => prev.filter(trade => trade.id !== tradeId));
         console.log('✅ Trade deleted from cloud successfully');
-      } catch (error) {
+      } catch (error: any) {
         console.error('❌ Failed to delete trade from cloud:', error);
-        alert('Failed to delete trade from cloud. Please try again.');
+        alert(`Failed to delete trade from cloud: ${error.message}. Please try again.`);
       }
     } else {
       console.log('🗑️ Deleting trade from local storage:', tradeId);
@@ -359,6 +418,9 @@ function AppContent() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="space-y-8">
+          {/* Firebase Test Component - Remove after testing */}
+          <FirebaseTestComponent />
+          
           <ManualTradeEntry onTradeAdded={handleTradeAdded} />
 
           {activeView === 'calendar' ? (
