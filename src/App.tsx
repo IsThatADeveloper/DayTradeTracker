@@ -4,6 +4,7 @@ import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { calculateDailyStats, getWeeklyStats } from './utils/tradeUtils';
 import { ManualTradeEntry } from './components/ManualTradeEntry';
+import { BulkTradeImport } from './components/BulkTradeImport';
 import { Calendar } from './components/Calendar';
 import { Dashboard } from './components/Dashboard';
 import { TimeAnalysis } from './components/TimeAnalysis';
@@ -148,6 +149,24 @@ function AppContent() {
     }
   };
 
+  const handleTradesAdded = async (newTrades: Trade[]) => {
+    if (currentUser) {
+      try {
+        const tradesWithIds = await Promise.all(
+          newTrades.map(async (trade) => {
+            const tradeId = await tradeService.addTrade(currentUser.uid, trade);
+            return { ...trade, id: tradeId };
+          })
+        );
+        setCloudTrades(prev => [...tradesWithIds, ...prev]);
+      } catch (error: any) {
+        alert(`Failed to save trades: ${error.message}`);
+      }
+    } else {
+      setLocalTrades(prev => [...newTrades, ...prev]);
+    }
+  };
+
   const handleUpdateTrade = async (tradeId: string, updates: Partial<Trade>) => {
     if (currentUser) {
       try {
@@ -209,6 +228,9 @@ function AppContent() {
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
+
+  // Get the last trade for bulk import
+  const lastTrade = activeTrades.length > 0 ? activeTrades[0] : undefined;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
@@ -384,7 +406,10 @@ function AppContent() {
 
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
         <div className="space-y-6 sm:space-y-8">
-          <ManualTradeEntry onTradeAdded={handleTradeAdded} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <ManualTradeEntry onTradeAdded={handleTradeAdded} />
+            <BulkTradeImport onTradesAdded={handleTradesAdded} lastTrade={lastTrade} />
+          </div>
           {activeView === 'calendar' ? (
             <Calendar trades={activeTrades} selectedDate={selectedDate} onDateSelect={setSelectedDate} onMonthChange={setCurrentMonth} currentMonth={currentMonth} />
           ) : (
