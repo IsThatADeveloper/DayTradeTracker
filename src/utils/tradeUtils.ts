@@ -5,8 +5,26 @@ export const generateTradeId = (): string => {
   return `trade_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
+// Helper function to normalize date to local midnight (fixes timezone issues)
+const normalizeToLocalDate = (date: Date): Date => {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+};
+
+// Helper function to check if two dates are the same day (timezone-safe)
+const isSameDayLocal = (date1: Date, date2: Date): boolean => {
+  const d1 = normalizeToLocalDate(date1);
+  const d2 = normalizeToLocalDate(date2);
+  return d1.getTime() === d2.getTime();
+};
+
 export const calculateDailyStats = (trades: Trade[], date: Date): DailyStats => {
-  const dayTrades = trades.filter(trade => isSameDay(trade.timestamp, date));
+  // Normalize the target date to avoid timezone issues
+  const targetDate = normalizeToLocalDate(date);
+  
+  const dayTrades = trades.filter(trade => {
+    const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+    return isSameDayLocal(tradeDate, targetDate);
+  });
   
   const totalPL = dayTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
   const wins = dayTrades.filter(trade => trade.realizedPL > 0);
@@ -16,7 +34,7 @@ export const calculateDailyStats = (trades: Trade[], date: Date): DailyStats => 
   const avgLoss = losses.length > 0 ? losses.reduce((sum, trade) => sum + trade.realizedPL, 0) / losses.length : 0;
   
   return {
-    date: format(date, 'yyyy-MM-dd'),
+    date: format(targetDate, 'yyyy-MM-dd'),
     totalPL,
     winCount: wins.length,
     lossCount: losses.length,
@@ -28,7 +46,13 @@ export const calculateDailyStats = (trades: Trade[], date: Date): DailyStats => 
 };
 
 export const calculateHourlyStats = (trades: Trade[], date: Date): HourlyStats[] => {
-  const dayTrades = trades.filter(trade => isSameDay(trade.timestamp, date));
+  const targetDate = normalizeToLocalDate(date);
+  
+  const dayTrades = trades.filter(trade => {
+    const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+    return isSameDayLocal(tradeDate, targetDate);
+  });
+  
   const hourlyData: { [hour: number]: { pl: number; count: number } } = {};
   
   // Initialize trading hours (9:30 AM to 4:00 PM)
@@ -37,7 +61,8 @@ export const calculateHourlyStats = (trades: Trade[], date: Date): HourlyStats[]
   }
   
   dayTrades.forEach(trade => {
-    const hour = trade.timestamp.getHours();
+    const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+    const hour = tradeDate.getHours();
     if (hour >= 9 && hour <= 16) {
       hourlyData[hour].pl += trade.realizedPL;
       hourlyData[hour].count += 1;
@@ -53,12 +78,14 @@ export const calculateHourlyStats = (trades: Trade[], date: Date): HourlyStats[]
 };
 
 export const getWeeklyStats = (trades: Trade[], date: Date) => {
-  const weekStart = startOfWeek(date, { weekStartsOn: 1 }); // Monday start
-  const weekEnd = endOfWeek(date, { weekStartsOn: 1 });
+  const targetDate = normalizeToLocalDate(date);
+  const weekStart = startOfWeek(targetDate, { weekStartsOn: 1 }); // Monday start
+  const weekEnd = endOfWeek(targetDate, { weekStartsOn: 1 });
   
   const weekTrades = trades.filter(trade => {
-    const tradeDate = new Date(trade.timestamp);
-    return tradeDate >= weekStart && tradeDate <= weekEnd;
+    const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+    const normalizedTradeDate = normalizeToLocalDate(tradeDate);
+    return normalizedTradeDate >= weekStart && normalizedTradeDate <= weekEnd;
   });
   
   const totalPL = weekTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
@@ -77,13 +104,17 @@ export const getWeeklyStats = (trades: Trade[], date: Date) => {
 };
 
 export const getCalendarData = (trades: Trade[], currentDate: Date) => {
-  const startDate = subDays(startOfWeek(subDays(currentDate, 21), { weekStartsOn: 1 }), 0);
-  const endDate = addDays(endOfWeek(addDays(currentDate, 21), { weekStartsOn: 1 }), 0);
+  const normalizedCurrentDate = normalizeToLocalDate(currentDate);
+  const startDate = subDays(startOfWeek(subDays(normalizedCurrentDate, 21), { weekStartsOn: 1 }), 0);
+  const endDate = addDays(endOfWeek(addDays(normalizedCurrentDate, 21), { weekStartsOn: 1 }), 0);
   
   const days = eachDayOfInterval({ start: startDate, end: endDate });
   
   return days.map(day => {
-    const dayTrades = trades.filter(trade => isSameDay(new Date(trade.timestamp), day));
+    const dayTrades = trades.filter(trade => {
+      const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+      return isSameDayLocal(tradeDate, day);
+    });
     const totalPL = dayTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
     
     return {
@@ -94,6 +125,7 @@ export const getCalendarData = (trades: Trade[], currentDate: Date) => {
     };
   });
 };
+
 export const formatCurrency = (amount: number): string => {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',

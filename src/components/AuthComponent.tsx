@@ -1,11 +1,15 @@
-// src/components/AuthComponent.tsx
 import React, { useState } from 'react';
-import { LogIn, LogOut, User, Shield, Cloud } from 'lucide-react';
+import { LogIn, LogOut, User, Shield, Cloud, Settings } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
-export const AuthComponent: React.FC = () => {
+interface AuthComponentProps {
+  onOpenProfile?: () => void;
+}
+
+export const AuthComponent: React.FC<AuthComponentProps> = ({ onOpenProfile }) => {
   const { currentUser, signInWithGoogle, signOut } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   const handleSignIn = async () => {
     setIsLoading(true);
@@ -28,20 +32,25 @@ export const AuthComponent: React.FC = () => {
     }
   };
 
+  const handleImageError = () => {
+    setImageError(true);
+  };
+
   if (currentUser) {
     return (
       <div className="flex items-center space-x-3">
-        <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-300">
-          <Cloud className="h-4 w-4 text-green-500" />
+        <div className="flex items-center space-x-2 text-sm text-green-500 dark:text-green-400">
+          <Cloud className="h-4 w-4" />
           <span className="hidden sm:inline">Synced</span>
         </div>
         
         <div className="flex items-center space-x-2">
-          {currentUser.photoURL ? (
+          {currentUser.photoURL && !imageError ? (
             <img
               src={currentUser.photoURL}
               alt="Profile"
               className="w-8 h-8 rounded-full"
+              onError={handleImageError}
             />
           ) : (
             <div className="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center">
@@ -58,6 +67,16 @@ export const AuthComponent: React.FC = () => {
             </p>
           </div>
         </div>
+
+        {onOpenProfile && (
+          <button
+            onClick={onOpenProfile}
+            className="flex items-center px-3 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            <Settings className="h-4 w-4 mr-1" />
+            <span className="hidden sm:inline">Profile</span>
+          </button>
+        )}
 
         <button
           onClick={handleSignOut}
