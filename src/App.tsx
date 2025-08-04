@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw } from 'lucide-react';
 import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { calculateDailyStats, calculateHourlyStats, getWeeklyStats } from './utils/tradeUtils';
+import { calculateDailyStats, getWeeklyStats } from './utils/tradeUtils';
 import { ManualTradeEntry } from './components/ManualTradeEntry';
 import { Calendar } from './components/Calendar';
 import { Dashboard } from './components/Dashboard';
@@ -131,7 +131,6 @@ function AppContent() {
   }, [activeTrades, selectedDate]);
 
   const dailyStats = useMemo(() => calculateDailyStats(dailyTrades, selectedDate), [dailyTrades, selectedDate]);
-  const hourlyStats = useMemo(() => calculateHourlyStats(dailyTrades, selectedDate), [dailyTrades, selectedDate]);
   const weeklyStats = useMemo(() => getWeeklyStats(activeTrades, selectedDate), [activeTrades, selectedDate]);
 
   const handleTradeAdded = async (newTrade: Trade) => {
@@ -277,7 +276,7 @@ function AppContent() {
             <>
               <Dashboard dailyStats={dailyStats} selectedDate={selectedDate} />
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <TimeAnalysis hourlyStats={hourlyStats} selectedDate={selectedDate} />
+                <TimeAnalysis trades={activeTrades} selectedDate={selectedDate} />
                 <EquityCurve trades={activeTrades} selectedDate={selectedDate} />
               </div>
               <TradeTable trades={dailyTrades} onUpdateTrade={handleUpdateTrade} onExportTrades={handleExportTrades} onDeleteTrade={handleDeleteTrade} />
