@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw } from 'lucide-react';
+import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X } from 'lucide-react';
 import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { calculateDailyStats, getWeeklyStats } from './utils/tradeUtils';
@@ -27,6 +27,7 @@ function AppContent() {
   const [showProfile, setShowProfile] = useState(false);
   const [isLoadingCloudData, setIsLoadingCloudData] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useLocalStorage<string | null>('last-sync-time', null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const activeTrades = currentUser ? cloudTrades : localTrades;
 
@@ -211,71 +212,185 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center">
+            {/* Logo - Fixed width to prevent shrinking */}
+            <div className="flex items-center flex-shrink-0">
               <TrendingUp className="h-8 w-8 text-blue-600 mr-3" />
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">DayTradeTracker</h1>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white whitespace-nowrap">
+                <span className="hidden sm:inline">DayTradeTracker</span>
+                <span className="sm:hidden">DTT</span>
+              </h1>
             </div>
-            <div className="flex items-center space-x-4">
+
+            {/* Desktop Navigation - Hidden on mobile */}
+            <div className="hidden md:flex items-center space-x-4">
+              {/* View Toggle */}
               <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
                 <button
                   onClick={() => setActiveView('calendar')}
-                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${activeView === 'calendar'
-                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+                    activeView === 'calendar'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
                 >
                   <CalendarDays className="h-4 w-4 mr-1 inline" />
                   Calendar
                 </button>
                 <button
                   onClick={() => setActiveView('daily')}
-                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${activeView === 'daily'
-                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+                    activeView === 'daily'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
                 >
                   Daily
                 </button>
               </div>
+
+              {/* Date Picker - Only show on daily view */}
               {activeView === 'daily' && (
                 <input
                   type="date"
                   value={getDateInputValue(selectedDate)}
                   onChange={handleDateChange}
-                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 />
               )}
+
+              {/* Refresh Button */}
               {currentUser && (
                 <button
                   onClick={loadCloudTrades}
                   disabled={isLoadingCloudData}
                   className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md disabled:opacity-50"
+                  title="Refresh data"
                 >
                   <RefreshCw className={`h-5 w-5 ${isLoadingCloudData ? 'animate-spin' : ''}`} />
                 </button>
               )}
+
+              {/* Desktop Auth Component */}
               <AuthComponent onOpenProfile={() => setShowProfile(true)} />
+            </div>
+
+            {/* Right side controls */}
+            <div className="flex items-center space-x-2">
+              {/* Theme Toggle - Always visible */}
               <button
                 onClick={() => setDarkMode(!darkMode)}
                 className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md"
+                title="Toggle dark mode"
               >
                 {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </button>
+
+              {/* Mobile Menu Button */}
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="md:hidden p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md"
+                title="Toggle menu"
+              >
+                {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              </button>
             </div>
           </div>
+
+          {/* Mobile Menu - Only shown when menu is open */}
+          {mobileMenuOpen && (
+            <div className="md:hidden border-t border-gray-200 dark:border-gray-700 py-4 space-y-4">
+              {/* View Toggle for Mobile */}
+              <div className="px-2">
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2 uppercase tracking-wide">
+                  View
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => {
+                      setActiveView('calendar');
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      activeView === 'calendar'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    <CalendarDays className="h-4 w-4 mr-2" />
+                    Calendar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveView('daily');
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      activeView === 'daily'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    Daily
+                  </button>
+                </div>
+              </div>
+
+              {/* Date Picker for Daily View on Mobile */}
+              {activeView === 'daily' && (
+                <div className="px-2">
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2 uppercase tracking-wide">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={getDateInputValue(selectedDate)}
+                    onChange={handleDateChange}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              )}
+
+              {/* Refresh Button for Mobile */}
+              {currentUser && (
+                <div className="px-2">
+                  <button
+                    onClick={() => {
+                      loadCloudTrades();
+                      setMobileMenuOpen(false);
+                    }}
+                    disabled={isLoadingCloudData}
+                    className="w-full flex items-center justify-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isLoadingCloudData ? 'animate-spin' : ''}`} />
+                    Refresh Data
+                  </button>
+                </div>
+              )}
+
+              {/* Mobile Auth Component */}
+              <div className="px-2 border-t border-gray-200 dark:border-gray-700 pt-4">
+                <AuthComponent onOpenProfile={() => {
+                  setShowProfile(true);
+                  setMobileMenuOpen(false);
+                }} />
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="space-y-8">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
+        <div className="space-y-6 sm:space-y-8">
           <ManualTradeEntry onTradeAdded={handleTradeAdded} />
           {activeView === 'calendar' ? (
             <Calendar trades={activeTrades} selectedDate={selectedDate} onDateSelect={setSelectedDate} onMonthChange={setCurrentMonth} currentMonth={currentMonth} />
           ) : (
             <>
               <Dashboard dailyStats={dailyStats} selectedDate={selectedDate} />
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8">
                 <TimeAnalysis trades={activeTrades} selectedDate={selectedDate} />
                 <EquityCurve trades={activeTrades} selectedDate={selectedDate} />
               </div>
@@ -303,14 +418,6 @@ function AppContent() {
     </div>
   );
 }
-
-const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(amount);
-};
 
 function App() {
   return (
