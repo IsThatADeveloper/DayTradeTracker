@@ -15,7 +15,7 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
     exitPrice: '',
     quantity: '',
     direction: 'long' as 'long' | 'short',
-    timestamp: new Date().toISOString().slice(0, 16), // YYYY-MM-DDTHH:MM format
+    timestamp: new Date().toISOString().slice(0, 16),
     notes: '',
   });
 
@@ -31,7 +31,6 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
       return;
     }
 
-    // Calculate realized P&L
     let realizedPL: number;
     if (formData.direction === 'long') {
       realizedPL = (exitPrice - entryPrice) * quantity;
@@ -53,7 +52,6 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
 
     onTradeAdded(trade);
     
-    // Reset form
     setFormData({
       ticker: '',
       entryPrice: '',
@@ -73,12 +71,12 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
 
   if (!isOpen) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-3 sm:p-4">
         <button
           onClick={() => setIsOpen(true)}
-          className="w-full flex items-center justify-center px-6 py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-lg"
+          className="w-full flex items-center justify-center px-4 sm:px-6 py-3 sm:py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-base sm:text-lg"
         >
-          <Plus className="h-5 w-5 mr-2" />
+          <Plus className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
           Add New Trade
         </button>
       </div>
@@ -86,21 +84,22 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6">
+      <div className="flex items-center justify-between mb-4 sm:mb-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           Add New Trade
         </h3>
         <button
           onClick={() => setIsOpen(false)}
-          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1"
         >
           <X className="h-5 w-5" />
         </button>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Ticker and Direction Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Ticker Symbol *
@@ -110,7 +109,7 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
               value={formData.ticker}
               onChange={(e) => handleInputChange('ticker', e.target.value)}
               placeholder="e.g., AAPL"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
               required
             />
           </div>
@@ -119,11 +118,11 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Direction *
             </label>
-            <div className="flex space-x-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => handleInputChange('direction', 'long')}
-                className={`flex-1 flex items-center justify-center px-3 py-2 rounded-md border transition-colors ${
+                className={`flex items-center justify-center px-3 py-2 rounded-md border transition-colors text-sm font-medium ${
                   formData.direction === 'long'
                     ? 'bg-green-100 border-green-500 text-green-700 dark:bg-green-900/20 dark:border-green-400 dark:text-green-300'
                     : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
@@ -135,7 +134,7 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
               <button
                 type="button"
                 onClick={() => handleInputChange('direction', 'short')}
-                className={`flex-1 flex items-center justify-center px-3 py-2 rounded-md border transition-colors ${
+                className={`flex items-center justify-center px-3 py-2 rounded-md border transition-colors text-sm font-medium ${
                   formData.direction === 'short'
                     ? 'bg-red-100 border-red-500 text-red-700 dark:bg-red-900/20 dark:border-red-400 dark:text-red-300'
                     : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
@@ -148,7 +147,8 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Price and Quantity Row - Stack on mobile */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Entry Price *
@@ -161,7 +161,7 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
                 value={formData.entryPrice}
                 onChange={(e) => handleInputChange('entryPrice', e.target.value)}
                 placeholder="0.00"
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
                 required
               />
             </div>
@@ -179,7 +179,7 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
                 value={formData.exitPrice}
                 onChange={(e) => handleInputChange('exitPrice', e.target.value)}
                 placeholder="0.00"
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
                 required
               />
             </div>
@@ -194,12 +194,13 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
               value={formData.quantity}
               onChange={(e) => handleInputChange('quantity', e.target.value)}
               placeholder="100"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
               required
             />
           </div>
         </div>
 
+        {/* Trade Time */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Trade Time *
@@ -208,11 +209,12 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
             type="datetime-local"
             value={formData.timestamp}
             onChange={(e) => handleInputChange('timestamp', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
             required
           />
         </div>
 
+        {/* Notes */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Notes (Optional)
@@ -222,7 +224,7 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
             onChange={(e) => handleInputChange('notes', e.target.value)}
             placeholder="Add any notes about this trade..."
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-base"
           />
         </div>
 
@@ -247,7 +249,7 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
                     <span className="text-sm text-gray-600 dark:text-gray-400">
                       Realized P&L:
                     </span>
-                    <span className={`text-sm font-semibold ${
+                    <span className={`text-base sm:text-lg font-semibold ${
                       realizedPL >= 0 ? 'text-green-600' : 'text-red-600'
                     }`}>
                       {new Intl.NumberFormat('en-US', {
@@ -263,17 +265,18 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
           </div>
         )}
 
-        <div className="flex space-x-3 pt-4">
+        {/* Action Buttons */}
+        <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3 pt-4">
           <button
             type="button"
             onClick={() => setIsOpen(false)}
-            className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="w-full sm:flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium text-base"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+            className="w-full sm:flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium text-base"
           >
             Add Trade
           </button>
