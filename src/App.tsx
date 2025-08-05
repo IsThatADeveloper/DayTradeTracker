@@ -13,6 +13,7 @@ import { EquityCurve } from './components/EquityCurve';
 import { AuthComponent } from './components/AuthComponent';
 import { SyncModal } from './components/SyncModal';
 import { Profile } from './components/Profile';
+import { AIInsights } from './components/AIInsights';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
 
@@ -415,6 +416,10 @@ function AppContent() {
           ) : (
             <>
               <Dashboard dailyStats={dailyStats} selectedDate={selectedDate} />
+              
+              {/* AI Insights - New addition */}
+              <AIInsights trades={activeTrades} selectedDate={selectedDate} />
+              
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8">
                 <TimeAnalysis trades={activeTrades} selectedDate={selectedDate} />
                 <EquityCurve trades={activeTrades} selectedDate={selectedDate} />
