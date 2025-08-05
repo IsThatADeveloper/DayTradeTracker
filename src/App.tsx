@@ -15,11 +15,16 @@ import { SyncModal } from './components/SyncModal';
 import { Profile } from './components/Profile';
 import { AIInsights } from './components/AIInsights';
 import { StockSearch } from './components/StockSearch';
+import { HomePage } from './components/HomePage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
 
 function AppContent() {
   const { currentUser } = useAuth();
+  
+  // Add new state for showing/hiding homepage
+  const [showHomePage, setShowHomePage] = useState(false);
+  
   const [localTrades, setLocalTrades] = useLocalStorage<Trade[]>('day-trader-trades', []);
   const [cloudTrades, setCloudTrades] = useState<Trade[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -33,6 +38,15 @@ function AppContent() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const activeTrades = currentUser ? cloudTrades : localTrades;
+
+  // Show homepage if user is not logged in and has no local trades
+  useEffect(() => {
+    if (!currentUser && localTrades.length === 0) {
+      setShowHomePage(true);
+    } else {
+      setShowHomePage(false);
+    }
+  }, [currentUser, localTrades.length]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -231,6 +245,15 @@ function AppContent() {
     return `${year}-${month}-${day}`;
   };
 
+  const handleGetStarted = () => {
+    setShowHomePage(false);
+  };
+
+  // Show home page if conditions are met
+  if (showHomePage) {
+    return <HomePage onGetStarted={handleGetStarted} />;
+  }
+
   // Get the last trade for bulk import
   const lastTrade = activeTrades.length > 0 ? activeTrades[0] : undefined;
 
@@ -239,14 +262,17 @@ function AppContent() {
       <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            {/* Logo - Fixed width to prevent shrinking */}
-            <div className="flex items-center flex-shrink-0">
+            {/* Logo - Clickable */}
+            <button 
+              onClick={() => setShowHomePage(true)}
+              className="flex items-center flex-shrink-0 hover:opacity-80 transition-opacity"
+            >
               <TrendingUp className="h-8 w-8 text-blue-600 mr-3" />
               <h1 className="text-xl font-bold text-gray-900 dark:text-white whitespace-nowrap">
                 <span className="hidden sm:inline">DayTradeTracker</span>
                 <span className="sm:hidden">DTT</span>
               </h1>
-            </div>
+            </button>
 
             {/* Desktop Navigation - Hidden on mobile */}
             <div className="hidden md:flex items-center space-x-4">
@@ -458,10 +484,7 @@ function AppContent() {
           ) : (
             <>
               <Dashboard dailyStats={dailyStats} selectedDate={selectedDate} />
-              
-              {/* AI Insights - New addition */}
               <AIInsights trades={activeTrades} selectedDate={selectedDate} />
-              
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8">
                 <TimeAnalysis trades={activeTrades} selectedDate={selectedDate} />
                 <EquityCurve trades={activeTrades} selectedDate={selectedDate} />
