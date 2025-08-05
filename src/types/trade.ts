@@ -27,3 +27,4 @@ export interface HourlyStats {
   tradeCount: number;
   avgPL: number;
 }
+
