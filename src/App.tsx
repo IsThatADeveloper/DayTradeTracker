@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X } from 'lucide-react';
+import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search } from 'lucide-react';
 import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { calculateDailyStats, getWeeklyStats } from './utils/tradeUtils';
@@ -14,6 +14,7 @@ import { AuthComponent } from './components/AuthComponent';
 import { SyncModal } from './components/SyncModal';
 import { Profile } from './components/Profile';
 import { AIInsights } from './components/AIInsights';
+import { StockSearch } from './components/StockSearch';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
 
@@ -23,7 +24,7 @@ function AppContent() {
   const [cloudTrades, setCloudTrades] = useState<Trade[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [activeView, setActiveView] = useState<'calendar' | 'daily'>('daily');
+  const [activeView, setActiveView] = useState<'calendar' | 'daily' | 'search'>('daily');
   const [darkMode, setDarkMode] = useLocalStorage('day-trader-dark-mode', false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
@@ -272,6 +273,17 @@ function AppContent() {
                 >
                   Daily
                 </button>
+                <button
+                  onClick={() => setActiveView('search')}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+                    activeView === 'search'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Search className="h-4 w-4 mr-1 inline" />
+                  Search
+                </button>
               </div>
 
               {/* Date Picker - Only show on daily view */}
@@ -330,7 +342,7 @@ function AppContent() {
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2 uppercase tracking-wide">
                   View
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => {
                       setActiveView('calendar');
@@ -342,7 +354,7 @@ function AppContent() {
                         : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                     }`}
                   >
-                    <CalendarDays className="h-4 w-4 mr-2" />
+                    <CalendarDays className="h-4 w-4 mr-1" />
                     Calendar
                   </button>
                   <button
@@ -357,6 +369,20 @@ function AppContent() {
                     }`}
                   >
                     Daily
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveView('search');
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      activeView === 'search'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    <Search className="h-4 w-4 mr-1" />
+                    Search
                   </button>
                 </div>
               </div>
@@ -422,6 +448,12 @@ function AppContent() {
                 setSelectedDate(date);
                 setActiveView('daily');
               }}
+            />
+          ) : activeView === 'search' ? (
+            <StockSearch
+              trades={activeTrades}
+              onDateSelect={(date) => setSelectedDate(date)}
+              onViewChange={setActiveView}
             />
           ) : (
             <>
