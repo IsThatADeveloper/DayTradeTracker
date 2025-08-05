@@ -10,6 +10,7 @@ interface CalendarProps {
   onDateSelect: (date: Date) => void;
   onMonthChange: (date: Date) => void;
   currentMonth: Date;
+  onDateDoubleClick?: (date: Date) => void; // New prop for double-click handling
 }
 
 export const Calendar: React.FC<CalendarProps> = ({
@@ -18,6 +19,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   onDateSelect,
   onMonthChange,
   currentMonth,
+  onDateDoubleClick,
 }) => {
   const calendarData = getCalendarData(trades, currentMonth);
   const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -71,6 +73,18 @@ export const Calendar: React.FC<CalendarProps> = ({
     return className;
   };
 
+  // Handle day click with double-click detection
+  const handleDayClick = (day: typeof calendarData[0]) => {
+    onDateSelect(day.date);
+  };
+
+  // Handle day double-click
+  const handleDayDoubleClick = (day: typeof calendarData[0]) => {
+    if (onDateDoubleClick) {
+      onDateDoubleClick(day.date);
+    }
+  };
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6">
       {/* Header */}
@@ -97,6 +111,14 @@ export const Calendar: React.FC<CalendarProps> = ({
             <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-gray-600 dark:text-gray-400" />
           </button>
         </div>
+      </div>
+
+      {/* Instruction text */}
+      <div className="mb-4 text-center">
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          <span className="hidden sm:inline">Click to select, double-click to open daily view</span>
+          <span className="sm:hidden">Double-tap to open day</span>
+        </p>
       </div>
 
       {/* Calendar Grid */}
@@ -144,8 +166,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                 <div
                   key={dayIndex}
                   className={getDayClassName(day)}
-                  onClick={() => onDateSelect(day.date)}
-                  title={day.hasData ? `${format(day.date, 'MMM d')}: ${formatCurrency(day.totalPL)} (${day.tradeCount} trades)` : format(day.date, 'MMM d')}
+                  onClick={() => handleDayClick(day)}
+                  onDoubleClick={() => handleDayDoubleClick(day)}
+                  title={day.hasData ? `${format(day.date, 'MMM d')}: ${formatCurrency(day.totalPL)} (${day.tradeCount} trades)${onDateDoubleClick ? ' - Double-click to open' : ''}` : `${format(day.date, 'MMM d')}${onDateDoubleClick ? ' - Double-click to open' : ''}`}
                 >
                   <div className="text-center leading-none">
                     <div className="font-medium">{format(day.date, 'd')}</div>

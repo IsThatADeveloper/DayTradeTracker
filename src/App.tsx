@@ -412,7 +412,17 @@ function AppContent() {
             <BulkTradeImport onTradesAdded={handleTradesAdded} lastTrade={lastTrade} />
           </div>
           {activeView === 'calendar' ? (
-            <Calendar trades={activeTrades} selectedDate={selectedDate} onDateSelect={setSelectedDate} onMonthChange={setCurrentMonth} currentMonth={currentMonth} />
+            <Calendar 
+              trades={activeTrades} 
+              selectedDate={selectedDate} 
+              onDateSelect={setSelectedDate} 
+              onMonthChange={setCurrentMonth} 
+              currentMonth={currentMonth}
+              onDateDoubleClick={(date) => {
+                setSelectedDate(date);
+                setActiveView('daily');
+              }}
+            />
           ) : (
             <>
               <Dashboard dailyStats={dailyStats} selectedDate={selectedDate} />
