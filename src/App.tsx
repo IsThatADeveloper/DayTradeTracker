@@ -22,8 +22,8 @@ import { tradeService } from './services/tradeService';
 function AppContent() {
   const { currentUser } = useAuth();
   
-  // Add new state for showing/hiding homepage
-  const [showHomePage, setShowHomePage] = useState(false);
+  // Change: Show homepage by default, only hide it when user explicitly enters the app
+  const [showHomePage, setShowHomePage] = useState(true);
   
   const [localTrades, setLocalTrades] = useLocalStorage<Trade[]>('day-trader-trades', []);
   const [cloudTrades, setCloudTrades] = useState<Trade[]>([]);
@@ -38,15 +38,6 @@ function AppContent() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const activeTrades = currentUser ? cloudTrades : localTrades;
-
-  // Show homepage if user is not logged in and has no local trades
-  useEffect(() => {
-    if (!currentUser && localTrades.length === 0) {
-      setShowHomePage(true);
-    } else {
-      setShowHomePage(false);
-    }
-  }, [currentUser, localTrades.length]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -249,7 +240,7 @@ function AppContent() {
     setShowHomePage(false);
   };
 
-  // Show home page if conditions are met
+  // Show homepage by default - user must explicitly choose to enter the app
   if (showHomePage) {
     return <HomePage onGetStarted={handleGetStarted} />;
   }
