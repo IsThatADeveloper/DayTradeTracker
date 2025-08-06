@@ -22,8 +22,8 @@ import { tradeService } from './services/tradeService';
 function AppContent() {
   const { currentUser } = useAuth();
   
-  // Change: Show homepage by default, only hide it when user explicitly enters the app
-  const [showHomePage, setShowHomePage] = useState(true);
+  // Show homepage by default for new visitors, but remember if they've entered the app
+  const [showHomePage, setShowHomePage] = useLocalStorage('show-homepage', true);
   
   const [localTrades, setLocalTrades] = useLocalStorage<Trade[]>('day-trader-trades', []);
   const [cloudTrades, setCloudTrades] = useState<Trade[]>([]);
@@ -260,8 +260,7 @@ function AppContent() {
             >
               <TrendingUp className="h-8 w-8 text-blue-600 mr-3" />
               <h1 className="text-xl font-bold text-gray-900 dark:text-white whitespace-nowrap">
-                <span className="hidden sm:inline">DayTradeTracker</span>
-                <span className="sm:hidden">DTT</span>
+                DayTradeTracker
               </h1>
             </button>
 
