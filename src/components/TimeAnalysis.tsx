@@ -52,7 +52,7 @@ interface TimeRangeOption {
 }
 
 const timeRangeOptions: TimeRangeOption[] = [
-  { value: 'daily', label: 'Daily (Hours)', description: 'Trading hours performance for selected day' },
+  { value: 'daily', label: 'Daily (Hours)', description: 'Trading hours performance for selected day (4 AM - 8 PM)' },
   { value: 'weekly', label: 'Weekly (Days)', description: 'Days of week performance (past 12 weeks)' },
   { value: 'monthly', label: 'Monthly (Days)', description: 'Days of month performance (past 12 months)' },
   { value: 'biannual', label: 'Biannual (Months)', description: 'Monthly performance (past 2 years)' },
@@ -87,7 +87,7 @@ export const TimeAnalysis: React.FC<TimeAnalysisProps> = ({ trades, selectedDate
 
     switch (timeRange) {
       case 'daily': {
-        // Hourly analysis for the selected day
+        // Hourly analysis for the selected day - Extended to 4 AM - 8 PM
         const startOfDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
         const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
         
@@ -95,17 +95,17 @@ export const TimeAnalysis: React.FC<TimeAnalysisProps> = ({ trades, selectedDate
           trade.timestamp >= startOfDay && trade.timestamp < endOfDay
         );
 
-        // Create hourly buckets (9 AM to 4 PM - market hours)
+        // Create hourly buckets (4 AM to 8 PM - extended trading hours)
         const hourlyData: { [hour: number]: { pl: number; count: number } } = {};
         
-        // Initialize trading hours
-        for (let hour = 9; hour <= 16; hour++) {
+        // Initialize trading hours from 4 AM to 8 PM
+        for (let hour = 4; hour <= 20; hour++) {
           hourlyData[hour] = { pl: 0, count: 0 };
         }
 
         dayTrades.forEach(trade => {
           const hour = trade.timestamp.getHours();
-          if (hour >= 9 && hour <= 16) {
+          if (hour >= 4 && hour <= 20) {
             hourlyData[hour].pl += trade.realizedPL;
             hourlyData[hour].count += 1;
           }
@@ -113,10 +113,13 @@ export const TimeAnalysis: React.FC<TimeAnalysisProps> = ({ trades, selectedDate
 
         labels = Object.keys(hourlyData).map(hour => {
           const h = parseInt(hour);
-          if (h === 9) return '9:30 AM';
-          if (h === 16) return '4:00 PM';
-          if (h > 12) return `${h - 12}:00 PM`;
-          return `${h}:00 AM`;
+          if (h === 4) return '4:00 AM';
+          if (h === 9) return '9:30 AM'; // Market open
+          if (h === 16) return '4:00 PM'; // Market close
+          if (h === 20) return '8:00 PM';
+          if (h < 12) return `${h}:00 AM`;
+          if (h === 12) return '12:00 PM';
+          return `${h - 12}:00 PM`;
         });
 
         data = Object.values(hourlyData).map(d => d.pl);
@@ -281,7 +284,7 @@ export const TimeAnalysis: React.FC<TimeAnalysisProps> = ({ trades, selectedDate
           color: 'rgba(156, 163, 175, 0.1)',
         },
         ticks: {
-          maxTicksLimit: timeRange === 'daily' ? 8 : 12,
+          maxTicksLimit: timeRange === 'daily' ? 12 : 12, // Increased for more hours
           color: 'rgba(156, 163, 175, 0.8)',
         },
       },

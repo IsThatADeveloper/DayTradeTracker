@@ -1,10 +1,13 @@
+// Updated src/App.tsx with broker integration
 import React, { useState, useMemo, useEffect } from 'react';
-import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search } from 'lucide-react';
+import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Settings } from 'lucide-react';
 import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { useBrokerIntegration } from './hooks/useBrokerIntegration';
 import { calculateDailyStats, getWeeklyStats } from './utils/tradeUtils';
 import { ManualTradeEntry } from './components/ManualTradeEntry';
 import { BulkTradeImport } from './components/BulkTradeImport';
+import { BrokerSetup } from './components/BrokerSetup';
 import { Calendar } from './components/Calendar';
 import { Dashboard } from './components/Dashboard';
 import { TimeAnalysis } from './components/TimeAnalysis';
@@ -21,6 +24,15 @@ import { tradeService } from './services/tradeService';
 
 function AppContent() {
   const { currentUser } = useAuth();
+  const {
+    connections: brokerConnections,
+    syncAllTrades,
+    isAnySyncing,
+    getTotalBrokerTrades,
+    autoSyncEnabled,
+    enableAutoSync,
+    disableAutoSync
+  } = useBrokerIntegration();
   
   // Show homepage by default for new visitors, but remember if they've entered the app
   const [showHomePage, setShowHomePage] = useLocalStorage('show-homepage', true);
@@ -29,7 +41,7 @@ function AppContent() {
   const [cloudTrades, setCloudTrades] = useState<Trade[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [activeView, setActiveView] = useState<'calendar' | 'daily' | 'search'>('daily');
+  const [activeView, setActiveView] = useState<'calendar' | 'daily' | 'search' | 'brokers'>('daily');
   const [darkMode, setDarkMode] = useLocalStorage('day-trader-dark-mode', false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
@@ -38,6 +50,7 @@ function AppContent() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const activeTrades = currentUser ? cloudTrades : localTrades;
+  const totalBrokerTrades = getTotalBrokerTrades();
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -57,6 +70,13 @@ function AppContent() {
       setShowSyncModal(true);
     }
   }, [currentUser, localTrades.length, cloudTrades.length, isLoadingCloudData, lastSyncTime]);
+
+  // Auto-enable broker sync if user has connections
+  useEffect(() => {
+    if (currentUser && brokerConnections.length > 0 && !autoSyncEnabled) {
+      enableAutoSync(30); // Auto-sync every 30 minutes
+    }
+  }, [currentUser, brokerConnections.length, autoSyncEnabled, enableAutoSync]);
 
   const loadCloudTrades = async () => {
     if (!currentUser) return;
@@ -240,6 +260,28 @@ function AppContent() {
     setShowHomePage(false);
   };
 
+  const handleBrokerTradesImported = async (count: number) => {
+    // Refresh trades after broker import
+    await loadCloudTrades();
+  };
+
+  const handleSyncAllBrokers = async () => {
+    try {
+      const results = await syncAllTrades();
+      const totalImported = results.reduce((sum, result) => 
+        sum + (result.result?.tradesImported || 0), 0);
+      
+      if (totalImported > 0) {
+        await loadCloudTrades();
+        alert(`Successfully synced ${totalImported} new trades from all brokers!`);
+      } else {
+        alert('All brokers are up to date - no new trades found.');
+      }
+    } catch (error: any) {
+      alert(`Broker sync failed: ${error.message}`);
+    }
+  };
+
   // Show homepage by default - user must explicitly choose to enter the app
   if (showHomePage) {
     return <HomePage onGetStarted={handleGetStarted} />;
@@ -300,6 +342,22 @@ function AppContent() {
                   <Search className="h-4 w-4 mr-1 inline" />
                   Search
                 </button>
+                <button
+                  onClick={() => setActiveView('brokers')}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors whitespace-nowrap relative ${
+                    activeView === 'brokers'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Link className="h-4 w-4 mr-1 inline" />
+                  Brokers
+                  {brokerConnections.length > 0 && (
+                    <span className="absolute -top-1 -right-1 h-3 w-3 bg-green-500 rounded-full text-xs flex items-center justify-center text-white">
+                      {brokerConnections.length}
+                    </span>
+                  )}
+                </button>
               </div>
 
               {/* Date Picker - Only show on daily view */}
@@ -310,6 +368,23 @@ function AppContent() {
                   onChange={handleDateChange}
                   className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 />
+              )}
+
+              {/* Broker Sync Button */}
+              {currentUser && brokerConnections.length > 0 && (
+                <button
+                  onClick={handleSyncAllBrokers}
+                  disabled={isAnySyncing()}
+                  className="p-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md disabled:opacity-50 relative"
+                  title="Sync all brokers"
+                >
+                  <RefreshCw className={`h-5 w-5 ${isAnySyncing() ? 'animate-spin' : ''}`} />
+                  {totalBrokerTrades > 0 && (
+                    <span className="absolute -top-1 -right-1 h-4 w-4 bg-blue-500 rounded-full text-xs flex items-center justify-center text-white">
+                      {totalBrokerTrades > 99 ? '99+' : totalBrokerTrades}
+                    </span>
+                  )}
+                </button>
               )}
 
               {/* Refresh Button */}
@@ -358,7 +433,7 @@ function AppContent() {
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2 uppercase tracking-wide">
                   View
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => {
                       setActiveView('calendar');
@@ -400,6 +475,25 @@ function AppContent() {
                     <Search className="h-4 w-4 mr-1" />
                     Search
                   </button>
+                  <button
+                    onClick={() => {
+                      setActiveView('brokers');
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-center px-3 py-2 rounded-md text-sm font-medium transition-colors relative ${
+                      activeView === 'brokers'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    <Link className="h-4 w-4 mr-1" />
+                    Brokers
+                    {brokerConnections.length > 0 && (
+                      <span className="absolute -top-1 -right-1 h-3 w-3 bg-green-500 rounded-full text-xs flex items-center justify-center text-white">
+                        {brokerConnections.length}
+                      </span>
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -415,6 +509,23 @@ function AppContent() {
                     onChange={handleDateChange}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
+                </div>
+              )}
+
+              {/* Broker Sync Button for Mobile */}
+              {currentUser && brokerConnections.length > 0 && (
+                <div className="px-2">
+                  <button
+                    onClick={() => {
+                      handleSyncAllBrokers();
+                      setMobileMenuOpen(false);
+                    }}
+                    disabled={isAnySyncing()}
+                    className="w-full flex items-center justify-center px-4 py-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/30 disabled:opacity-50 transition-colors"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isAnySyncing() ? 'animate-spin' : ''}`} />
+                    Sync All Brokers {totalBrokerTrades > 0 && `(${totalBrokerTrades})`}
+                  </button>
                 </div>
               )}
 
@@ -449,10 +560,39 @@ function AppContent() {
 
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
         <div className="space-y-6 sm:space-y-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <ManualTradeEntry onTradeAdded={handleTradeAdded} />
-            <BulkTradeImport onTradesAdded={handleTradesAdded} lastTrade={lastTrade} />
-          </div>
+          {/* Show broker setup and add manual/bulk trade forms only on non-broker views */}
+          {activeView !== 'brokers' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <ManualTradeEntry onTradeAdded={handleTradeAdded} />
+              <BulkTradeImport onTradesAdded={handleTradesAdded} lastTrade={lastTrade} />
+            </div>
+          )}
+          
+          {/* Broker Setup - Show notification on other views if user has no connections */}
+          {activeView !== 'brokers' && currentUser && brokerConnections.length === 0 && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <Link className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                  <div>
+                    <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                      Connect Your Broker
+                    </h4>
+                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                      Automatically import trades from Alpaca, Interactive Brokers, Binance, and more
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveView('brokers')}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Connect Now
+                </button>
+              </div>
+            </div>
+          )}
+
           {activeView === 'calendar' ? (
             <Calendar 
               trades={activeTrades} 
@@ -471,6 +611,8 @@ function AppContent() {
               onDateSelect={(date) => setSelectedDate(date)}
               onViewChange={setActiveView}
             />
+          ) : activeView === 'brokers' ? (
+            <BrokerSetup onTradesImported={handleBrokerTradesImported} />
           ) : (
             <>
               <Dashboard dailyStats={dailyStats} selectedDate={selectedDate} />
@@ -479,7 +621,12 @@ function AppContent() {
                 <TimeAnalysis trades={activeTrades} selectedDate={selectedDate} />
                 <EquityCurve trades={activeTrades} selectedDate={selectedDate} />
               </div>
-              <TradeTable trades={dailyTrades} onUpdateTrade={handleUpdateTrade} onExportTrades={handleExportTrades} onDeleteTrade={handleDeleteTrade} />
+              <TradeTable 
+                trades={dailyTrades} 
+                onUpdateTrade={handleUpdateTrade} 
+                onExportTrades={handleExportTrades} 
+                onDeleteTrade={handleDeleteTrade} 
+              />
             </>
           )}
         </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Calendar, Clock, Mail, Shield, TrendingUp, Target, DollarSign, X } from 'lucide-react';
+import { User, Calendar, Clock, Mail, Shield, TrendingUp, Target, DollarSign, X, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Trade } from '../types/trade';
 import { formatCurrency } from '../utils/tradeUtils';
@@ -12,9 +12,10 @@ interface ProfileProps {
 }
 
 export const Profile: React.FC<ProfileProps> = ({ isOpen, onClose, trades }) => {
-  const { currentUser } = useAuth();
+  const { currentUser, signOut } = useAuth();
   const [accountAge, setAccountAge] = useState<string>('');
   const [accountAgeDays, setAccountAgeDays] = useState<number>(0);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
     if (currentUser?.metadata?.creationTime) {
@@ -25,6 +26,21 @@ export const Profile: React.FC<ProfileProps> = ({ isOpen, onClose, trades }) => 
       setAccountAgeDays(days);
     }
   }, [currentUser]);
+
+  const handleSignOut = async () => {
+    if (window.confirm('Are you sure you want to sign out?')) {
+      setIsLoggingOut(true);
+      try {
+        await signOut();
+        onClose(); // Close the profile modal after signing out
+      } catch (error) {
+        console.error('Error signing out:', error);
+        alert('Failed to sign out. Please try again.');
+      } finally {
+        setIsLoggingOut(false);
+      }
+    }
+  };
 
   if (!isOpen || !currentUser) return null;
 
@@ -240,7 +256,7 @@ export const Profile: React.FC<ProfileProps> = ({ isOpen, onClose, trades }) => 
           </div>
 
           {/* Account Security */}
-          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-6">
             <h5 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center">
               <Shield className="h-4 w-4 mr-2 text-blue-600" />
               Account Security
@@ -259,13 +275,21 @@ export const Profile: React.FC<ProfileProps> = ({ isOpen, onClose, trades }) => 
             </div>
           </div>
 
-          {/* Close Button */}
-          <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+          {/* Action Buttons */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <button
               onClick={onClose}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
             >
               Close Profile
+            </button>
+            <button
+              onClick={handleSignOut}
+              disabled={isLoggingOut}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              {isLoggingOut ? 'Signing Out...' : 'Sign Out'}
             </button>
           </div>
         </div>

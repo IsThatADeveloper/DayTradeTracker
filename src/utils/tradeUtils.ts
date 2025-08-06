@@ -55,15 +55,15 @@ export const calculateHourlyStats = (trades: Trade[], date: Date): HourlyStats[]
   
   const hourlyData: { [hour: number]: { pl: number; count: number } } = {};
   
-  // Initialize trading hours (9:30 AM to 4:00 PM)
-  for (let hour = 9; hour <= 16; hour++) {
+  // Initialize extended trading hours (4:00 AM to 8:00 PM)
+  for (let hour = 4; hour <= 20; hour++) {
     hourlyData[hour] = { pl: 0, count: 0 };
   }
   
   dayTrades.forEach(trade => {
     const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
     const hour = tradeDate.getHours();
-    if (hour >= 9 && hour <= 16) {
+    if (hour >= 4 && hour <= 20) {
       hourlyData[hour].pl += trade.realizedPL;
       hourlyData[hour].count += 1;
     }
@@ -135,8 +135,12 @@ export const formatCurrency = (amount: number): string => {
 };
 
 export const formatTime = (hour: number): string => {
-  if (hour === 9) return '9:30 AM';
-  if (hour === 16) return '4:00 PM';
-  if (hour > 12) return `${hour - 12}:00 PM`;
-  return `${hour}:00 AM`;
+  // Extended trading hours formatting
+  if (hour === 4) return '4:00 AM';
+  if (hour === 9) return '9:30 AM'; // Market open
+  if (hour === 16) return '4:00 PM'; // Market close
+  if (hour === 20) return '8:00 PM';
+  if (hour < 12) return `${hour}:00 AM`;
+  if (hour === 12) return '12:00 PM';
+  return `${hour - 12}:00 PM`;
 };
