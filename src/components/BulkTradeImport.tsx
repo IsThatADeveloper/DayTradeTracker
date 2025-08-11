@@ -243,19 +243,19 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({ onTradesAdded,
         </button>
       </div>
 
-      {/* Import Method Selection */}
+      {/* Import Method Selection - FIXED ALIGNMENT */}
       <div className="mb-6">
         <div className="flex flex-wrap gap-3">
           <button
             onClick={() => setImportMethod('duplicate')}
-            className={`flex items-center px-4 py-3 rounded-xl text-sm font-medium transition-all transform hover:scale-105 ${
+            className={`flex items-center justify-center px-4 py-3 rounded-xl text-sm font-medium transition-all transform hover:scale-105 min-w-[130px] ${
               importMethod === 'duplicate'
                 ? 'bg-blue-100 text-blue-700 border-2 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-600 shadow-md'
                 : 'bg-gray-50 text-gray-700 border-2 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
             }`}
           >
-            <Copy className="h-4 w-4 mr-2" />
-            Duplicate Last
+            <Copy className="h-4 w-4 mr-2 flex-shrink-0" />
+            <span>Duplicate Last</span>
           </button>
           
           <button
@@ -263,26 +263,26 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({ onTradesAdded,
               setImportMethod('bulk-manual');
               if (bulkTrades.length === 0) initializeBulkTrades(3);
             }}
-            className={`flex items-center px-4 py-3 rounded-xl text-sm font-medium transition-all transform hover:scale-105 ${
+            className={`flex items-center justify-center px-4 py-3 rounded-xl text-sm font-medium transition-all transform hover:scale-105 min-w-[120px] ${
               importMethod === 'bulk-manual'
                 ? 'bg-blue-100 text-blue-700 border-2 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-600 shadow-md'
                 : 'bg-gray-50 text-gray-700 border-2 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
             }`}
           >
-            <Plus className="h-4 w-4 mr-2" />
-            Quick Entry
+            <Plus className="h-4 w-4 mr-2 flex-shrink-0" />
+            <span>Quick Entry</span>
           </button>
           
           <button
             onClick={() => setImportMethod('csv')}
-            className={`flex items-center px-4 py-3 rounded-xl text-sm font-medium transition-all transform hover:scale-105 ${
+            className={`flex items-center justify-center px-4 py-3 rounded-xl text-sm font-medium transition-all transform hover:scale-105 min-w-[120px] ${
               importMethod === 'csv'
                 ? 'bg-blue-100 text-blue-700 border-2 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-600 shadow-md'
                 : 'bg-gray-50 text-gray-700 border-2 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
             }`}
           >
-            <FileText className="h-4 w-4 mr-2" />
-            CSV Import
+            <FileText className="h-4 w-4 mr-2 flex-shrink-0" />
+            <span>CSV Import</span>
           </button>
         </div>
       </div>
