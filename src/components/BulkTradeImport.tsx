@@ -399,7 +399,7 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({ onTradesAdded,
         </div>
       )}
 
-      {/* Bulk Manual Entry */}
+      {/* Bulk Manual Entry - FIXED VERSION */}
       {importMethod === 'bulk-manual' && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
@@ -415,133 +415,147 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({ onTradesAdded,
             </button>
           </div>
           
-          {/* Trade Entry Cards */}
-          <div className="space-y-4 max-h-96 overflow-y-auto">
-            {bulkTrades.map((trade, index) => (
-              <div key={index} className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-800 rounded-xl p-4 border-2 border-gray-200 dark:border-gray-600">
-                <div className="flex items-center justify-between mb-4">
-                  <h5 className="font-semibold text-gray-900 dark:text-white">Trade #{index + 1}</h5>
-                  <button
-                    onClick={() => removeBulkTradeRow(index)}
-                    className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+          {/* FIXED: Improved scrollable container with proper styling */}
+          <div className="relative">
+            {/* Fixed height container with stable scrolling */}
+            <div className="h-[500px] overflow-y-auto overscroll-contain border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-900/50">
+              <div className="p-4 space-y-4">
+                {bulkTrades.map((trade, index) => (
+                  <div 
+                    key={index} 
+                    className="bg-white dark:bg-gray-800 rounded-xl p-4 border-2 border-gray-200 dark:border-gray-600 shadow-sm"
+                    style={{
+                      // Ensure each trade card has consistent spacing and doesn't shift during scroll
+                      minHeight: 'fit-content',
+                      position: 'relative'
+                    }}
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                      TICKER
-                    </label>
-                    <input
-                      type="text"
-                      value={trade.ticker || ''}
-                      onChange={(e) => updateBulkTrade(index, 'ticker', e.target.value)}
-                      className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold"
-                      placeholder="AAPL"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                      DIRECTION
-                    </label>
-                    <select
-                      value={trade.direction || 'long'}
-                      onChange={(e) => updateBulkTrade(index, 'direction', e.target.value)}
-                      className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold"
-                    >
-                      <option value="long">Long</option>
-                      <option value="short">Short</option>
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                      QUANTITY
-                    </label>
-                    <input
-                      type="number"
-                      value={trade.quantity || ''}
-                      onChange={(e) => updateBulkTrade(index, 'quantity', parseInt(e.target.value) || undefined)}
-                      className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold"
-                      placeholder="100"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                      ENTRY PRICE
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={trade.entryPrice || ''}
-                      onChange={(e) => updateBulkTrade(index, 'entryPrice', parseFloat(e.target.value) || undefined)}
-                      className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold"
-                      placeholder="150.00"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                      EXIT PRICE
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={trade.exitPrice || ''}
-                      onChange={(e) => updateBulkTrade(index, 'exitPrice', parseFloat(e.target.value) || undefined)}
-                      className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold"
-                      placeholder="155.00"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                      TRADE TIME
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={trade.timestamp ? new Date(trade.timestamp.getTime() - trade.timestamp.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
-                      onChange={(e) => updateBulkTrade(index, 'timestamp', new Date(e.target.value))}
-                      className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold text-sm"
-                    />
-                  </div>
-                </div>
-                
-                {/* P&L Preview for each trade */}
-                {trade.entryPrice && trade.exitPrice && trade.quantity && (
-                  <div className="mt-4 p-3 bg-white dark:bg-gray-800 rounded-lg border-2 border-gray-200 dark:border-gray-600">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-semibold text-gray-600 dark:text-gray-400">
-                        Estimated P&L:
-                      </span>
-                      <span className={`text-lg font-bold ${
-                        calculatePL(trade) >= 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {formatCurrency(calculatePL(trade))}
-                      </span>
+                    <div className="flex items-center justify-between mb-4">
+                      <h5 className="font-semibold text-gray-900 dark:text-white">Trade #{index + 1}</h5>
+                      <button
+                        onClick={() => removeBulkTradeRow(index)}
+                        className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    
+                    {/* FIXED: Using CSS Grid with explicit column sizing for stability */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      <div className="flex flex-col">
+                        <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                          TICKER
+                        </label>
+                        <input
+                          type="text"
+                          value={trade.ticker || ''}
+                          onChange={(e) => updateBulkTrade(index, 'ticker', e.target.value)}
+                          className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold"
+                          placeholder="AAPL"
+                        />
+                      </div>
+                      
+                      <div className="flex flex-col">
+                        <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                          DIRECTION
+                        </label>
+                        <select
+                          value={trade.direction || 'long'}
+                          onChange={(e) => updateBulkTrade(index, 'direction', e.target.value)}
+                          className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold"
+                        >
+                          <option value="long">Long</option>
+                          <option value="short">Short</option>
+                        </select>
+                      </div>
+                      
+                      <div className="flex flex-col">
+                        <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                          QUANTITY
+                        </label>
+                        <input
+                          type="number"
+                          value={trade.quantity || ''}
+                          onChange={(e) => updateBulkTrade(index, 'quantity', parseInt(e.target.value) || undefined)}
+                          className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold"
+                          placeholder="100"
+                        />
+                      </div>
+                      
+                      <div className="flex flex-col">
+                        <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                          ENTRY PRICE
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={trade.entryPrice || ''}
+                          onChange={(e) => updateBulkTrade(index, 'entryPrice', parseFloat(e.target.value) || undefined)}
+                          className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold"
+                          placeholder="150.00"
+                        />
+                      </div>
+                      
+                      <div className="flex flex-col">
+                        <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                          EXIT PRICE
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={trade.exitPrice || ''}
+                          onChange={(e) => updateBulkTrade(index, 'exitPrice', parseFloat(e.target.value) || undefined)}
+                          className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold"
+                          placeholder="155.00"
+                        />
+                      </div>
+                      
+                      <div className="flex flex-col">
+                        <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                          TRADE TIME
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={trade.timestamp ? new Date(trade.timestamp.getTime() - trade.timestamp.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
+                          onChange={(e) => updateBulkTrade(index, 'timestamp', new Date(e.target.value))}
+                          className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold text-sm"
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* P&L Preview for each trade */}
+                    {trade.entryPrice && trade.exitPrice && trade.quantity && (
+                      <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold text-gray-600 dark:text-gray-400">
+                            Estimated P&L:
+                          </span>
+                          <span className={`text-lg font-bold ${
+                            calculatePL(trade) >= 0 ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            {formatCurrency(calculatePL(trade))}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Notes */}
+                    <div className="mt-4">
+                      <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                        NOTES (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={trade.notes || ''}
+                        onChange={(e) => updateBulkTrade(index, 'notes', e.target.value)}
+                        className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Add trade notes..."
+                      />
                     </div>
                   </div>
-                )}
-                
-                {/* Notes */}
-                <div className="mt-4">
-                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                    NOTES (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={trade.notes || ''}
-                    onChange={(e) => updateBulkTrade(index, 'notes', e.target.value)}
-                    className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Add trade notes..."
-                  />
-                </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
           
           {/* Summary and Add Button */}
