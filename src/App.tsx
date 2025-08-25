@@ -1,6 +1,6 @@
-// Updated src/App.tsx with broker integration
+// Updated src/App.tsx with stock news integration
 import React, { useState, useMemo, useEffect } from 'react';
-import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Settings } from 'lucide-react';
+import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Settings, Globe } from 'lucide-react';
 import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useBrokerIntegration } from './hooks/useBrokerIntegration';
@@ -18,6 +18,7 @@ import { SyncModal } from './components/SyncModal';
 import { Profile } from './components/Profile';
 import { AIInsights } from './components/AIInsights';
 import { StockSearch } from './components/StockSearch';
+import { StockNews } from './components/StockNews';
 import { HomePage } from './components/HomePage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
@@ -41,7 +42,7 @@ function AppContent() {
   const [cloudTrades, setCloudTrades] = useState<Trade[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [activeView, setActiveView] = useState<'calendar' | 'daily' | 'search' | 'brokers'>('daily');
+  const [activeView, setActiveView] = useState<'calendar' | 'daily' | 'search' | 'brokers' | 'news'>('daily');
   const [darkMode, setDarkMode] = useLocalStorage('day-trader-dark-mode', false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
@@ -358,6 +359,17 @@ function AppContent() {
                     </span>
                   )}
                 </button>
+                <button
+                  onClick={() => setActiveView('news')}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+                    activeView === 'news'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Globe className="h-4 w-4 mr-1 inline" />
+                  News
+                </button>
               </div>
 
               {/* Date Picker - Only show on daily view */}
@@ -494,6 +506,20 @@ function AppContent() {
                       </span>
                     )}
                   </button>
+                  <button
+                    onClick={() => {
+                      setActiveView('news');
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-center px-3 py-2 rounded-md text-sm font-medium transition-colors col-span-1 ${
+                      activeView === 'news'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    <Globe className="h-4 w-4 mr-1" />
+                    News
+                  </button>
                 </div>
               </div>
 
@@ -560,8 +586,8 @@ function AppContent() {
 
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
         <div className="space-y-6 sm:space-y-8">
-          {/* Show broker setup and add manual/bulk trade forms only on non-broker views */}
-          {activeView !== 'brokers' && (
+          {/* Show broker setup and add manual/bulk trade forms only on non-broker and non-news views */}
+          {activeView !== 'brokers' && activeView !== 'news' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <ManualTradeEntry onTradeAdded={handleTradeAdded} />
               <BulkTradeImport onTradesAdded={handleTradesAdded} lastTrade={lastTrade} />
@@ -569,7 +595,7 @@ function AppContent() {
           )}
           
           {/* Broker Setup - Show notification on other views if user has no connections */}
-          {activeView !== 'brokers' && currentUser && brokerConnections.length === 0 && (
+          {activeView !== 'brokers' && activeView !== 'news' && currentUser && brokerConnections.length === 0 && (
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
@@ -613,6 +639,8 @@ function AppContent() {
             />
           ) : activeView === 'brokers' ? (
             <BrokerSetup onTradesImported={handleBrokerTradesImported} />
+          ) : activeView === 'news' ? (
+            <StockNews trades={activeTrades} />
           ) : (
             <>
               <Dashboard dailyStats={dailyStats} selectedDate={selectedDate} />
