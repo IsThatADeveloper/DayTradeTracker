@@ -7,7 +7,9 @@ export interface Trade {
   timestamp: Date;
   direction: 'long' | 'short';
   realizedPL: number;
-  notes?: string;
+  notes?: string | null; // Allow both undefined and null for Firestore compatibility
+  updateCount?: number; // Track how many times this trade has been updated
+  lastUpdated?: Date; // Track when it was last updated
 }
 
 export interface DailyStats {
@@ -28,3 +30,13 @@ export interface HourlyStats {
   avgPL: number;
 }
 
+// Helper type for creating new trades (ensures proper types)
+export interface NewTrade extends Omit<Trade, 'id' | 'updateCount' | 'lastUpdated'> {
+  notes?: string; // For new trades, keep it simple as string | undefined
+}
+
+// Helper type for trade updates (allows partial updates)
+export interface TradeUpdate extends Partial<Omit<Trade, 'id' | 'timestamp'>> {
+  timestamp?: Date;
+  notes?: string | null; // Allow null for clearing notes
+}

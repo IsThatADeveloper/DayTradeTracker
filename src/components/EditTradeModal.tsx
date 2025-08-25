@@ -27,18 +27,41 @@ export const EditTradeModal: React.FC<EditTradeModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Helper function to convert Date to local datetime-local string
+  const dateToLocalISOString = (date: Date): string => {
+    // Get timezone offset in minutes and convert to milliseconds
+    const timezoneOffset = date.getTimezoneOffset() * 60000;
+    // Create new date adjusted for timezone
+    const localDate = new Date(date.getTime() - timezoneOffset);
+    // Return ISO string without 'Z' and seconds
+    return localDate.toISOString().slice(0, 16);
+  };
+
+  // Helper function to convert datetime-local string to Date (preserving local time)
+  const localISOStringToDate = (isoString: string): Date => {
+    // datetime-local input gives us a string like "2024-01-25T14:30"
+    // We want to treat this as local time, not UTC
+    return new Date(isoString);
+  };
+
   // Update form data when trade changes
   useEffect(() => {
     if (trade) {
+      console.log('🔧 EditModal: Loading trade data:', {
+        id: trade.id,
+        ticker: trade.ticker,
+        originalTimestamp: trade.timestamp,
+        updateCount: trade.updateCount
+      });
+
       setFormData({
         ticker: trade.ticker,
         entryPrice: trade.entryPrice.toString(),
         exitPrice: trade.exitPrice.toString(),
         quantity: trade.quantity.toString(),
         direction: trade.direction,
-        timestamp: trade.timestamp instanceof Date 
-          ? trade.timestamp.toISOString().slice(0, 16)
-          : new Date(trade.timestamp).toISOString().slice(0, 16),
+        // CRITICAL FIX: Properly handle timezone conversion for datetime-local input
+        timestamp: dateToLocalISOString(trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp)),
         notes: trade.notes || '',
       });
       setError(null);
@@ -50,10 +73,32 @@ export const EditTradeModal: React.FC<EditTradeModalProps> = ({
     setError(null);
   };
 
+  // Calculate current P&L based on form data
+  const currentPL = React.useMemo(() => {
+    const entryPrice = parseFloat(formData.entryPrice);
+    const exitPrice = parseFloat(formData.exitPrice);
+    const quantity = parseInt(formData.quantity);
+    
+    if (!isNaN(entryPrice) && !isNaN(exitPrice) && !isNaN(quantity)) {
+      return formData.direction === 'long' 
+        ? (exitPrice - entryPrice) * quantity
+        : (entryPrice - exitPrice) * quantity;
+    }
+    return 0;
+  }, [formData.entryPrice, formData.exitPrice, formData.quantity, formData.direction]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!trade) return;
+    if (!trade) {
+      console.error('❌ No trade object provided to edit');
+      return;
+    }
+    
+    console.log('📝 EditModal: Starting trade update for trade ID:', trade.id);
+    console.log('📝 EditModal: Current form data:', formData);
+    console.log('📝 EditModal: Original timestamp:', trade.timestamp);
+    console.log('📝 EditModal: New timestamp string:', formData.timestamp);
     
     setIsLoading(true);
     setError(null);
@@ -63,6 +108,7 @@ export const EditTradeModal: React.FC<EditTradeModalProps> = ({
       const exitPrice = parseFloat(formData.exitPrice);
       const quantity = parseInt(formData.quantity);
       
+      // Validation
       if (!formData.ticker.trim()) {
         throw new Error('Ticker symbol is required');
       }
@@ -79,28 +125,57 @@ export const EditTradeModal: React.FC<EditTradeModalProps> = ({
         throw new Error('Quantity must be a valid positive number');
       }
 
-      // Calculate new realized P&L
-      let realizedPL: number;
-      if (formData.direction === 'long') {
-        realizedPL = (exitPrice - entryPrice) * quantity;
-      } else {
-        realizedPL = (entryPrice - exitPrice) * quantity;
-      }
+      // CRITICAL FIX: Properly convert datetime-local string to Date object
+      const newTimestamp = localISOStringToDate(formData.timestamp);
+      
+      console.log('📝 EditModal: Timestamp conversion:', {
+        input: formData.timestamp,
+        output: newTimestamp,
+        outputISO: newTimestamp.toISOString(),
+        outputLocal: newTimestamp.toLocaleString()
+      });
 
+      // Calculate new realized P&L
+      const realizedPL = formData.direction === 'long' 
+        ? (exitPrice - entryPrice) * quantity
+        : (entryPrice - exitPrice) * quantity;
+
+      // Create updates object with explicit field handling
       const updates: Partial<Trade> = {
         ticker: formData.ticker.toUpperCase().trim(),
         entryPrice,
         exitPrice,
         quantity,
         direction: formData.direction,
-        timestamp: new Date(formData.timestamp),
+        timestamp: newTimestamp, // This should preserve the local date/time
         realizedPL,
-        notes: formData.notes.trim() || undefined,
       };
 
+      // Handle notes separately to be explicit
+      const trimmedNotes = formData.notes.trim();
+      if (trimmedNotes) {
+        updates.notes = trimmedNotes;
+      } else {
+        updates.notes = null; // Explicitly set to null for clearing
+      }
+
+      console.log('📝 EditModal: Final updates object:');
+      console.log('  - ticker:', updates.ticker);
+      console.log('  - entryPrice:', updates.entryPrice);
+      console.log('  - exitPrice:', updates.exitPrice);
+      console.log('  - quantity:', updates.quantity);
+      console.log('  - direction:', updates.direction);
+      console.log('  - realizedPL:', updates.realizedPL);
+      console.log('  - notes:', updates.notes);
+      console.log('  - timestamp:', updates.timestamp);
+      console.log('  - timestamp ISO:', updates.timestamp?.toISOString());
+      console.log('📝 EditModal: Calling onSave with trade ID:', trade.id);
+      
       await onSave(trade.id, updates);
+      console.log('✅ EditModal: Trade update completed successfully');
       onClose();
     } catch (err) {
+      console.error('❌ EditModal: Error during trade update:', err);
       setError(err instanceof Error ? err.message : 'Failed to update trade');
     } finally {
       setIsLoading(false);
@@ -118,30 +193,23 @@ export const EditTradeModal: React.FC<EditTradeModalProps> = ({
     return null;
   }
 
-  // Calculate current P&L for preview
-  const currentPL = (() => {
-    const entryPrice = parseFloat(formData.entryPrice);
-    const exitPrice = parseFloat(formData.exitPrice);
-    const quantity = parseInt(formData.quantity);
-    
-    if (!isNaN(entryPrice) && !isNaN(exitPrice) && !isNaN(quantity)) {
-      return formData.direction === 'long' 
-        ? (exitPrice - entryPrice) * quantity
-        : (entryPrice - exitPrice) * quantity;
-    }
-    return 0;
-  })();
-
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
-              <FileText className="h-5 w-5 mr-2 text-blue-600" />
-              Edit Trade
-            </h3>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+                <FileText className="h-5 w-5 mr-2 text-blue-600" />
+                Edit Trade
+              </h3>
+              {trade.updateCount !== undefined && trade.updateCount > 0 && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  This trade has been edited {trade.updateCount} time{trade.updateCount !== 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
             <button
               onClick={handleClose}
               disabled={isLoading}
@@ -281,6 +349,12 @@ export const EditTradeModal: React.FC<EditTradeModalProps> = ({
                 disabled={isLoading}
                 required
               />
+              {/* Debug info - remove in production */}
+              {process.env.NODE_ENV === 'development' && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Debug: {formData.timestamp} → {formData.timestamp ? localISOStringToDate(formData.timestamp).toLocaleString() : 'Invalid'}
+                </p>
+              )}
             </div>
 
             {/* Notes */}

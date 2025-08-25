@@ -1,5 +1,5 @@
-// src/App.tsx - Fixed version that maintains exact original functionality
-import React, { useState, useMemo, useEffect } from 'react';
+// src/App.tsx - Performance optimized version
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe } from 'lucide-react';
 import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
@@ -22,6 +22,16 @@ import { StockNews } from './components/StockNews';
 import { HomePage } from './components/HomePage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
+
+// Memoized components to prevent unnecessary re-renders
+const MemoizedDashboard = React.memo(Dashboard);
+const MemoizedAIInsights = React.memo(AIInsights);
+const MemoizedTimeAnalysis = React.memo(TimeAnalysis);
+const MemoizedEquityCurve = React.memo(EquityCurve);
+const MemoizedTradeTable = React.memo(TradeTable);
+const MemoizedCalendar = React.memo(Calendar);
+const MemoizedStockSearch = React.memo(StockSearch);
+const MemoizedStockNews = React.memo(StockNews);
 
 function AppContent() {
   const { currentUser } = useAuth();
@@ -53,8 +63,53 @@ function AppContent() {
   const activeTrades = currentUser ? cloudTrades : localTrades;
   const totalBrokerTrades = getTotalBrokerTrades();
 
+  // Memoize expensive calculations
+  const normalizeToLocalDate = useCallback((date: Date): Date => {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  }, []);
+
+  const isSameDayLocal = useCallback((date1: Date, date2: Date): boolean => {
+    const d1 = normalizeToLocalDate(date1);
+    const d2 = normalizeToLocalDate(date2);
+    return d1.getTime() === d2.getTime();
+  }, [normalizeToLocalDate]);
+
+  // Memoize daily trades calculation - this is often the performance bottleneck
+  const dailyTrades = useMemo(() => {
+    const targetDate = normalizeToLocalDate(selectedDate);
+    return activeTrades
+      .map(trade => ({
+        ...trade,
+        timestamp: trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp),
+      }))
+      .filter(trade => isSameDayLocal(trade.timestamp, targetDate));
+  }, [activeTrades, selectedDate, normalizeToLocalDate, isSameDayLocal]);
+
+  // Memoize stats calculations with dependency optimization
+  const dailyStats = useMemo(() => {
+    return calculateDailyStats(dailyTrades, selectedDate);
+  }, [dailyTrades, selectedDate]);
+
+  const weeklyStats = useMemo(() => {
+    return getWeeklyStats(activeTrades, selectedDate);
+  }, [activeTrades, selectedDate]);
+
+  // Memoize date input value to prevent re-calculations
+  const dateInputValue = useMemo(() => {
+    const year = selectedDate.getFullYear();
+    const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+    const day = String(selectedDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, [selectedDate]);
+
+  // Optimize dark mode effect
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
+    const htmlElement = document.documentElement;
+    if (darkMode) {
+      htmlElement.classList.add('dark');
+    } else {
+      htmlElement.classList.remove('dark');
+    }
   }, [darkMode]);
 
   useEffect(() => {
@@ -79,7 +134,8 @@ function AppContent() {
     }
   }, [currentUser, brokerConnections.length, autoSyncEnabled, enableAutoSync]);
 
-  const loadCloudTrades = async () => {
+  // Optimize cloud data loading
+  const loadCloudTrades = useCallback(async () => {
     if (!currentUser) return;
     setIsLoadingCloudData(true);
     try {
@@ -90,9 +146,10 @@ function AppContent() {
     } finally {
       setIsLoadingCloudData(false);
     }
-  };
+  }, [currentUser]);
 
-  const syncToCloud = async () => {
+  // Optimize sync functions with useCallback
+  const syncToCloud = useCallback(async () => {
     if (!currentUser) return;
     try {
       await Promise.all(cloudTrades.map(trade => tradeService.deleteTrade(trade.id)));
@@ -102,9 +159,9 @@ function AppContent() {
     } catch (error) {
       console.error(error);
     }
-  };
+  }, [currentUser, cloudTrades, localTrades, loadCloudTrades, setLastSyncTime]);
 
-  const syncFromCloud = async () => {
+  const syncFromCloud = useCallback(async () => {
     if (!currentUser) return;
     try {
       await loadCloudTrades();
@@ -112,9 +169,9 @@ function AppContent() {
     } catch (error) {
       console.error(error);
     }
-  };
+  }, [currentUser, loadCloudTrades, setLastSyncTime]);
 
-  const mergeData = async () => {
+  const mergeData = useCallback(async () => {
     if (!currentUser) return;
     try {
       const tradeMap = new Map<string, Trade>();
@@ -138,32 +195,10 @@ function AppContent() {
     } catch (error) {
       console.error(error);
     }
-  };
+  }, [currentUser, cloudTrades, localTrades, loadCloudTrades, setLastSyncTime]);
 
-  const normalizeToLocalDate = (date: Date): Date => {
-    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  };
-
-  const isSameDayLocal = (date1: Date, date2: Date): boolean => {
-    const d1 = normalizeToLocalDate(date1);
-    const d2 = normalizeToLocalDate(date2);
-    return d1.getTime() === d2.getTime();
-  };
-
-  const dailyTrades = useMemo(() => {
-    const targetDate = normalizeToLocalDate(selectedDate);
-    return activeTrades
-      .map(trade => ({
-        ...trade,
-        timestamp: trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp),
-      }))
-      .filter(trade => isSameDayLocal(trade.timestamp, targetDate));
-  }, [activeTrades, selectedDate]);
-
-  const dailyStats = useMemo(() => calculateDailyStats(dailyTrades, selectedDate), [dailyTrades, selectedDate]);
-  const weeklyStats = useMemo(() => getWeeklyStats(activeTrades, selectedDate), [activeTrades, selectedDate]);
-
-  const handleTradeAdded = async (newTrade: Trade) => {
+  // Optimize trade handlers with useCallback
+  const handleTradeAdded = useCallback(async (newTrade: Trade) => {
     if (currentUser) {
       try {
         const tradeId = await tradeService.addTrade(currentUser.uid, newTrade);
@@ -175,9 +210,9 @@ function AppContent() {
     } else {
       setLocalTrades(prev => [newTrade, ...prev]);
     }
-  };
+  }, [currentUser, setLocalTrades]);
 
-  const handleTradesAdded = async (newTrades: Trade[]) => {
+  const handleTradesAdded = useCallback(async (newTrades: Trade[]) => {
     if (currentUser) {
       try {
         const tradesWithIds = await Promise.all(
@@ -193,22 +228,54 @@ function AppContent() {
     } else {
       setLocalTrades(prev => [...newTrades, ...prev]);
     }
-  };
+  }, [currentUser, setLocalTrades]);
 
-  const handleUpdateTrade = async (tradeId: string, updates: Partial<Trade>) => {
+  const handleUpdateTrade = useCallback(async (tradeId: string, updates: Partial<Trade>) => {
     if (currentUser) {
       try {
-        await tradeService.updateTrade(tradeId, updates);
-        setCloudTrades(prev => prev.map(trade => trade.id === tradeId ? { ...trade, ...updates } : trade));
+        // Find the current trade to get its updateCount
+        const currentTrade = cloudTrades.find(trade => trade.id === tradeId);
+        if (currentTrade) {
+          // Include the current updateCount in the updates
+          const updatesWithCount = {
+            ...updates,
+            updateCount: currentTrade.updateCount || 0
+          };
+          
+          await tradeService.updateTrade(tradeId, updatesWithCount);
+          
+          // Update local state with incremented updateCount
+          setCloudTrades(prev => prev.map(trade => 
+            trade.id === tradeId 
+              ? { 
+                  ...trade, 
+                  ...updates, 
+                  updateCount: (trade.updateCount || 0) + 1,
+                  lastUpdated: new Date()
+                } 
+              : trade
+          ));
+        } else {
+          throw new Error('Trade not found in local state');
+        }
       } catch (error: any) {
         alert(`Update failed: ${error.message}`);
       }
     } else {
-      setLocalTrades(prev => prev.map(trade => trade.id === tradeId ? { ...trade, ...updates } : trade));
+      setLocalTrades(prev => prev.map(trade => 
+        trade.id === tradeId 
+          ? { 
+              ...trade, 
+              ...updates, 
+              updateCount: (trade.updateCount || 0) + 1,
+              lastUpdated: new Date()
+            } 
+          : trade
+      ));
     }
-  };
+  }, [currentUser, cloudTrades, setLocalTrades]);
 
-  const handleDeleteTrade = async (tradeId: string) => {
+  const handleDeleteTrade = useCallback(async (tradeId: string) => {
     if (currentUser) {
       try {
         await tradeService.deleteTrade(tradeId);
@@ -219,9 +286,9 @@ function AppContent() {
     } else {
       setLocalTrades(prev => prev.filter(trade => trade.id !== tradeId));
     }
-  };
+  }, [currentUser, setLocalTrades]);
 
-  const handleExportTrades = () => {
+  const handleExportTrades = useCallback(() => {
     if (dailyTrades.length === 0) return;
     const csv = [
       'Time,Ticker,Direction,Quantity,Entry Price,Exit Price,Realized P&L,Notes',
@@ -239,34 +306,27 @@ function AppContent() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  };
+  }, [dailyTrades, selectedDate]);
 
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value;
     if (inputValue) {
       const [year, month, day] = inputValue.split('-').map(Number);
       const newDate = new Date(year, month - 1, day);
       setSelectedDate(newDate);
     }
-  };
+  }, []);
 
-  const getDateInputValue = (date: Date): string => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  const handleGetStarted = () => {
+  const handleGetStarted = useCallback(() => {
     setShowHomePage(false);
-  };
+  }, [setShowHomePage]);
 
-  const handleBrokerTradesImported = async (count: number) => {
+  const handleBrokerTradesImported = useCallback(async (count: number) => {
     // Refresh trades after broker import
     await loadCloudTrades();
-  };
+  }, [loadCloudTrades]);
 
-  const handleSyncAllBrokers = async () => {
+  const handleSyncAllBrokers = useCallback(async () => {
     try {
       const results = await syncAllTrades();
       const totalImported = results.reduce((sum, result) => 
@@ -281,15 +341,18 @@ function AppContent() {
     } catch (error: any) {
       alert(`Broker sync failed: ${error.message}`);
     }
-  };
+  }, [syncAllTrades, loadCloudTrades]);
 
   // Show homepage by default - user must explicitly choose to enter the app
   if (showHomePage) {
     return <HomePage onGetStarted={handleGetStarted} />;
   }
 
-  // Get the last trade for bulk import
-  const lastTrade = activeTrades.length > 0 ? activeTrades[0] : undefined;
+  // Get the last trade for bulk import - memoized
+  const lastTrade = useMemo(() => 
+    activeTrades.length > 0 ? activeTrades[0] : undefined, 
+    [activeTrades]
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
@@ -376,7 +439,7 @@ function AppContent() {
               {activeView === 'daily' && (
                 <input
                   type="date"
-                  value={getDateInputValue(selectedDate)}
+                  value={dateInputValue}
                   onChange={handleDateChange}
                   className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 />
@@ -531,7 +594,7 @@ function AppContent() {
                   </label>
                   <input
                     type="date"
-                    value={getDateInputValue(selectedDate)}
+                    value={dateInputValue}
                     onChange={handleDateChange}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
@@ -619,8 +682,9 @@ function AppContent() {
             </div>
           )}
 
+          {/* Optimized conditional rendering with memoized components */}
           {activeView === 'calendar' ? (
-            <Calendar 
+            <MemoizedCalendar 
               trades={activeTrades} 
               selectedDate={selectedDate} 
               onDateSelect={setSelectedDate} 
@@ -632,7 +696,7 @@ function AppContent() {
               }}
             />
           ) : activeView === 'search' ? (
-            <StockSearch
+            <MemoizedStockSearch
               trades={activeTrades}
               onDateSelect={(date) => setSelectedDate(date)}
               onViewChange={setActiveView}
@@ -640,16 +704,16 @@ function AppContent() {
           ) : activeView === 'brokers' ? (
             <BrokerSetup onTradesImported={handleBrokerTradesImported} />
           ) : activeView === 'news' ? (
-            <StockNews trades={activeTrades} />
+            <MemoizedStockNews trades={activeTrades} />
           ) : (
             <>
-              <Dashboard dailyStats={dailyStats} selectedDate={selectedDate} />
-              <AIInsights trades={activeTrades} selectedDate={selectedDate} />
+              <MemoizedDashboard dailyStats={dailyStats} selectedDate={selectedDate} />
+              <MemoizedAIInsights trades={activeTrades} selectedDate={selectedDate} />
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8">
-                <TimeAnalysis trades={activeTrades} selectedDate={selectedDate} />
-                <EquityCurve trades={activeTrades} selectedDate={selectedDate} />
+                <MemoizedTimeAnalysis trades={activeTrades} selectedDate={selectedDate} />
+                <MemoizedEquityCurve trades={activeTrades} selectedDate={selectedDate} />
               </div>
-              <TradeTable 
+              <MemoizedTradeTable 
                 trades={dailyTrades} 
                 onUpdateTrade={handleUpdateTrade} 
                 onExportTrades={handleExportTrades} 
