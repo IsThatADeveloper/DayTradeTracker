@@ -1,20 +1,28 @@
-// src/components/Calendar.tsx - Fixed version with proper formatting
-import React from 'react';
+// src/components/Calendar.tsx - Simple two-date picker with range analysis
+import React, { useState, useCallback, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { 
   format, 
   addMonths, 
   subMonths, 
   startOfWeek, 
-  endOfWeek, 
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
   isSameMonth, 
   isToday, 
-  isSameDay 
+  isSameDay,
+  isWithinInterval,
+  startOfDay,
+  endOfDay,
+  isBefore,
+  differenceInDays
 } from 'date-fns';
 
 // Types
 import { Trade } from '../types/trade';
-import { getCalendarData, getWeeklyStats, formatCurrency } from '../utils/tradeUtils';
+import { formatCurrency } from '../utils/tradeUtils';
 
 interface CalendarProps {
   trades: Trade[];
@@ -25,15 +33,8 @@ interface CalendarProps {
   onDateDoubleClick?: (date: Date) => void;
 }
 
-// Constants
-const WEEK_DAYS_FULL = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const WEEK_DAYS_SHORT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-const DAYS_PER_WEEK = 7;
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-/**
- * Interactive trading calendar component showing daily P&L and performance
- * Supports date selection, month navigation, and day drilling
- */
 export const Calendar: React.FC<CalendarProps> = ({
   trades,
   selectedDate,
@@ -42,272 +43,587 @@ export const Calendar: React.FC<CalendarProps> = ({
   currentMonth,
   onDateDoubleClick,
 }) => {
-  const calendarData = getCalendarData(trades, currentMonth);
+  // Two-date selection state
+  const [firstDate, setFirstDate] = useState<Date | null>(null);
+  const [secondDate, setSecondDate] = useState<Date | null>(null);
 
-  // Group calendar days by weeks for grid layout
-  const weeks: Array<typeof calendarData> = [];
-  for (let i = 0; i < calendarData.length; i += DAYS_PER_WEEK) {
-    weeks.push(calendarData.slice(i, i + DAYS_PER_WEEK));
-  }
+  // Calendar data calculation
+  const calendarData = useMemo(() => {
+    const monthStart = startOfMonth(currentMonth);
+    const monthEnd = endOfMonth(currentMonth);
+    const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 });
+    const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
+    
+    const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+    
+    return days.map(day => {
+      const dayTrades = trades.filter(trade => {
+        const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+        return isSameDay(tradeDate, day);
+      });
+      
+      const totalPL = dayTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
+      
+      return {
+        date: day,
+        totalPL,
+        tradeCount: dayTrades.length,
+        hasData: dayTrades.length > 0,
+        isCurrentMonth: isSameMonth(day, currentMonth)
+      };
+    });
+  }, [trades, currentMonth]);
 
-  /**
-   * Calculate total P&L for a week
-   */
-  const getWeekTotal = (weekDays: typeof calendarData): number => {
-    return weekDays.reduce((sum, day) => sum + day.totalPL, 0);
+  // Format compact P&L
+  const formatCompactPL = (amount: number): string => {
+    if (Math.abs(amount) >= 1000) {
+      return `${amount > 0 ? '+' : ''}${(amount / 1000).toFixed(1)}k`;
+    }
+    return `${amount > 0 ? '+' : ''}${Math.round(amount)}`;
   };
 
-  /**
-   * Get CSS classes for a calendar day based on its state and performance
-   */
-  const getDayClassName = (day: typeof calendarData[0]): string => {
-    let className = 'h-10 sm:h-12 w-full flex flex-col items-center justify-center text-xs sm:text-sm font-medium rounded-lg cursor-pointer transition-all duration-200 relative ';
+  // Handle day click - simple two-date selection
+  const handleDayClick = useCallback((date: Date) => {
+    // Always update the main selected date for daily view
+    onDateSelect(date);
     
-    if (!isSameMonth(day.date, currentMonth)) {
-      className += 'text-gray-300 dark:text-gray-600 ';
-    } else if (isToday(day.date)) {
-      className += 'ring-2 ring-blue-500 ';
-    }
-    
-    if (isSameDay(day.date, selectedDate)) {
-      className += 'bg-blue-600 text-white ';
-    } else if (day.hasData) {
-      if (day.totalPL > 0) {
-        className += 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50 ';
+    // Handle two-date selection
+    if (!firstDate) {
+      // No dates selected - this becomes first date
+      setFirstDate(date);
+      setSecondDate(null);
+    } else if (!secondDate) {
+      // First date selected - this becomes second date
+      if (isBefore(date, firstDate)) {
+        // If clicked date is before first date, swap them
+        setSecondDate(firstDate);
+        setFirstDate(date);
       } else {
-        className += 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50 ';
+        setSecondDate(date);
       }
     } else {
-      className += 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 ';
+      // Both dates selected - start over
+      setFirstDate(date);
+      setSecondDate(null);
     }
-    
-    return className;
-  };
+  }, [onDateSelect, firstDate, secondDate]);
 
-  /**
-   * Get CSS classes for week total display
-   */
-  const getWeekClassName = (weekTotal: number, hasData: boolean): string => {
-    let className = 'h-10 sm:h-12 w-8 sm:w-16 flex items-center justify-center text-xs font-semibold rounded-lg ';
-    
-    if (!hasData) {
-      className += 'text-gray-400 dark:text-gray-500 ';
-    } else if (weekTotal > 0) {
-      className += 'bg-green-500 text-white ';
-    } else {
-      className += 'bg-red-500 text-white ';
-    }
-    
-    return className;
-  };
-
-  /**
-   * Handle day click with proper date selection
-   */
-  const handleDayClick = (day: typeof calendarData[0]): void => {
-    onDateSelect(day.date);
-  };
-
-  /**
-   * Handle day double-click for drilling into daily view
-   */
-  const handleDayDoubleClick = (day: typeof calendarData[0]): void => {
+  // Handle double click
+  const handleDoubleClick = useCallback((date: Date) => {
     if (onDateDoubleClick) {
-      onDateDoubleClick(day.date);
+      onDateDoubleClick(date);
     }
-  };
+  }, [onDateDoubleClick]);
 
-  /**
-   * Format P&L amount for compact display in calendar cells
-   */
-  const formatCompactPL = (amount: number, isMobile: boolean = false): string => {
-    const prefix = amount > 0 ? '+' : '';
-    
-    if (isMobile && Math.abs(amount) >= 1000) {
-      return `${prefix}${(Math.round(amount / 100) / 10)}k`;
-    }
-    
-    return `${prefix}${Math.round(amount)}`;
-  };
+  // Clear date selection
+  const clearSelection = useCallback(() => {
+    setFirstDate(null);
+    setSecondDate(null);
+  }, []);
 
-  /**
-   * Generate tooltip text for a calendar day
-   */
-  const generateDayTooltip = (day: typeof calendarData[0]): string => {
-    const baseTooltip = format(day.date, 'MMM d');
+  // Check if date is in selected range
+  const isInSelectedRange = useCallback((date: Date): boolean => {
+    if (!firstDate) return false;
+    if (!secondDate) return isSameDay(date, firstDate);
     
-    if (!day.hasData) {
-      return onDateDoubleClick ? `${baseTooltip} - Double-click to open` : baseTooltip;
+    return isWithinInterval(date, {
+      start: startOfDay(firstDate),
+      end: endOfDay(secondDate)
+    });
+  }, [firstDate, secondDate]);
+
+  // Get styling for each day
+  const getDayClasses = useCallback((day: any): string => {
+    const inRange = isInSelectedRange(day.date);
+    const isFirstDate = firstDate && isSameDay(day.date, firstDate);
+    const isSecondDate = secondDate && isSameDay(day.date, secondDate);
+    const isTodayDate = isToday(day.date);
+    
+    let classes = 'relative h-16 sm:h-20 border border-gray-200 dark:border-gray-600 cursor-pointer transition-colors duration-200 ';
+    
+    // Selection styling (highest priority)
+    if (isFirstDate || isSecondDate) {
+      classes += 'bg-blue-600 text-white hover:bg-blue-700 ';
+    } else if (inRange) {
+      classes += 'bg-blue-100 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100 hover:bg-blue-200 dark:hover:bg-blue-800/50 ';
+    }
+    // Today styling
+    else if (isTodayDate) {
+      if (day.hasData && day.isCurrentMonth) {
+        if (day.totalPL > 0) {
+          classes += 'bg-green-100 dark:bg-green-900/30 ring-2 ring-blue-500 hover:bg-green-200 dark:hover:bg-green-800/50 ';
+        } else {
+          classes += 'bg-red-100 dark:bg-red-900/30 ring-2 ring-blue-500 hover:bg-red-200 dark:hover:bg-red-800/50 ';
+        }
+      } else {
+        classes += 'bg-white dark:bg-gray-800 ring-2 ring-blue-500 hover:bg-gray-100 dark:hover:bg-gray-700 ';
+      }
+    }
+    // Performance coloring (full box)
+    else if (day.hasData && day.isCurrentMonth) {
+      if (day.totalPL > 0) {
+        classes += 'bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-800/50 ';
+      } else {
+        classes += 'bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-800/50 ';
+      }
+    }
+    // Regular days
+    else if (day.isCurrentMonth) {
+      classes += 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 ';
+    }
+    // Outside current month
+    else {
+      classes += 'bg-gray-50 dark:bg-gray-850 opacity-50 ';
     }
     
-    return `${baseTooltip}: ${formatCurrency(day.totalPL)} (${day.tradeCount} trades)${
-      onDateDoubleClick ? ' - Double-click to open' : ''
-    }`;
-  };
+    return classes;
+  }, [firstDate, secondDate, isInSelectedRange]);
+
+  // Get text color for content
+  const getTextColor = useCallback((day: any): string => {
+    const isFirstDate = firstDate && isSameDay(day.date, firstDate);
+    const isSecondDate = secondDate && isSameDay(day.date, secondDate);
+    const inRange = isInSelectedRange(day.date);
+    
+    // Selected dates
+    if (isFirstDate || isSecondDate) {
+      return 'text-white';
+    }
+    
+    // In range
+    if (inRange) {
+      return 'text-blue-900 dark:text-blue-100';
+    }
+    
+    // Non-current month
+    if (!day.isCurrentMonth) {
+      return 'text-gray-400 dark:text-gray-500';
+    }
+    
+    // Days with trading data
+    if (day.hasData) {
+      if (day.totalPL > 0) {
+        return 'text-green-800 dark:text-green-200';
+      } else {
+        return 'text-red-800 dark:text-red-200';
+      }
+    }
+    
+    // Regular days
+    return 'text-gray-900 dark:text-gray-100';
+  }, [firstDate, secondDate, isInSelectedRange]);
+
+  // Calculate range statistics
+  const rangeStats = useMemo(() => {
+    if (!firstDate) return null;
+    
+    const startDate = firstDate;
+    const endDate = secondDate || firstDate;
+    
+    const rangeTrades = trades.filter(trade => {
+      const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+      return isWithinInterval(tradeDate, {
+        start: startOfDay(startDate),
+        end: endOfDay(endDate)
+      });
+    });
+    
+    const totalPL = rangeTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
+    const wins = rangeTrades.filter(trade => trade.realizedPL > 0).length;
+    const losses = rangeTrades.filter(trade => trade.realizedPL < 0).length;
+    const dayCount = secondDate ? differenceInDays(endDate, startDate) + 1 : 1;
+    
+    // Calculate average per day
+    const avgPerDay = dayCount > 0 ? totalPL / dayCount : 0;
+    
+    return {
+      totalPL,
+      tradeCount: rangeTrades.length,
+      winCount: wins,
+      lossCount: losses,
+      dayCount,
+      avgPerDay,
+      winRate: rangeTrades.length > 0 ? (wins / rangeTrades.length) * 100 : 0
+    };
+  }, [firstDate, secondDate, trades]);
+
+  // Split calendar data into weeks
+  const weeks = [];
+  for (let i = 0; i < calendarData.length; i += 7) {
+    weeks.push(calendarData.slice(i, i + 7));
+  }
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6">
-      {/* Header with navigation */}
+      {/* Header */}
       <div className="flex items-center justify-between mb-4 sm:mb-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-          <span className="hidden sm:inline">Trading Calendar</span>
-          <span className="sm:hidden">Calendar</span>
+          Trading Calendar
         </h3>
         
-        <div className="flex items-center space-x-2 sm:space-x-4">
-          <button
-            onClick={() => onMonthChange(subMonths(currentMonth, 1))}
-            className="p-1 sm:p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-            title="Previous month"
-          >
-            <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5 text-gray-600 dark:text-gray-400" />
-          </button>
+        <div className="flex items-center space-x-4">
+          {/* Date Range Display */}
+          {firstDate && secondDate && (
+            <div className="flex items-center space-x-2 bg-blue-100 dark:bg-blue-900/30 px-3 py-1 rounded-lg">
+              <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                {format(firstDate, 'MMM d')} - {format(secondDate, 'MMM d')}
+              </span>
+              <button 
+                onClick={clearSelection}
+                className="text-blue-700 dark:text-blue-300 hover:text-blue-900 ml-2 text-lg"
+                title="Clear selection"
+              >
+                ×
+              </button>
+            </div>
+          )}
           
-          <h4 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white min-w-[120px] sm:min-w-[140px] text-center">
-            <span className="hidden sm:inline">{format(currentMonth, 'MMMM yyyy')}</span>
-            <span className="sm:hidden">{format(currentMonth, 'MMM yyyy')}</span>
-          </h4>
-          
-          <button
-            onClick={() => onMonthChange(addMonths(currentMonth, 1))}
-            className="p-1 sm:p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-            title="Next month"
-          >
-            <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-gray-600 dark:text-gray-400" />
-          </button>
+          {/* Month Navigation */}
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => onMonthChange(subMonths(currentMonth, 1))}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              title="Previous month"
+            >
+              <ChevronLeft className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+            </button>
+            
+            <h4 className="text-lg font-medium text-gray-900 dark:text-white min-w-[140px] text-center">
+              {format(currentMonth, 'MMMM yyyy')}
+            </h4>
+            
+            <button
+              onClick={() => onMonthChange(addMonths(currentMonth, 1))}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              title="Next month"
+            >
+              <ChevronRight className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Instruction text */}
+      {/* Date Range Picker */}
+      <div className="mb-6">
+        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+            Select Date Range for Analysis
+          </h4>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+            {/* From Date */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                From Date
+              </label>
+              <input
+                type="date"
+                value={firstDate ? format(firstDate, 'yyyy-MM-dd') : ''}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    const newDate = new Date(e.target.value);
+                    setFirstDate(newDate);
+                    onDateSelect(newDate);
+                    // If second date is before first date, clear it
+                    if (secondDate && isBefore(secondDate, newDate)) {
+                      setSecondDate(null);
+                    }
+                  } else {
+                    setFirstDate(null);
+                  }
+                }}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              />
+            </div>
+            
+            {/* To Date */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                To Date
+              </label>
+              <input
+                type="date"
+                value={secondDate ? format(secondDate, 'yyyy-MM-dd') : ''}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    const newDate = new Date(e.target.value);
+                    // Only set if we have a first date and this date is after it
+                    if (firstDate) {
+                      if (isBefore(newDate, firstDate)) {
+                        // If selected date is before first date, swap them
+                        setSecondDate(firstDate);
+                        setFirstDate(newDate);
+                        onDateSelect(newDate);
+                      } else {
+                        setSecondDate(newDate);
+                      }
+                    } else {
+                      // If no first date, this becomes the first date
+                      setFirstDate(newDate);
+                      onDateSelect(newDate);
+                    }
+                  } else {
+                    setSecondDate(null);
+                  }
+                }}
+                min={firstDate ? format(firstDate, 'yyyy-MM-dd') : undefined}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              />
+            </div>
+            
+            {/* Clear Button */}
+            <div className="flex space-x-2">
+              <button
+                onClick={clearSelection}
+                disabled={!firstDate && !secondDate}
+                className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Clear
+              </button>
+              
+              {/* Quick Ranges */}
+              <div className="flex space-x-1">
+                <button
+                  onClick={() => {
+                    const today = new Date();
+                    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    setFirstDate(weekAgo);
+                    setSecondDate(today);
+                    onDateSelect(today);
+                  }}
+                  className="px-2 py-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded hover:bg-blue-200 dark:hover:bg-blue-800/50 transition-colors"
+                  title="Last 7 days"
+                >
+                  7D
+                </button>
+                <button
+                  onClick={() => {
+                    const today = new Date();
+                    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    setFirstDate(monthAgo);
+                    setSecondDate(today);
+                    onDateSelect(today);
+                  }}
+                  className="px-2 py-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded hover:bg-blue-200 dark:hover:bg-blue-800/50 transition-colors"
+                  title="Last 30 days"
+                >
+                  30D
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          {/* Range Status */}
+          {firstDate && (
+            <div className="mt-3 text-center">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                {!secondDate ? (
+                  <>Selected: <span className="font-medium text-blue-600 dark:text-blue-400">{format(firstDate, 'MMM d, yyyy')}</span> (single day)</>
+                ) : (
+                  <>Range: <span className="font-medium text-blue-600 dark:text-blue-400">{format(firstDate, 'MMM d, yyyy')} - {format(secondDate, 'MMM d, yyyy')}</span> ({differenceInDays(secondDate, firstDate) + 1} days)</>
+                )}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Instructions */}
       <div className="mb-4 text-center">
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          <span className="hidden sm:inline">Click to select, double-click to open daily view</span>
-          <span className="sm:hidden">Double-tap to open day</span>
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          Use date pickers above or click calendar dates • Double-click any date to view daily details
         </p>
       </div>
 
       {/* Calendar Grid */}
-      <div className="grid grid-cols-8 gap-1 sm:gap-2">
-        {/* Header Row */}
-        <div className="h-6 sm:h-8 flex items-center justify-center text-xs font-medium text-gray-500 dark:text-gray-400">
-          <span className="hidden sm:inline">Week</span>
-          <span className="sm:hidden">W</span>
+      <div className="space-y-2">
+        {/* Day Headers */}
+        <div className="grid grid-cols-7 gap-2">
+          {DAY_NAMES.map((day) => (
+            <div key={day} className="h-8 flex items-center justify-center">
+              <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                {day}
+              </span>
+            </div>
+          ))}
         </div>
-        
-        {WEEK_DAYS_FULL.map((day, index) => (
-          <div key={day} className="h-6 sm:h-8 flex items-center justify-center text-xs font-medium text-gray-500 dark:text-gray-400">
-            <span className="hidden sm:inline">{day}</span>
-            <span className="sm:hidden">{WEEK_DAYS_SHORT[index]}</span>
-          </div>
-        ))}
 
-        {/* Calendar Body */}
-        {weeks.map((week, weekIndex) => {
-          const weekTotal = getWeekTotal(week);
-          const weekHasData = week.some(day => day.hasData);
-          
-          return (
-            <React.Fragment key={weekIndex}>
-              {/* Week Total */}
-              <div 
-                className={getWeekClassName(weekTotal, weekHasData)} 
-                title={`Week total: ${formatCurrency(weekTotal)}`}
+        {/* Calendar Weeks */}
+        {weeks.map((week, weekIndex) => (
+          <div key={weekIndex} className="grid grid-cols-7 gap-2">
+            {week.map((day, dayIndex) => (
+              <div
+                key={dayIndex}
+                className={getDayClasses(day)}
+                onClick={() => handleDayClick(day.date)}
+                onDoubleClick={() => handleDoubleClick(day.date)}
+                title={day.hasData ? `${formatCurrency(day.totalPL)} (${day.tradeCount} trades)` : format(day.date, 'MMM d')}
               >
-                {weekHasData ? (
-                  <span className="truncate text-xs">
-                    <span className="hidden sm:inline">
-                      {formatCompactPL(weekTotal)}
-                    </span>
-                    <span className="sm:hidden">
-                      {formatCompactPL(weekTotal, true)}
-                    </span>
+                {/* Date Number */}
+                <div className="absolute top-2 left-2">
+                  <span className={`text-sm font-medium ${getTextColor(day)}`}>
+                    {format(day.date, 'd')}
                   </span>
-                ) : (
-                  <span className="text-xs">-</span>
+                </div>
+                
+                {/* Selection Indicators */}
+                {firstDate && isSameDay(day.date, firstDate) && (
+                  <div className="absolute top-2 right-2">
+                    <div className="w-5 h-5 bg-white/20 rounded-full flex items-center justify-center">
+                      <span className="text-xs font-bold text-white">1</span>
+                    </div>
+                  </div>
+                )}
+                {secondDate && isSameDay(day.date, secondDate) && (
+                  <div className="absolute top-2 right-2">
+                    <div className="w-5 h-5 bg-white/20 rounded-full flex items-center justify-center">
+                      <span className="text-xs font-bold text-white">2</span>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Today Indicator */}
+                {isToday(day.date) && !isInSelectedRange(day.date) && (
+                  <div className="absolute top-2 right-2">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  </div>
+                )}
+                
+                {/* Trading Data */}
+                {day.hasData && day.isCurrentMonth && (
+                  <div className="absolute bottom-2 left-2 right-2">
+                    <div className={`text-xs font-medium truncate ${getTextColor(day)}`}>
+                      {formatCompactPL(day.totalPL)}
+                    </div>
+                    <div className={`text-xs truncate opacity-75 ${getTextColor(day)}`}>
+                      {day.tradeCount} trade{day.tradeCount !== 1 ? 's' : ''}
+                    </div>
+                  </div>
                 )}
               </div>
-              
-              {/* Days of the week */}
-              {week.map((day, dayIndex) => (
-                <div
-                  key={dayIndex}
-                  className={getDayClassName(day)}
-                  onClick={() => handleDayClick(day)}
-                  onDoubleClick={() => handleDayDoubleClick(day)}
-                  title={generateDayTooltip(day)}
-                >
-                  <div className="text-center leading-none">
-                    {/* Day number */}
-                    <div className="font-medium">{format(day.date, 'd')}</div>
-                    
-                    {/* P&L display */}
-                    {day.hasData && (
-                      <div className="text-xs opacity-75 mt-0.5 leading-none">
-                        <span className="hidden sm:inline">
-                          {formatCompactPL(day.totalPL)}
-                        </span>
-                        <span className="sm:hidden">
-                          {formatCompactPL(day.totalPL, true)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </React.Fragment>
-          );
-        })}
+            ))}
+          </div>
+        ))}
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 mt-4 sm:mt-6 text-xs">
+      <div className="flex items-center justify-center gap-6 mt-6 text-sm">
         <div className="flex items-center space-x-2">
-          <div className="w-3 h-3 sm:w-4 sm:h-4 bg-green-100 dark:bg-green-900/30 rounded"></div>
-          <span className="text-gray-600 dark:text-gray-400">
-            <span className="hidden sm:inline">Profitable Day</span>
-            <span className="sm:hidden">Profit</span>
-          </span>
+          <div className="w-4 h-4 bg-green-100 dark:bg-green-900/30 rounded border border-gray-200 dark:border-gray-600"></div>
+          <span className="text-gray-600 dark:text-gray-400">Profitable Days</span>
         </div>
         <div className="flex items-center space-x-2">
-          <div className="w-3 h-3 sm:w-4 sm:h-4 bg-red-100 dark:bg-red-900/30 rounded"></div>
-          <span className="text-gray-600 dark:text-gray-400">
-            <span className="hidden sm:inline">Loss Day</span>
-            <span className="sm:hidden">Loss</span>
-          </span>
+          <div className="w-4 h-4 bg-red-100 dark:bg-red-900/30 rounded border border-gray-200 dark:border-gray-600"></div>
+          <span className="text-gray-600 dark:text-gray-400">Loss Days</span>
         </div>
         <div className="flex items-center space-x-2">
-          <div className="w-3 h-3 sm:w-4 sm:h-4 bg-blue-600 rounded"></div>
-          <span className="text-gray-600 dark:text-gray-400">
-            <span className="hidden sm:inline">Selected Day</span>
-            <span className="sm:hidden">Selected</span>
-          </span>
+          <div className="w-4 h-4 bg-blue-600 rounded border border-gray-200 dark:border-gray-600"></div>
+          <span className="text-gray-600 dark:text-gray-400">Selected Range</span>
+        </div>
+        <div className="flex items-center space-x-2">
+          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+          <span className="text-gray-600 dark:text-gray-400">Today</span>
         </div>
       </div>
 
-      {/* Mobile Stats Summary */}
-      <div className="mt-4 sm:hidden">
-        <div className="grid grid-cols-2 gap-3 text-center">
-          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
-            <div className="text-xs text-gray-500 dark:text-gray-400">This Month</div>
-            <div className="text-lg font-bold text-gray-900 dark:text-white">
-              {(() => {
-                const monthTotal = calendarData
-                  .filter(day => isSameMonth(day.date, currentMonth) && day.hasData)
-                  .reduce((sum, day) => sum + day.totalPL, 0);
-                return formatCurrency(monthTotal);
-              })()}
+      {/* Range Analysis */}
+      {rangeStats && (
+        <div className="mt-6">
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg p-6 border border-blue-200 dark:border-blue-800">
+            <div className="text-center mb-4">
+              <h4 className="text-xl font-semibold text-blue-900 dark:text-blue-100">
+                {secondDate ? 'Range Analysis' : 'Day Analysis'}
+              </h4>
+              <p className="text-blue-700 dark:text-blue-300 text-sm mt-1">
+                {firstDate && format(firstDate, 'MMM d, yyyy')}
+                {secondDate && ` - ${format(secondDate, 'MMM d, yyyy')}`}
+              </p>
             </div>
-          </div>
-          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
-            <div className="text-xs text-gray-500 dark:text-gray-400">Trading Days</div>
-            <div className="text-lg font-bold text-gray-900 dark:text-white">
-              {calendarData
-                .filter(day => isSameMonth(day.date, currentMonth) && day.hasData)
-                .length}
+            
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+              {/* Days (only show if range) */}
+              {secondDate && (
+                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                  <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+                    {rangeStats.dayCount}
+                  </div>
+                  <div className="text-sm text-blue-700 dark:text-blue-300">
+                    Day{rangeStats.dayCount !== 1 ? 's' : ''}
+                  </div>
+                </div>
+              )}
+              
+              {/* Total P&L */}
+              <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                <div className={`text-2xl font-bold ${
+                  rangeStats.totalPL >= 0 ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {formatCurrency(rangeStats.totalPL)}
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  Total P&L
+                </div>
+              </div>
+              
+              {/* Average per day (only if range) */}
+              {secondDate && (
+                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                  <div className={`text-2xl font-bold ${
+                    rangeStats.avgPerDay >= 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {formatCurrency(rangeStats.avgPerDay)}
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    Avg/Day
+                  </div>
+                </div>
+              )}
+              
+              {/* Total Trades */}
+              <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+                  {rangeStats.tradeCount}
+                </div>
+                <div className="text-sm text-blue-700 dark:text-blue-300">
+                  Trade{rangeStats.tradeCount !== 1 ? 's' : ''}
+                </div>
+              </div>
+              
+              {/* Win Rate */}
+              <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                <div className={`text-2xl font-bold ${
+                  rangeStats.winRate >= 50 ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {rangeStats.winRate.toFixed(1)}%
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  Win Rate
+                </div>
+              </div>
+              
+              {/* Wins */}
+              <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                <div className="text-2xl font-bold text-green-600">
+                  {rangeStats.winCount}
+                </div>
+                <div className="text-sm text-green-700 dark:text-green-400">
+                  Win{rangeStats.winCount !== 1 ? 's' : ''}
+                </div>
+              </div>
+              
+              {/* Losses */}
+              <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                <div className="text-2xl font-bold text-red-600">
+                  {rangeStats.lossCount}
+                </div>
+                <div className="text-sm text-red-700 dark:text-red-400">
+                  Loss{rangeStats.lossCount !== 1 ? 'es' : ''}
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
