@@ -62,18 +62,6 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [secondDate, setSecondDate] = useState<Date | null>(null);
   const [showCustomRange, setShowCustomRange] = useState(false);
 
-  // Handle clicking outside to clear selection
-  const handleComponentClick = useCallback((e: React.MouseEvent) => {
-    // Check if the clicked element is in a "safe" area (calendar days, buttons, inputs)
-    const target = e.target as HTMLElement;
-    const isInteractiveElement = target.closest('button, input, select, .calendar-day, .range-preset');
-    
-    // If not clicking on an interactive element, clear the selection
-    if (!isInteractiveElement && (firstDate || secondDate)) {
-      clearSelection();
-    }
-  }, [firstDate, secondDate]);
-
   // Clear date selection
   const clearSelection = useCallback(() => {
     setFirstDate(null);
@@ -302,10 +290,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   }
 
   return (
-    <div 
-      className="bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 p-3 sm:p-6"
-      onClick={handleComponentClick}
-    >
+    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 p-3 sm:p-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 gap-4">
         <div className="flex items-center space-x-3">
@@ -514,12 +499,6 @@ export const Calendar: React.FC<CalendarProps> = ({
       <div className="mb-4 text-center">
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Use quick ranges above for analysis • Click any date to view daily details • Double-click for detailed view
-          {(firstDate || secondDate) && (
-            <><br />
-            <span className="text-amber-600 dark:text-amber-400 font-medium">
-              Click anywhere in empty space to clear range selection
-            </span></>
-          )}
         </p>
       </div>
 
