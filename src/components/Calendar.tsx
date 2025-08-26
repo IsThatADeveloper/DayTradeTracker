@@ -19,8 +19,7 @@ import {
   isBefore,
   differenceInDays,
   subDays,
-  startOfYear,
-  startOfQuarter
+  startOfYear
 } from 'date-fns';
 
 // Types
@@ -43,13 +42,10 @@ const DAY_NAMES_MOBILE = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const RANGE_PRESETS = [
   { label: 'Today', value: 'today', days: 0 },
   { label: 'Last 7 Days', value: '7d', days: 7 },
-  { label: 'Last 14 Days', value: '14d', days: 14 },
   { label: 'Last 30 Days', value: '30d', days: 30 },
   { label: 'Last 60 Days', value: '60d', days: 60 },
   { label: 'Last 90 Days', value: '90d', days: 90 },
   { label: 'This Month', value: 'thisMonth', days: null },
-  { label: 'Last Month', value: 'lastMonth', days: null },
-  { label: 'This Quarter', value: 'thisQuarter', days: null },
   { label: 'This Year', value: 'thisYear', days: null },
 ];
 
@@ -77,6 +73,12 @@ export const Calendar: React.FC<CalendarProps> = ({
       clearSelection();
     }
   }, [firstDate, secondDate]);
+
+  // Clear date selection
+  const clearSelection = useCallback(() => {
+    setFirstDate(null);
+    setSecondDate(null);
+  }, []);
 
   // Calendar data calculation
   const calendarData = useMemo(() => {
@@ -128,21 +130,12 @@ export const Calendar: React.FC<CalendarProps> = ({
         startDate = startOfMonth(today);
         endDate = today;
         break;
-      case 'lastMonth':
-        const lastMonth = subMonths(today, 1);
-        startDate = startOfMonth(lastMonth);
-        endDate = endOfMonth(lastMonth);
-        break;
-      case 'thisQuarter':
-        startDate = startOfQuarter(today);
-        endDate = today;
-        break;
       case 'thisYear':
         startDate = startOfYear(today);
         endDate = today;
         break;
       default:
-        if (preset.days !== null) {
+        if (preset.days !== null && preset.days > 0) {
           startDate = subDays(today, preset.days - 1);
         } else {
           startDate = today;
@@ -167,12 +160,6 @@ export const Calendar: React.FC<CalendarProps> = ({
       onDateDoubleClick(date);
     }
   }, [onDateDoubleClick]);
-
-  // Clear date selection
-  const clearSelection = useCallback(() => {
-    setFirstDate(null);
-    setSecondDate(null);
-  }, []);
 
   // Check if date is in selected range
   const isInSelectedRange = useCallback((date: Date): boolean => {
@@ -331,19 +318,34 @@ export const Calendar: React.FC<CalendarProps> = ({
         </div>
         
         <div className="flex items-center space-x-2 sm:space-x-4 w-full sm:w-auto">
-          {/* Date Range Display */}
-          {firstDate && secondDate && (
-            <div className="flex items-center space-x-2 bg-gradient-to-r from-amber-100 to-orange-100 dark:from-amber-900/30 dark:to-orange-900/30 px-3 py-2 rounded-lg border border-amber-200 dark:border-amber-800">
-              <Clock className="h-4 w-4 text-amber-700 dark:text-amber-300" />
-              <span className="text-sm font-semibold text-amber-900 dark:text-amber-100">
-                {format(firstDate, 'MMM d')} - {format(secondDate, 'MMM d')}
-              </span>
+          {/* Date Range Display with Clear */}
+          {(firstDate || secondDate) && (
+            <div className="flex items-center space-x-2">
+              {firstDate && secondDate ? (
+                <div className="flex items-center space-x-2 bg-gradient-to-r from-amber-100 to-orange-100 dark:from-amber-900/30 dark:to-orange-900/30 px-3 py-2 rounded-lg border border-amber-200 dark:border-amber-800">
+                  <Clock className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+                  <span className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                    {format(firstDate, 'MMM d')} - {format(secondDate, 'MMM d')}
+                  </span>
+                </div>
+              ) : firstDate ? (
+                <div className="flex items-center space-x-2 bg-gradient-to-r from-amber-100 to-orange-100 dark:from-amber-900/30 dark:to-orange-900/30 px-3 py-2 rounded-lg border border-amber-200 dark:border-amber-800">
+                  <Clock className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+                  <span className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                    {format(firstDate, 'MMM d')}
+                  </span>
+                </div>
+              ) : null}
+              
               <button 
-                onClick={clearSelection}
-                className="text-amber-700 dark:text-amber-300 hover:text-amber-900 ml-1 text-lg font-bold"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearSelection();
+                }}
+                className="p-2 text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100 hover:bg-amber-100 dark:hover:bg-amber-900/20 rounded-lg transition-all duration-200 hover:scale-105"
                 title="Clear selection"
               >
-                ×
+                <span className="text-lg font-bold">×</span>
               </button>
             </div>
           )}
@@ -393,7 +395,8 @@ export const Calendar: React.FC<CalendarProps> = ({
           </div>
           
           {/* Preset buttons */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-4 range-preset">{RANGE_PRESETS.slice(0, 10).map((preset) => (
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-4 range-preset">
+            {RANGE_PRESETS.map((preset) => (
               <button
                 key={preset.value}
                 onClick={(e) => {
@@ -525,7 +528,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         {/* Day Headers */}
         <div className="grid grid-cols-7 gap-1 sm:gap-2">
           {(window.innerWidth < 640 ? DAY_NAMES_MOBILE : DAY_NAMES).map((day, index) => (
-            <div key={day} className="h-8 flex items-center justify-center">
+            <div key={index} className="h-8 flex items-center justify-center">
               <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">
                 {day}
               </span>
@@ -614,7 +617,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       {/* Range Analysis */}
       {rangeStats && (
         <div className="mt-6">
-                      <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-yellow-50 dark:from-amber-900/20 dark:via-orange-900/20 dark:to-yellow-900/20 rounded-xl p-4 sm:p-6 border border-amber-200 dark:border-amber-800 shadow-lg">
+          <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-yellow-50 dark:from-amber-900/20 dark:via-orange-900/20 dark:to-yellow-900/20 rounded-xl p-4 sm:p-6 border border-amber-200 dark:border-amber-800 shadow-lg">
             <div className="text-center mb-4 sm:mb-6">
               <h4 className="text-xl sm:text-2xl font-bold text-amber-900 dark:text-amber-100 flex items-center justify-center">
                 <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 mr-2" />
