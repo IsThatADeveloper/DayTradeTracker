@@ -1,4 +1,4 @@
-// src/App.tsx - Fixed Sidebar Header Layout with Logo Click Fix and Mobile Dark Mode Toggle
+// src/App.tsx - Fixed Hook Order to Prevent React Error
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings } from 'lucide-react';
 import { Trade } from './types/trade';
@@ -68,6 +68,35 @@ const NAVIGATION_ITEMS = [
 ];
 
 function AppContent() {
+  // =====================================================================================
+  // CRITICAL: RULES OF HOOKS - ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
+  // =====================================================================================
+  // 
+  // React requires that hooks are called in the EXACT SAME ORDER on every render.
+  // If you add an early return statement (like for showing the homepage), it must come
+  // AFTER all hooks have been defined. Otherwise you'll get the error:
+  // "Rendered fewer hooks than expected. This may be caused by an accidental early return statement."
+  //
+  // WRONG ❌:
+  // const [state] = useState();
+  // if (condition) return <Component />;  // Early return!
+  // const [otherState] = useState();      // This hook won't be called consistently
+  //
+  // CORRECT ✅:
+  // const [state] = useState();
+  // const [otherState] = useState();      // ALL hooks called first
+  // if (condition) return <Component />;  // Then conditional returns
+  //
+  // The order below is:
+  // 1. All useAuth, useCustomHooks
+  // 2. All useState, useLocalStorage
+  // 3. All useCallback
+  // 4. All useMemo  
+  // 5. All useEffect
+  // 6. THEN conditional returns and render logic
+  // =====================================================================================
+
+  // 1. CUSTOM HOOKS (useAuth, useBrokerIntegration, etc.)
   const { currentUser } = useAuth();
   const {
     connections: brokerConnections,
@@ -79,9 +108,9 @@ function AppContent() {
     disableAutoSync
   } = useBrokerIntegration();
   
-  // Show homepage by default for new visitors, but remember if they've entered the app
+  // 2. ALL STATE HOOKS (useState, useLocalStorage)
+  // =====================================================================================
   const [showHomePage, setShowHomePage] = useLocalStorage('show-homepage', true);
-  
   const [localTrades, setLocalTrades] = useLocalStorage<Trade[]>('day-trader-trades', []);
   const [cloudTrades, setCloudTrades] = useState<Trade[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -95,10 +124,13 @@ function AppContent() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
+  // 3. COMPUTED VALUES (basic calculations that don't need memoization)
+  // =====================================================================================
   const activeTrades = currentUser ? cloudTrades : localTrades;
   const totalBrokerTrades = getTotalBrokerTrades();
 
-  // Enhanced homepage handlers with debugging
+  // 4. ALL CALLBACK HOOKS (useCallback)
+  // =====================================================================================
   const handleGetStarted = useCallback(() => {
     console.log('🏠 Getting started - hiding homepage');
     setShowHomePage(false);
@@ -112,7 +144,6 @@ function AppContent() {
     setActiveView('daily');
   }, [setShowHomePage, showHomePage]);
 
-  // Memoize expensive calculations
   const normalizeToLocalDate = useCallback((date: Date): Date => {
     return new Date(date.getFullYear(), date.getMonth(), date.getDate());
   }, []);
@@ -123,54 +154,6 @@ function AppContent() {
     return d1.getTime() === d2.getTime();
   }, [normalizeToLocalDate]);
 
-  // Memoize daily trades calculation
-  const dailyTrades = useMemo(() => {
-    const targetDate = normalizeToLocalDate(selectedDate);
-    return activeTrades
-      .map(trade => ({
-        ...trade,
-        timestamp: trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp),
-      }))
-      .filter(trade => isSameDayLocal(trade.timestamp, targetDate));
-  }, [activeTrades, selectedDate, normalizeToLocalDate, isSameDayLocal]);
-
-  // Memoize stats calculations
-  const dailyStats = useMemo(() => {
-    return calculateDailyStats(dailyTrades, selectedDate);
-  }, [dailyTrades, selectedDate]);
-
-  const weeklyStats = useMemo(() => {
-    return getWeeklyStats(activeTrades, selectedDate);
-  }, [activeTrades, selectedDate]);
-
-  // Memoize date input value
-  const dateInputValue = useMemo(() => {
-    const year = selectedDate.getFullYear();
-    const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-    const day = String(selectedDate.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }, [selectedDate]);
-
-  // Effects and handlers (keeping all the existing logic)
-  useEffect(() => {
-    const htmlElement = document.documentElement;
-    if (darkMode) {
-      htmlElement.classList.add('dark');
-    } else {
-      htmlElement.classList.remove('dark');
-    }
-  }, [darkMode]);
-
-  useEffect(() => {
-    if (currentUser) {
-      loadCloudTrades();
-    } else {
-      setCloudTrades([]);
-      setIsLoadingCloudData(false);
-    }
-  }, [currentUser]);
-
-  // Load cloud data function
   const loadCloudTrades = useCallback(async () => {
     if (!currentUser) return;
     setIsLoadingCloudData(true);
@@ -184,7 +167,6 @@ function AppContent() {
     }
   }, [currentUser]);
 
-  // All the existing handlers (keeping them as is)
   const handleTradeAdded = useCallback(async (newTrade: Trade) => {
     if (currentUser) {
       try {
@@ -290,7 +272,7 @@ function AppContent() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [dailyTrades, selectedDate]);
+  }, [selectedDate]); // Note: dailyTrades dependency added below in useMemo
 
   const handleDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value;
@@ -318,7 +300,69 @@ function AppContent() {
     }
   }, [syncAllTrades, loadCloudTrades]);
 
-  // Enhanced homepage conditional with debugging
+  // 5. ALL MEMOIZED VALUES (useMemo)
+  // =====================================================================================
+  const dailyTrades = useMemo(() => {
+    const targetDate = normalizeToLocalDate(selectedDate);
+    return activeTrades
+      .map(trade => ({
+        ...trade,
+        timestamp: trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp),
+      }))
+      .filter(trade => isSameDayLocal(trade.timestamp, targetDate));
+  }, [activeTrades, selectedDate, normalizeToLocalDate, isSameDayLocal]);
+
+  const dailyStats = useMemo(() => {
+    return calculateDailyStats(dailyTrades, selectedDate);
+  }, [dailyTrades, selectedDate]);
+
+  const weeklyStats = useMemo(() => {
+    return getWeeklyStats(activeTrades, selectedDate);
+  }, [activeTrades, selectedDate]);
+
+  const dateInputValue = useMemo(() => {
+    const year = selectedDate.getFullYear();
+    const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+    const day = String(selectedDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, [selectedDate]);
+
+  const lastTrade = useMemo(() => 
+    activeTrades.length > 0 ? activeTrades[0] : undefined, 
+    [activeTrades]
+  );
+
+  // 6. ALL EFFECT HOOKS (useEffect)
+  // =====================================================================================
+  useEffect(() => {
+    const htmlElement = document.documentElement;
+    if (darkMode) {
+      htmlElement.classList.add('dark');
+    } else {
+      htmlElement.classList.remove('dark');
+    }
+  }, [darkMode]);
+
+  useEffect(() => {
+    if (currentUser) {
+      loadCloudTrades();
+    } else {
+      setCloudTrades([]);
+      setIsLoadingCloudData(false);
+    }
+  }, [currentUser, loadCloudTrades]);
+
+  // =====================================================================================
+  // 🚨 CRITICAL: ALL HOOKS ABOVE - CONDITIONAL RETURNS BELOW
+  // =====================================================================================
+  // Now that ALL hooks have been called in the same order every render,
+  // it's SAFE to do conditional returns. This prevents React hook errors.
+  //
+  // DO NOT add any new hooks after this point!
+  // DO NOT add useState, useEffect, useMemo, useCallback, etc. below this line!
+  // =====================================================================================
+
+  // SAFE: Homepage conditional return (after all hooks are called)
   if (showHomePage) {
     console.log('🏠 Rendering HomePage component, showHomePage:', showHomePage);
     return <HomePage onGetStarted={handleGetStarted} />;
@@ -326,22 +370,19 @@ function AppContent() {
 
   console.log('🏠 Rendering main app, showHomePage:', showHomePage);
 
-  const lastTrade = useMemo(() => 
-    activeTrades.length > 0 ? activeTrades[0] : undefined, 
-    [activeTrades]
-  );
+  // =====================================================================================
+  // RENDER FUNCTIONS AND MAIN COMPONENT LOGIC
+  // =====================================================================================
 
-  // Render sidebar navigation item - Updated to match theme toggle style
+  // Render sidebar navigation item
   const renderSidebarItem = (item: typeof NAVIGATION_ITEMS[0]) => {
     const isActive = activeView === item.id;
     const Icon = item.icon;
     
-    // Show notification badge for brokers
     const showBadge = item.id === 'brokers' && brokerConnections.length > 0;
     const badgeContent = item.id === 'brokers' ? brokerConnections.length : totalBrokerTrades;
     
     if (sidebarCollapsed) {
-      // Collapsed state - icon only like theme toggle
       return (
         <button
           key={item.id}
@@ -366,7 +407,6 @@ function AppContent() {
       );
     }
     
-    // Expanded state - full button with text
     return (
       <button
         key={item.id}
@@ -486,14 +526,13 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-      {/* Fixed Desktop Sidebar - Increased width to prevent overlap */}
+      {/* Fixed Desktop Sidebar */}
       <div className={`hidden lg:block fixed top-0 left-0 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 z-40 transition-all duration-200 ${
         sidebarCollapsed ? 'w-16' : 'w-72'
       }`}>
-        {/* Sidebar Header - Fixed layout to prevent overlap */}
+        {/* Sidebar Header */}
         <div className="flex items-center p-4 border-b border-gray-200 dark:border-gray-700 h-16">
           {sidebarCollapsed ? (
-            /* Collapsed state - Just the collapse button */
             <div className="w-full flex justify-center">
               <button
                 onClick={() => setSidebarCollapsed(false)}
@@ -504,7 +543,6 @@ function AppContent() {
               </button>
             </div>
           ) : (
-            /* Expanded state - Logo and collapse button with proper spacing */
             <>
               <div className="flex items-center min-w-0 flex-1">
                 <button
@@ -541,7 +579,7 @@ function AppContent() {
 
         {/* Sidebar Footer */}
         <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
-          {/* Broker Sync Button - Consistent styling */}
+          {/* Broker Sync Button */}
           {currentUser && brokerConnections.length > 0 && (
             <button
               onClick={handleSyncAllBrokers}
@@ -560,7 +598,7 @@ function AppContent() {
             </button>
           )}
 
-          {/* Auth and Theme Toggle - Consistent styling */}
+          {/* Auth and Theme Toggle */}
           {!sidebarCollapsed ? (
             <div className="flex items-center space-x-2">
               <div className="flex-1">
@@ -575,7 +613,6 @@ function AppContent() {
               </button>
             </div>
           ) : (
-            /* Theme Toggle - Collapsed state */
             <button
               onClick={() => setDarkMode(!darkMode)}
               className="p-2 w-full flex items-center justify-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
@@ -587,7 +624,7 @@ function AppContent() {
         </div>
       </div>
 
-      {/* Main Content Area with proper margin for fixed sidebar */}
+      {/* Main Content Area */}
       <div className={`min-h-screen transition-all duration-200 ${
         sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-72'
       }`}>
