@@ -1,4 +1,4 @@
-// src/App.tsx - Fixed Sidebar Header Layout with Logo Click Fix
+// src/App.tsx - Fixed Sidebar Header Layout with Logo Click Fix and Mobile Dark Mode Toggle
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings } from 'lucide-react';
 import { Trade } from './types/trade';
@@ -591,7 +591,7 @@ function AppContent() {
       <div className={`min-h-screen transition-all duration-200 ${
         sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-72'
       }`}>
-        {/* Mobile Header */}
+        {/* Mobile Header - FIXED: Added Dark Mode Toggle */}
         <header className="lg:hidden bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30">
           <div className="px-4 h-16 flex items-center justify-between">
             {/* Mobile Logo */}
@@ -605,8 +605,17 @@ function AppContent() {
               </h1>
             </button>
 
-            {/* Mobile Controls */}
+            {/* Mobile Controls - FIXED: Added Dark Mode Toggle */}
             <div className="flex items-center space-x-2">
+              {/* Dark Mode Toggle - Always visible on mobile */}
+              <button
+                onClick={() => setDarkMode(!darkMode)}
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                title="Toggle dark mode"
+              >
+                {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </button>
+
               {/* Mobile Menu Toggle */}
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
