@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { BarChart3, TrendingUp, TrendingDown, Filter, Target, DollarSign, Settings } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Filter, Target, DollarSign, Settings, Clock } from 'lucide-react';
 
 // Your existing Trade type (imported from '../types/trade')
 interface Trade {
@@ -31,21 +31,41 @@ interface StockPerformance {
   bestTrade: number;
   worstTrade: number;
   lastTraded: Date;
+  displaySize: number;
 }
 
-interface TreemapCell extends StockPerformance {
+interface TimePerformance {
+  hour: number;
+  timeLabel: string;
+  totalPL: number;
+  trades: number;
+  winRate: number;
+  avgPLPerTrade: number;
+  isWinner: boolean;
+  absValue: number;
+}
+
+interface TreemapNode {
+  ticker: string;
+  totalPL: number;
+  trades: number;
+  winRate: number;
+  isWinner: boolean;
   x: number;
   y: number;
   width: number;
   height: number;
+  area: number;
 }
 
 const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) => {
   const [minTrades, setMinTrades] = useState(3);
   const [timeFilter, setTimeFilter] = useState('all'); // 'all', '30d', '90d', '1y'
   const [sortBy, setSortBy] = useState('totalPL'); // 'totalPL', 'trades', 'winRate'
+  const [visualMode, setVisualMode] = useState<'grid' | 'bars'>('grid');
+  const [barChartMode, setBarChartMode] = useState<'stocks' | 'timeOfDay'>('timeOfDay');
 
-  // Process trades data
+  // Process trades data for stocks
   const stockPerformance = useMemo(() => {
     if (!trades || trades.length === 0) return [];
 
@@ -92,6 +112,11 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
           t.timestamp instanceof Date ? t.timestamp.getTime() : new Date(t.timestamp).getTime()
         )));
 
+        // Better size calculation combining P&L magnitude and trade volume
+        const plWeight = Math.abs(data.totalPL);
+        const tradeWeight = data.trades.length * 50;
+        const displaySize = plWeight + tradeWeight;
+
         return {
           ticker,
           totalPL: data.totalPL,
@@ -102,7 +127,8 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
           isWinner: data.totalPL > 0,
           bestTrade,
           worstTrade,
-          lastTraded
+          lastTraded,
+          displaySize
         };
       })
       .filter(stock => stock.trades >= minTrades)
@@ -117,138 +143,223 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
     return stockArray;
   }, [trades, minTrades, timeFilter, sortBy]);
 
-  // Advanced treemap layout algorithm
-  const calculateTreemapLayout = (data: StockPerformance[], width = 1000, height = 600): TreemapCell[] => {
+  // Process trades data by time of day - FIXED to include all P&L
+  const timePerformance = useMemo(() => {
+    if (!trades || trades.length === 0) return [];
+
+    // Filter by time period (same as stock performance)
+    let filteredTrades = trades;
+    if (timeFilter !== 'all') {
+      const now = new Date();
+      const daysBack = timeFilter === '30d' ? 30 : timeFilter === '90d' ? 90 : 365;
+      const cutoffDate = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000);
+      filteredTrades = trades.filter(trade => {
+        const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+        return tradeDate >= cutoffDate;
+      });
+    }
+
+    // Group by hour (market hours focus: 9:30 AM - 4:00 PM ET)
+    const hourMap = new Map<number, {
+      totalPL: number;
+      trades: Trade[];
+      wins: number;
+      losses: number;
+    }>();
+
+    filteredTrades.forEach(trade => {
+      const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+      const hour = tradeDate.getHours();
+      const existing = hourMap.get(hour) || { totalPL: 0, trades: [], wins: 0, losses: 0 };
+      
+      existing.totalPL += trade.realizedPL;
+      existing.trades.push(trade);
+      if (trade.realizedPL > 0) existing.wins++;
+      else if (trade.realizedPL < 0) existing.losses++;
+      
+      hourMap.set(hour, existing);
+    });
+
+    // Convert to array for ALL hours that have trades
+    const timeArray: TimePerformance[] = [];
+    
+    // Get all hours that actually have trades and sort them
+    const hoursWithTrades = Array.from(hourMap.keys()).sort((a, b) => a - b);
+    
+    hoursWithTrades.forEach(hour => {
+      const data = hourMap.get(hour);
+      if (data && data.trades.length > 0) {
+        const winRate = (data.wins / data.trades.length) * 100;
+        const avgPLPerTrade = data.totalPL / data.trades.length;
+        
+        // Format time labels for all hours
+        let timeLabel: string;
+        if (hour === 0) timeLabel = '12:00-1:00 AM';
+        else if (hour < 12) timeLabel = `${hour}:00-${hour + 1}:00 AM`;
+        else if (hour === 12) timeLabel = '12:00-1:00 PM';
+        else timeLabel = `${hour - 12}:00-${hour - 11}:00 PM`;
+        
+        // Special market hour labels
+        if (hour === 9) timeLabel = '9:30-10:00 AM (Market Open)';
+        else if (hour === 16) timeLabel = '3:30-4:00 PM (Market Close)';
+        else if (hour === 4) timeLabel = '4:00-5:00 AM (Pre-market)';
+        else if (hour === 20) timeLabel = '8:00-9:00 PM (After Hours)';
+        
+        timeArray.push({
+          hour,
+          timeLabel,
+          totalPL: data.totalPL,
+          trades: data.trades.length,
+          winRate: Math.round(winRate),
+          avgPLPerTrade: Math.round(avgPLPerTrade),
+          isWinner: data.totalPL > 0,
+          absValue: Math.abs(data.totalPL)
+        });
+      }
+    });
+
+    return timeArray.sort((a, b) => a.hour - b.hour);
+  }, [trades, timeFilter]);
+
+  // Proper treemap layout algorithm
+  const calculateTreemapLayout = (data: StockPerformance[], containerWidth = 1200, containerHeight = 500): TreemapNode[] => {
     if (data.length === 0) return [];
 
-    const totalValue = data.reduce((sum, item) => sum + item.absValue, 0);
-    if (totalValue === 0) return [];
-
-    // Squarified treemap algorithm
-    const result: TreemapCell[] = [];
-    const container = { x: 0, y: 0, width, height };
+    // Sort by display size (largest first)
+    const sortedData = [...data].sort((a, b) => b.displaySize - a.displaySize);
     
-    const squarify = (items: StockPerformance[], container: any) => {
-      if (items.length === 0) return;
+    // Calculate total area
+    const totalArea = sortedData.reduce((sum, item) => sum + item.displaySize, 0);
+    const targetArea = containerWidth * containerHeight;
+    
+    // Scale factor to fit container
+    const scale = targetArea / totalArea;
+    
+    // Squarified treemap algorithm
+    const rectangles: TreemapNode[] = [];
+    let currentRow: StockPerformance[] = [];
+    let x = 0;
+    let y = 0;
+    let rowWidth = containerWidth;
+    let rowHeight = 0;
+    
+    const layoutRow = (items: StockPerformance[], width: number, height: number, startX: number, startY: number) => {
+      const totalItemArea = items.reduce((sum, item) => sum + item.displaySize * scale, 0);
+      let currentX = startX;
       
-      if (items.length === 1) {
-        result.push({
-          ...items[0],
-          x: container.x,
-          y: container.y,
-          width: container.width,
-          height: container.height
-        });
-        return;
-      }
-
-      const isWide = container.width > container.height;
-      const total = items.reduce((sum, item) => sum + item.absValue, 0);
-      
-      // Split into rows/columns
-      let current = 0;
-      let i = 0;
-      
-      while (i < items.length) {
-        const item = items[i];
-        const newCurrent = current + item.absValue;
-        const ratio = newCurrent / total;
+      items.forEach((item) => {
+        const itemArea = item.displaySize * scale;
+        const itemWidth = (itemArea / totalItemArea) * width;
+        const itemHeight = height;
         
-        if (i === items.length - 1 || ratio > 0.4) {
-          // Create a row/column
-          const rowItems = items.slice(current === 0 ? 0 : i, i + 1);
-          const rowTotal = rowItems.reduce((sum, item) => sum + item.absValue, 0);
-          
-          if (isWide) {
-            const rowWidth = (rowTotal / total) * container.width;
-            let y = container.y;
-            
-            rowItems.forEach(rowItem => {
-              const itemHeight = (rowItem.absValue / rowTotal) * container.height;
-              result.push({
-                ...rowItem,
-                x: container.x,
-                y: y,
-                width: rowWidth,
-                height: itemHeight
-              });
-              y += itemHeight;
-            });
-            
-            if (i < items.length - 1) {
-              squarify(items.slice(i + 1), {
-                x: container.x + rowWidth,
-                y: container.y,
-                width: container.width - rowWidth,
-                height: container.height
-              });
-            }
-          } else {
-            const rowHeight = (rowTotal / total) * container.height;
-            let x = container.x;
-            
-            rowItems.forEach(rowItem => {
-              const itemWidth = (rowItem.absValue / rowTotal) * container.width;
-              result.push({
-                ...rowItem,
-                x: x,
-                y: container.y,
-                width: itemWidth,
-                height: rowHeight
-              });
-              x += itemWidth;
-            });
-            
-            if (i < items.length - 1) {
-              squarify(items.slice(i + 1), {
-                x: container.x,
-                y: container.y + rowHeight,
-                width: container.width,
-                height: container.height - rowHeight
-              });
-            }
-          }
-          break;
-        }
-        current = newCurrent;
-        i++;
-      }
+        rectangles.push({
+          ticker: item.ticker,
+          totalPL: item.totalPL,
+          trades: item.trades,
+          winRate: item.winRate,
+          isWinner: item.isWinner,
+          area: itemArea,
+          x: currentX,
+          y: startY,
+          width: itemWidth,
+          height: itemHeight
+        });
+        
+        currentX += itemWidth;
+      });
     };
-
-    squarify(data, container);
-    return result;
+    
+    const calculateAspectRatio = (items: StockPerformance[], width: number): number => {
+      if (items.length === 0) return Infinity;
+      
+      const totalArea = items.reduce((sum, item) => sum + item.displaySize * scale, 0);
+      const height = totalArea / width;
+      
+      const minArea = Math.min(...items.map(item => item.displaySize * scale));
+      const maxArea = Math.max(...items.map(item => item.displaySize * scale));
+      
+      const minAspect = Math.min((width * width * minArea) / (height * height * totalArea * totalArea), 
+                                 (height * height * totalArea * totalArea) / (width * width * minArea));
+      const maxAspect = Math.min((width * width * maxArea) / (height * height * totalArea * totalArea),
+                                 (height * height * totalArea * totalArea) / (width * width * maxArea));
+      
+      return Math.min(minAspect, maxAspect);
+    };
+    
+    for (let i = 0; i < sortedData.length; i++) {
+      const item = sortedData[i];
+      currentRow.push(item);
+      
+      const currentAspect = calculateAspectRatio(currentRow, rowWidth);
+      const nextItem = sortedData[i + 1];
+      
+      if (nextItem) {
+        const nextRowWithItem = [...currentRow, nextItem];
+        const nextAspect = calculateAspectRatio(nextRowWithItem, rowWidth);
+        
+        if (nextAspect < currentAspect) {
+          continue; // Add next item to current row
+        }
+      }
+      
+      // Layout current row
+      const totalRowArea = currentRow.reduce((sum, item) => sum + item.displaySize * scale, 0);
+      rowHeight = totalRowArea / rowWidth;
+      
+      layoutRow(currentRow, rowWidth, rowHeight, x, y);
+      
+      // Move to next row
+      y += rowHeight;
+      currentRow = [];
+      
+      // Adjust remaining space
+      const remainingHeight = containerHeight - y;
+      if (remainingHeight > 0 && i < sortedData.length - 1) {
+        rowWidth = containerWidth;
+      }
+    }
+    
+    return rectangles;
   };
 
-  const layout = calculateTreemapLayout(stockPerformance, 1200, 600);
+  const treemapLayout = calculateTreemapLayout(stockPerformance, 1200, 500);
 
   // Professional color scheme
-  const getStockStyle = (stock: StockPerformance) => {
-    const maxPL = Math.max(...stockPerformance.map(s => Math.abs(s.totalPL)));
-    const intensity = Math.min(stock.absValue / maxPL, 1);
+  const getStockStyle = (stock: StockPerformance | TreemapNode) => {
+    const maxTrades = Math.max(...stockPerformance.map(s => s.trades));
+    const tradeIntensity = Math.min(stock.trades / Math.max(maxTrades, 1), 1);
     
     if (stock.isWinner) {
-      // Professional green gradient
-      const baseColor = [16, 185, 129]; // emerald-500
-      const darkColor = [4, 120, 87]; // emerald-700
-      const lightColor = [209, 250, 229]; // emerald-50
-      
+      const intensity = 0.4 + (0.5 * tradeIntensity);
       return {
-        backgroundColor: `rgb(${Math.floor(lightColor[0] + (baseColor[0] - lightColor[0]) * intensity)}, ${Math.floor(lightColor[1] + (baseColor[1] - lightColor[1]) * intensity)}, ${Math.floor(lightColor[2] + (baseColor[2] - lightColor[2]) * intensity)})`,
-        borderColor: `rgb(${darkColor[0]}, ${darkColor[1]}, ${darkColor[2]})`,
-        textColor: intensity > 0.6 ? 'white' : `rgb(${darkColor[0]}, ${darkColor[1]}, ${darkColor[2]})`,
-        shadowColor: `rgba(${baseColor[0]}, ${baseColor[1]}, ${baseColor[2]}, 0.3)`
+        backgroundColor: `rgba(34, 197, 94, ${intensity})`,
+        borderColor: `rgba(21, 128, 61, 0.8)`,
+        textColor: intensity > 0.6 ? 'white' : 'rgba(21, 128, 61, 1)',
+        shadowColor: `rgba(34, 197, 94, 0.3)`
       };
     } else {
-      // Professional red gradient
-      const baseColor = [239, 68, 68]; // red-500
-      const darkColor = [153, 27, 27]; // red-800
-      const lightColor = [254, 226, 226]; // red-50
-      
+      const intensity = 0.4 + (0.5 * tradeIntensity);
       return {
-        backgroundColor: `rgb(${Math.floor(lightColor[0] + (baseColor[0] - lightColor[0]) * intensity)}, ${Math.floor(lightColor[1] + (baseColor[1] - lightColor[1]) * intensity)}, ${Math.floor(lightColor[2] + (baseColor[2] - lightColor[2]) * intensity)})`,
-        borderColor: `rgb(${darkColor[0]}, ${darkColor[1]}, ${darkColor[2]})`,
-        textColor: intensity > 0.6 ? 'white' : `rgb(${darkColor[0]}, ${darkColor[1]}, ${darkColor[2]})`,
-        shadowColor: `rgba(${baseColor[0]}, ${baseColor[1]}, ${baseColor[2]}, 0.3)`
+        backgroundColor: `rgba(239, 68, 68, ${intensity})`,
+        borderColor: `rgba(153, 27, 27, 0.8)`,
+        textColor: intensity > 0.6 ? 'white' : 'rgba(153, 27, 27, 1)',
+        shadowColor: `rgba(239, 68, 68, 0.3)`
+      };
+    }
+  };
+
+  const getTimeStyle = (timeData: TimePerformance) => {
+    if (timeData.isWinner) {
+      return {
+        backgroundColor: `rgba(34, 197, 94, 0.7)`,
+        borderColor: `rgba(21, 128, 61, 0.8)`,
+        textColor: 'white'
+      };
+    } else {
+      return {
+        backgroundColor: `rgba(239, 68, 68, 0.7)`,
+        borderColor: `rgba(153, 27, 27, 0.8)`,
+        textColor: 'white'
       };
     }
   };
@@ -284,6 +395,109 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
     }).format(amount);
   };
 
+  // Render stock bar chart - REMOVED HOVER EFFECTS
+  const renderStockBarChart = () => {
+    const maxAbsValue = Math.max(...stockPerformance.map(s => s.absValue));
+    
+    return (
+      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+        <div className="space-y-2 max-h-[500px] overflow-y-auto">
+          {stockPerformance.map((stock) => {
+            const barWidth = maxAbsValue > 0 ? (stock.absValue / maxAbsValue) * 100 : 0;
+            const style = getStockStyle(stock);
+            
+            return (
+              <div key={stock.ticker} className="flex items-center space-x-4 p-2">
+                <div className="w-12 text-right">
+                  <span className="font-bold text-sm">{stock.ticker}</span>
+                </div>
+                
+                <div className="flex-1 relative">
+                  <div 
+                    className="h-8 rounded flex items-center justify-between px-2"
+                    style={{
+                      backgroundColor: style.backgroundColor,
+                      borderLeft: `4px solid ${style.borderColor}`,
+                      width: `${Math.max(barWidth, 10)}%`,
+                      boxShadow: `0 2px 4px ${style.shadowColor}`
+                    }}
+                  >
+                    <span className="text-xs font-medium" style={{ color: style.textColor }}>
+                      {stock.trades} trades
+                    </span>
+                    <span className="text-sm font-bold" style={{ color: style.textColor }}>
+                      {formatCurrency(stock.totalPL)}
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="w-16 text-right">
+                  <span className={`text-sm font-medium ${
+                    stock.winRate >= 50 ? 'text-emerald-600' : 'text-red-500'
+                  }`}>
+                    {stock.winRate}%
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // Render time-based bar chart - REMOVED HOVER EFFECTS
+  const renderTimeBarChart = () => {
+    // FIXED: Use actual total P&L values instead of absolute values for bar sizing
+    const maxValue = Math.max(...timePerformance.map(t => Math.abs(t.totalPL)));
+    
+    return (
+      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+        <div className="space-y-2 max-h-[500px] overflow-y-auto">
+          {timePerformance.map((timeData) => {
+            const barWidth = maxValue > 0 ? (Math.abs(timeData.totalPL) / maxValue) * 100 : 0;
+            const style = getTimeStyle(timeData);
+            
+            return (
+              <div key={timeData.hour} className="flex items-center space-x-4 p-2">
+                <div className="w-20 text-right">
+                  <span className="font-bold text-sm">{timeData.timeLabel}</span>
+                </div>
+                
+                <div className="flex-1 relative">
+                  <div 
+                    className="h-8 rounded flex items-center justify-between px-2"
+                    style={{
+                      backgroundColor: style.backgroundColor,
+                      borderLeft: `4px solid ${style.borderColor}`,
+                      width: `${Math.max(barWidth, 10)}%`,
+                      boxShadow: `0 2px 4px rgba(0,0,0,0.1)`
+                    }}
+                  >
+                    <span className="text-xs font-medium" style={{ color: style.textColor }}>
+                      {timeData.trades} trades
+                    </span>
+                    <span className="text-sm font-bold" style={{ color: style.textColor }}>
+                      {formatCurrency(timeData.totalPL)}
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="w-16 text-right">
+                  <span className={`text-sm font-medium ${
+                    timeData.winRate >= 50 ? 'text-emerald-600' : 'text-red-500'
+                  }`}>
+                    {timeData.winRate}%
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   if (!trades || trades.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
@@ -315,7 +529,7 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
               </h2>
             </div>
             <p className="text-gray-600 dark:text-gray-400">
-              Visual overview of your stock trading performance • Box size represents profit/loss magnitude
+              Visual overview of your stock trading performance • Size represents combined profit/loss and trade volume
             </p>
           </div>
           
@@ -347,6 +561,57 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
                 <option value={10}>Min 10 Trades</option>
               </select>
             </div>
+
+            {/* Visualization Mode Toggle */}
+            <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+              <button
+                onClick={() => setVisualMode('grid')}
+                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                  visualMode === 'grid'
+                    ? 'bg-white dark:bg-gray-800 text-blue-600 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400'
+                }`}
+              >
+                Treemap
+              </button>
+              <button
+                onClick={() => setVisualMode('bars')}
+                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                  visualMode === 'bars'
+                    ? 'bg-white dark:bg-gray-800 text-blue-600 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400'
+                }`}
+              >
+                Bars
+              </button>
+            </div>
+
+            {/* Bar Chart Mode Toggle (only show when bars are selected) */}
+            {visualMode === 'bars' && (
+              <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                <button
+                  onClick={() => setBarChartMode('stocks')}
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                    barChartMode === 'stocks'
+                      ? 'bg-white dark:bg-gray-800 text-blue-600 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400'
+                  }`}
+                >
+                  Stocks
+                </button>
+                <button
+                  onClick={() => setBarChartMode('timeOfDay')}
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                    barChartMode === 'timeOfDay'
+                      ? 'bg-white dark:bg-gray-800 text-blue-600 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400'
+                  }`}
+                >
+                  <Clock className="h-3 w-3 mr-1 inline" />
+                  Time of Day
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -414,11 +679,12 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
         </div>
       </div>
 
-      {/* Treemap Visualization */}
+      {/* Main Visualization */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
         <div className="mb-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-            Stock Performance Map
+            {visualMode === 'grid' ? 'Stock Performance Treemap' : 
+             barChartMode === 'timeOfDay' ? 'Performance by Time of Day' : 'Stock Performance Bars'}
           </h3>
           <div className="flex items-center space-x-6 text-sm text-gray-600 dark:text-gray-400">
             <div className="flex items-center space-x-2">
@@ -429,49 +695,54 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
               <div className="w-4 h-4 bg-red-400 rounded border border-red-600"></div>
               <span>Losing positions</span>
             </div>
-            <span className="text-xs">Box size represents profit/loss magnitude</span>
+            <span className="text-xs">
+              {visualMode === 'grid' 
+                ? 'Rectangle size = P&L magnitude + trade volume' 
+                : barChartMode === 'timeOfDay' 
+                  ? 'Bar length = P&L magnitude by hour' 
+                  : 'Bar length = P&L magnitude by stock'}
+            </span>
           </div>
         </div>
 
-        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 overflow-hidden">
-          {stockPerformance.length > 0 ? (
+        {stockPerformance.length > 0 ? (
+          visualMode === 'grid' ? (
             <div className="relative w-full" style={{ height: '500px' }}>
               <svg 
                 width="100%" 
                 height="100%" 
                 viewBox="0 0 1200 500" 
-                className="rounded-lg"
+                className="rounded-lg border border-gray-200 dark:border-gray-700"
                 style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)' }}
               >
-                {layout.map((stock) => {
-                  const style = getStockStyle(stock);
-                  const showFullText = stock.width > 100 && stock.height > 50;
-                  const showTicker = stock.width > 60 && stock.height > 30;
+                {treemapLayout.map((node) => {
+                  const style = getStockStyle(node);
+                  const showFullText = node.width > 80 && node.height > 40;
+                  const showTicker = node.width > 40 && node.height > 25;
                   
                   return (
-                    <g key={stock.ticker}>
+                    <g key={node.ticker}>
                       {/* Drop shadow */}
                       <rect
-                        x={stock.x + 2}
-                        y={stock.y + 2}
-                        width={stock.width}
-                        height={stock.height}
-                        fill={style.shadowColor}
-                        rx="6"
-                        opacity="0.2"
+                        x={node.x + 2}
+                        y={node.y + 2}
+                        width={node.width}
+                        height={node.height}
+                        fill="rgba(0,0,0,0.1)"
+                        rx="4"
                       />
                       
                       {/* Main rectangle */}
                       <rect
-                        x={stock.x}
-                        y={stock.y}
-                        width={stock.width}
-                        height={stock.height}
+                        x={node.x}
+                        y={node.y}
+                        width={node.width}
+                        height={node.height}
                         fill={style.backgroundColor}
                         stroke={style.borderColor}
                         strokeWidth="1.5"
-                        rx="6"
-                        className="hover:opacity-90 transition-opacity cursor-pointer"
+                        rx="4"
+                        className="cursor-pointer"
                       />
                       
                       {/* Content */}
@@ -479,49 +750,67 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
                         <>
                           {/* Ticker symbol */}
                           <text
-                            x={stock.x + stock.width / 2}
-                            y={stock.y + (showFullText ? stock.height / 2 - 12 : stock.height / 2)}
+                            x={node.x + node.width / 2}
+                            y={node.y + (showFullText ? node.height / 2 - 12 : node.height / 2 - 4)}
                             textAnchor="middle"
                             dominantBaseline="middle"
-                            fontSize={showFullText ? "16" : "14"}
+                            fontSize={Math.min(node.width / 4, showFullText ? 16 : 12)}
                             fontWeight="700"
                             fill={style.textColor}
                             fontFamily="system-ui, -apple-system, sans-serif"
                           >
-                            {stock.ticker}
+                            {node.ticker}
                           </text>
                           
                           {/* P&L amount */}
-                          {showFullText && (
-                            <text
-                              x={stock.x + stock.width / 2}
-                              y={stock.y + stock.height / 2 + 6}
-                              textAnchor="middle"
-                              dominantBaseline="middle"
-                              fontSize="14"
-                              fontWeight="600"
-                              fill={style.textColor}
-                              fontFamily="system-ui, -apple-system, sans-serif"
-                            >
-                              {formatCurrency(stock.totalPL)}
-                            </text>
-                          )}
+                          <text
+                            x={node.x + node.width / 2}
+                            y={node.y + (showFullText ? node.height / 2 + 4 : node.height / 2 + 8)}
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            fontSize={Math.min(node.width / 6, showFullText ? 13 : 10)}
+                            fontWeight="600"
+                            fill={style.textColor}
+                            fontFamily="system-ui, -apple-system, sans-serif"
+                          >
+                            {formatCurrency(node.totalPL)}
+                          </text>
                           
-                          {/* Additional metrics */}
-                          {showFullText && stock.height > 70 && (
-                            <text
-                              x={stock.x + stock.width / 2}
-                              y={stock.y + stock.height / 2 + 24}
-                              textAnchor="middle"
-                              dominantBaseline="middle"
-                              fontSize="11"
-                              fill={style.textColor}
-                              opacity="0.8"
-                              fontFamily="system-ui, -apple-system, sans-serif"
-                            >
-                              {stock.trades} trades • {stock.winRate}% WR
-                            </text>
+                          {/* Trade count and win rate */}
+                          {showFullText && (
+                            <>
+                              <text
+                                x={node.x + node.width / 2}
+                                y={node.y + node.height / 2 + 20}
+                                textAnchor="middle"
+                                dominantBaseline="middle"
+                                fontSize="10"
+                                fontWeight="500"
+                                fill={style.textColor}
+                                fontFamily="system-ui, -apple-system, sans-serif"
+                              >
+                                {node.trades} trades • {node.winRate}% wins
+                              </text>
+                            </>
                           )}
+                        </>
+                      )}
+                      
+                      {/* Small indicator for tiny rectangles */}
+                      {!showTicker && node.width > 20 && node.height > 15 && (
+                        <>
+                          <text
+                            x={node.x + node.width / 2}
+                            y={node.y + node.height / 2}
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            fontSize="8"
+                            fontWeight="700"
+                            fill={style.textColor}
+                            fontFamily="system-ui, -apple-system, sans-serif"
+                          >
+                            {node.ticker.substring(0, 3)}
+                          </text>
                         </>
                       )}
                     </g>
@@ -530,13 +819,15 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
               </svg>
             </div>
           ) : (
-            <div className="text-center py-12">
-              <p className="text-gray-500 dark:text-gray-400">
-                No stocks meet the current filter criteria. Try adjusting your filters.
-              </p>
-            </div>
-          )}
-        </div>
+            barChartMode === 'timeOfDay' ? renderTimeBarChart() : renderStockBarChart()
+          )
+        ) : (
+          <div className="text-center py-12">
+            <p className="text-gray-500 dark:text-gray-400">
+              No stocks meet the current filter criteria. Try adjusting your filters.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Top Performers */}
@@ -640,6 +931,91 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Best Time of Day Analysis (only show when time data exists) */}
+      {timePerformance.length > 0 && visualMode === 'bars' && barChartMode === 'timeOfDay' && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="p-2 bg-blue-500 rounded-lg shadow-sm">
+              <Clock className="h-5 w-5 text-white" />
+            </div>
+            <h4 className="text-lg font-bold text-gray-900 dark:text-white">
+              Trading Hours Analysis
+            </h4>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Best Hour */}
+            {(() => {
+              const bestHour = timePerformance.reduce((best, hour) => 
+                hour.totalPL > best.totalPL ? hour : best
+              );
+              return (
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 border border-emerald-200 dark:border-emerald-800">
+                  <h5 className="font-semibold text-emerald-800 dark:text-emerald-200 mb-2">
+                    Most Profitable Hour
+                  </h5>
+                  <div className="text-2xl font-bold text-emerald-600 mb-1">
+                    {bestHour.timeLabel}
+                  </div>
+                  <div className="text-lg font-semibold text-emerald-700 dark:text-emerald-300">
+                    {formatCurrency(bestHour.totalPL)}
+                  </div>
+                  <div className="text-sm text-emerald-600 dark:text-emerald-400">
+                    {bestHour.trades} trades • {bestHour.winRate}% win rate
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Most Active Hour */}
+            {(() => {
+              const mostActiveHour = timePerformance.reduce((most, hour) => 
+                hour.trades > most.trades ? hour : most
+              );
+              return (
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+                  <h5 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">
+                    Most Active Hour
+                  </h5>
+                  <div className="text-2xl font-bold text-blue-600 mb-1">
+                    {mostActiveHour.timeLabel}
+                  </div>
+                  <div className="text-lg font-semibold text-blue-700 dark:text-blue-300">
+                    {mostActiveHour.trades} trades
+                  </div>
+                  <div className="text-sm text-blue-600 dark:text-blue-400">
+                    {formatCurrency(mostActiveHour.totalPL)} • {mostActiveHour.winRate}% wins
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Best Win Rate Hour */}
+            {(() => {
+              const bestWinRateHour = timePerformance.reduce((best, hour) => 
+                hour.winRate > best.winRate ? hour : best
+              );
+              return (
+                <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
+                  <h5 className="font-semibold text-purple-800 dark:text-purple-200 mb-2">
+                    Best Win Rate Hour
+                  </h5>
+                  <div className="text-2xl font-bold text-purple-600 mb-1">
+                    {bestWinRateHour.timeLabel}
+                  </div>
+                  <div className="text-lg font-semibold text-purple-700 dark:text-purple-300">
+                    {bestWinRateHour.winRate}% wins
+                  </div>
+                  <div className="text-sm text-purple-600 dark:text-purple-400">
+                    {bestWinRateHour.trades} trades • {formatCurrency(bestWinRateHour.totalPL)}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

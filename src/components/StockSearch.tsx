@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Search, TrendingUp, TrendingDown, BarChart3 } from 'lucide-react';
 import { Trade } from '../types/trade';
 import { formatCurrency } from '../utils/tradeUtils';
+import TradingPerformanceHeatmap from './TradingPerformanceHeatmap';
 
 interface StockSearchProps {
   trades: Trade[];
@@ -24,6 +25,8 @@ interface StockAnalysis {
   lastTradeDate: Date;
 }
 
+type AnalysisView = 'search' | 'heatmap';
+
 export const StockSearch: React.FC<StockSearchProps> = ({
   trades,
   onDateSelect,
@@ -31,6 +34,7 @@ export const StockSearch: React.FC<StockSearchProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStock, setSelectedStock] = useState<string | null>(null);
+  const [activeAnalysisView, setActiveAnalysisView] = useState<AnalysisView>('search');
 
   const stockAnalysis = useMemo(() => {
     const stockMap = new Map<string, Trade[]>();
@@ -99,8 +103,212 @@ export const StockSearch: React.FC<StockSearchProps> = ({
     return pl >= 0 ? 'text-green-600' : 'text-red-600';
   };
 
+  const renderAnalysisViewTabs = () => (
+    <div className="flex items-center space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1 mb-6">
+      <button
+        onClick={() => setActiveAnalysisView('search')}
+        className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+          activeAnalysisView === 'search'
+            ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
+            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+        }`}
+      >
+        <Search className="h-4 w-4 mr-2" />
+        Stock Search & Analysis
+      </button>
+      <button
+        onClick={() => setActiveAnalysisView('heatmap')}
+        className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+          activeAnalysisView === 'heatmap'
+            ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
+            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+        }`}
+      >
+        <BarChart3 className="h-4 w-4 mr-2" />
+        Performance Heatmap
+      </button>
+    </div>
+  );
+
+  const renderStockSearchView = () => (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-1">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+            <h4 className="font-medium text-gray-900 dark:text-white">
+              Stock Performance
+            </h4>
+          </div>
+          <div className="max-h-96 overflow-y-auto">
+            {filteredStocks.map((stock) => (
+              <div
+                key={stock.ticker}
+                onClick={() => setSelectedStock(stock.ticker)}
+                className={`p-4 border-b border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
+                  selectedStock === stock.ticker ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200' : ''
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h5 className="font-semibold text-gray-900 dark:text-white">
+                      {stock.ticker}
+                    </h5>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      {stock.totalTrades} trades
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className={`font-semibold ${getPLColor(stock.totalPL)}`}>
+                      {formatCurrency(stock.totalPL)}
+                    </p>
+                    <p className={`text-sm ${getWinRateColor(stock.winRate)}`}>
+                      {stock.winRate.toFixed(1)}% WR
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {filteredStocks.length === 0 && (
+              <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+                <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No stocks found matching "{searchTerm}"</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="lg:col-span-2">
+        {selectedStockData ? (
+          <div className="space-y-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-xl font-bold text-gray-900 dark:text-white">
+                  {selectedStockData.ticker} Analysis
+                </h4>
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  Last traded: {selectedStockData.lastTradeDate.toLocaleDateString()}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                <div className="text-center">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Total P&L</p>
+                  <p className={`text-xl font-bold ${getPLColor(selectedStockData.totalPL)}`}>
+                    {formatCurrency(selectedStockData.totalPL)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Win Rate</p>
+                  <p className={`text-xl font-bold ${getWinRateColor(selectedStockData.winRate)}`}>
+                    {selectedStockData.winRate.toFixed(1)}%
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Avg Win</p>
+                  <p className="text-xl font-bold text-green-600">
+                    {formatCurrency(selectedStockData.avgWin)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Avg Loss</p>
+                  <p className="text-xl font-bold text-red-600">
+                    {formatCurrency(Math.abs(selectedStockData.avgLoss))}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="text-center">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Best Trade</p>
+                  <p className="text-lg font-semibold text-green-600">
+                    {formatCurrency(selectedStockData.bestTrade)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Worst Trade</p>
+                  <p className="text-lg font-semibold text-red-600">
+                    {formatCurrency(selectedStockData.worstTrade)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Total Trades</p>
+                  <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {selectedStockData.totalTrades}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                <h5 className="font-medium text-gray-900 dark:text-white flex items-center">
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  Trade History (Double-click to view day)
+                </h5>
+              </div>
+              <div className="max-h-96 overflow-y-auto">
+                {selectedStockData.trades.map((trade) => (
+                  <div
+                    key={trade.id}
+                    onDoubleClick={() => handleTradeDoubleClick(trade)}
+                    className="p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+                    title="Double-click to view this trading day"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div className={`p-2 rounded-full ${
+                          trade.direction === 'long'
+                            ? 'bg-green-100 dark:bg-green-900/20'
+                            : 'bg-red-100 dark:bg-red-900/20'
+                        }`}>
+                          {trade.direction === 'long' ? (
+                            <TrendingUp className="h-4 w-4 text-green-600" />
+                          ) : (
+                            <TrendingDown className="h-4 w-4 text-red-600" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {trade.quantity} shares @ ${trade.entryPrice} → ${trade.exitPrice}
+                          </p>
+                          {trade.notes && (
+                            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                              {trade.notes}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className={`font-bold text-lg ${getPLColor(trade.realizedPL)}`}>
+                          {formatCurrency(trade.realizedPL)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-12 text-center">
+            <Search className="h-16 w-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+            <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+              Select a Stock to Analyze
+            </h4>
+            <p className="text-gray-500 dark:text-gray-400">
+              Choose a stock from the list to see detailed performance metrics and trade history.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
+      {/* Main Header and Search - Always visible */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
@@ -112,191 +320,30 @@ export const StockSearch: React.FC<StockSearchProps> = ({
           </span>
         </div>
 
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search for stocks (e.g., AAPL, TSLA)..."
-            className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-              <h4 className="font-medium text-gray-900 dark:text-white">
-                Stock Performance
-              </h4>
-            </div>
-            <div className="max-h-96 overflow-y-auto">
-              {filteredStocks.map((stock) => (
-                <div
-                  key={stock.ticker}
-                  onClick={() => setSelectedStock(stock.ticker)}
-                  className={`p-4 border-b border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
-                    selectedStock === stock.ticker ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200' : ''
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h5 className="font-semibold text-gray-900 dark:text-white">
-                        {stock.ticker}
-                      </h5>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {stock.totalTrades} trades
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className={`font-semibold ${getPLColor(stock.totalPL)}`}>
-                        {formatCurrency(stock.totalPL)}
-                      </p>
-                      <p className={`text-sm ${getWinRateColor(stock.winRate)}`}>
-                        {stock.winRate.toFixed(1)}% WR
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {filteredStocks.length === 0 && (
-                <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-                  <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No stocks found matching "{searchTerm}"</p>
-                </div>
-              )}
-            </div>
+        {/* Search Bar - Only shown in search view */}
+        {activeAnalysisView === 'search' && (
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search for stocks (e.g., AAPL, TSLA)..."
+              className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+            />
           </div>
-        </div>
-
-        <div className="lg:col-span-2">
-          {selectedStockData ? (
-            <div className="space-y-6">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h4 className="text-xl font-bold text-gray-900 dark:text-white">
-                    {selectedStockData.ticker} Analysis
-                  </h4>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    Last traded: {selectedStockData.lastTradeDate.toLocaleDateString()}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-                  <div className="text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Total P&L</p>
-                    <p className={`text-xl font-bold ${getPLColor(selectedStockData.totalPL)}`}>
-                      {formatCurrency(selectedStockData.totalPL)}
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Win Rate</p>
-                    <p className={`text-xl font-bold ${getWinRateColor(selectedStockData.winRate)}`}>
-                      {selectedStockData.winRate.toFixed(1)}%
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Avg Win</p>
-                    <p className="text-xl font-bold text-green-600">
-                      {formatCurrency(selectedStockData.avgWin)}
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Avg Loss</p>
-                    <p className="text-xl font-bold text-red-600">
-                      {formatCurrency(Math.abs(selectedStockData.avgLoss))}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <div className="text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Best Trade</p>
-                    <p className="text-lg font-semibold text-green-600">
-                      {formatCurrency(selectedStockData.bestTrade)}
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Worst Trade</p>
-                    <p className="text-lg font-semibold text-red-600">
-                      {formatCurrency(selectedStockData.worstTrade)}
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Total Trades</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                      {selectedStockData.totalTrades}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
-                <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                  <h5 className="font-medium text-gray-900 dark:text-white flex items-center">
-                    <BarChart3 className="h-4 w-4 mr-2" />
-                    Trade History (Double-click to view day)
-                  </h5>
-                </div>
-                <div className="max-h-96 overflow-y-auto">
-                  {selectedStockData.trades.map((trade) => (
-                    <div
-                      key={trade.id}
-                      onDoubleClick={() => handleTradeDoubleClick(trade)}
-                      className="p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors"
-                      title="Double-click to view this trading day"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className={`p-2 rounded-full ${
-                            trade.direction === 'long'
-                              ? 'bg-green-100 dark:bg-green-900/20'
-                              : 'bg-red-100 dark:bg-red-900/20'
-                          }`}>
-                            {trade.direction === 'long' ? (
-                              <TrendingUp className="h-4 w-4 text-green-600" />
-                            ) : (
-                              <TrendingDown className="h-4 w-4 text-red-600" />
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900 dark:text-white">
-                              {trade.quantity} shares @ ${trade.entryPrice} → ${trade.exitPrice}
-                            </p>
-                            {trade.notes && (
-                              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                {trade.notes}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className={`font-bold text-lg ${getPLColor(trade.realizedPL)}`}>
-                            {formatCurrency(trade.realizedPL)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-12 text-center">
-              <Search className="h-16 w-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
-              <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                Select a Stock to Analyze
-              </h4>
-              <p className="text-gray-500 dark:text-gray-400">
-                Choose a stock from the list to see detailed performance metrics and trade history.
-              </p>
-            </div>
-          )}
-        </div>
+        )}
       </div>
+
+      {/* Analysis View Tabs */}
+      {renderAnalysisViewTabs()}
+
+      {/* Content based on active view */}
+      {activeAnalysisView === 'search' ? (
+        renderStockSearchView()
+      ) : (
+        <TradingPerformanceHeatmap trades={trades} />
+      )}
     </div>
   );
 };
