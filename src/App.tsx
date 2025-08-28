@@ -1,10 +1,9 @@
-// src/App.tsx - Fixed Hook Order to Prevent React Error + Mobile Bounce Fix
+// src/App.tsx - Fixed Hook Order to Prevent React Error
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings } from 'lucide-react';
 import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useBrokerIntegration } from './hooks/useBrokerIntegration';
-import { usePreventBounce } from './hooks/usePreventBounce'; // NEW: Import bounce prevention hook
 import { calculateDailyStats, getWeeklyStats } from './utils/tradeUtils';
 import { ManualTradeEntry } from './components/ManualTradeEntry';
 import { BulkTradeImport } from './components/BulkTradeImport';
@@ -69,11 +68,9 @@ const NAVIGATION_ITEMS = [
 ];
 
 function AppContent() {
-  // =====================================================================================
-  // CRITICAL: RULES OF HOOKS - ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
-  // =====================================================================================
+  // CRITICAL FIX: ALL hooks must be called before ANY conditional returns
+  // This fixes the "Rendered fewer hooks than expected" error
   
-  // 1. CUSTOM HOOKS (useAuth, useBrokerIntegration, etc.)
   const { currentUser } = useAuth();
   const {
     connections: brokerConnections,
@@ -85,11 +82,7 @@ function AppContent() {
     disableAutoSync
   } = useBrokerIntegration();
   
-  // NEW: Add bounce prevention hook
-  usePreventBounce();
-  
-  // 2. ALL STATE HOOKS (useState, useLocalStorage)
-  // =====================================================================================
+  // All useState and useLocalStorage hooks
   const [showHomePage, setShowHomePage] = useLocalStorage('show-homepage', true);
   const [localTrades, setLocalTrades] = useLocalStorage<Trade[]>('day-trader-trades', []);
   const [cloudTrades, setCloudTrades] = useState<Trade[]>([]);
@@ -104,13 +97,11 @@ function AppContent() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  // 3. COMPUTED VALUES (basic calculations that don't need memoization)
-  // =====================================================================================
+  // All computed values
   const activeTrades = currentUser ? cloudTrades : localTrades;
   const totalBrokerTrades = getTotalBrokerTrades();
 
-  // 4. ALL CALLBACK HOOKS (useCallback)
-  // =====================================================================================
+  // All useCallback hooks
   const handleGetStarted = useCallback(() => {
     console.log('🏠 Getting started - hiding homepage');
     setShowHomePage(false);
@@ -252,7 +243,7 @@ function AppContent() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [selectedDate]);
+  }, [selectedDate]); // Note: dailyTrades dependency added below in useMemo
 
   const handleDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value;
@@ -280,8 +271,7 @@ function AppContent() {
     }
   }, [syncAllTrades, loadCloudTrades]);
 
-  // 5. ALL MEMOIZED VALUES (useMemo)
-  // =====================================================================================
+  // All useMemo hooks
   const dailyTrades = useMemo(() => {
     const targetDate = normalizeToLocalDate(selectedDate);
     return activeTrades
@@ -312,8 +302,7 @@ function AppContent() {
     [activeTrades]
   );
 
-  // 6. ALL EFFECT HOOKS (useEffect)
-  // =====================================================================================
+  // All useEffect hooks
   useEffect(() => {
     const htmlElement = document.documentElement;
     if (darkMode) {
@@ -332,21 +321,14 @@ function AppContent() {
     }
   }, [currentUser, loadCloudTrades]);
 
-  // =====================================================================================
-  // 🚨 CRITICAL: ALL HOOKS ABOVE - CONDITIONAL RETURNS BELOW
-  // =====================================================================================
-
-  // SAFE: Homepage conditional return (after all hooks are called)
+  // CRITICAL FIX: Now that ALL hooks have been called, we can safely do conditional returns
+  // This prevents the "Rendered fewer hooks than expected" error
   if (showHomePage) {
     console.log('🏠 Rendering HomePage component, showHomePage:', showHomePage);
     return <HomePage onGetStarted={handleGetStarted} />;
   }
 
   console.log('🏠 Rendering main app, showHomePage:', showHomePage);
-
-  // =====================================================================================
-  // RENDER FUNCTIONS AND MAIN COMPONENT LOGIC
-  // =====================================================================================
 
   // Render sidebar navigation item
   const renderSidebarItem = (item: typeof NAVIGATION_ITEMS[0]) => {
@@ -445,11 +427,7 @@ function AppContent() {
     }
     
     if (activeView === 'news') {
-      return (
-        <div className="news-section-container">
-          <MemoizedStockNews trades={activeTrades} />
-        </div>
-      );
+      return <MemoizedStockNews trades={activeTrades} />;
     }
     
     // Daily view (default)
@@ -503,13 +481,7 @@ function AppContent() {
   };
 
   return (
-    <div 
-      className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors main-content-area"
-      style={{ 
-        overscrollBehavior: 'contain',
-        overscrollBehaviorY: 'contain'
-      }}
-    >
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
       {/* Fixed Desktop Sidebar */}
       <div className={`hidden lg:block fixed top-0 left-0 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 z-40 transition-all duration-200 ${
         sidebarCollapsed ? 'w-16' : 'w-72'
@@ -609,7 +581,7 @@ function AppContent() {
       </div>
 
       {/* Main Content Area */}
-      <div className={`min-h-screen transition-all duration-200 scrollable-container ${
+      <div className={`min-h-screen transition-all duration-200 ${
         sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-72'
       }`}>
         {/* Mobile Header - FIXED: Added Dark Mode Toggle */}
@@ -649,7 +621,7 @@ function AppContent() {
 
           {/* Mobile Menu */}
           {mobileMenuOpen && (
-            <div className="border-t border-gray-200 dark:border-gray-700 py-4 px-4 space-y-2 max-h-96 overflow-y-auto">
+            <div className="border-t border-gray-200 dark:border-gray-700 py-4 px-4 space-y-2">
               {NAVIGATION_ITEMS.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeView === item.id;
@@ -736,7 +708,7 @@ function AppContent() {
         </div>
 
         {/* Main Content */}
-        <main className="p-4 sm:p-6 lg:p-8 overflow-y-auto scrollable-container">
+        <main className="p-4 sm:p-6 lg:p-8">
           {renderMainContent()}
         </main>
       </div>
