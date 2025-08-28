@@ -12,11 +12,12 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
   const [activeTab, setActiveTab] = useState<'quote' | 'financials' | 'news'>('quote');
   const [error, setError] = useState<string | null>(null);
   
-  // Refs for preventing bounce on specific containers
-  const containerRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
+  // Remove the aggressive bounce prevention refs - this is causing the issue
+  // const containerRef = useRef<HTMLDivElement>(null);
+  // const contentRef = useRef<HTMLDivElement>(null);
 
-  // Aggressive bounce prevention for this component
+  // REMOVE this entire useEffect - it's what's breaking scrolling
+  /*
   useEffect(() => {
     const preventBounce = (element: HTMLElement) => {
       if (!element) return;
@@ -74,7 +75,8 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
     return () => {
       cleanupFunctions.forEach(cleanup => cleanup());
     };
-  }, [searchResults]); // Re-run when search results change
+  }, [searchResults]); 
+  */
 
   const handleSearch = async () => {
     if (!ticker.trim()) {
@@ -137,18 +139,7 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
   });
 
   return (
-    <div 
-      ref={containerRef}
-      className="bg-white dark:bg-gray-800 rounded-lg shadow-md no-bounce prevent-bounce"
-      style={{
-        overscrollBehavior: 'none',
-        overscrollBehaviorY: 'none',
-        touchAction: 'pan-x pan-y',
-        WebkitOverflowScrolling: 'touch',
-        maxHeight: '100vh',
-        overflow: 'hidden'
-      }}
-    >
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-6 rounded-t-lg">
         <div className="flex items-center mb-4">
@@ -160,19 +151,8 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
         </p>
       </div>
 
-      {/* Scrollable Content Container */}
-      <div 
-        ref={contentRef}
-        style={{
-          height: 'calc(100vh - 140px)', // Adjust based on header height
-          overflow: 'auto',
-          overscrollBehavior: 'none',
-          overscrollBehaviorY: 'none',
-          WebkitOverflowScrolling: 'touch',
-          touchAction: 'pan-y'
-        }}
-        className="no-bounce prevent-bounce"
-      >
+      {/* FIXED: Remove all the problematic styling and just use normal scrolling */}
+      <div className="max-h-screen overflow-y-auto">
         {/* Search Section */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex flex-col sm:flex-row gap-4 mb-6">
@@ -184,16 +164,14 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
                 onChange={(e) => setTicker(e.target.value.toUpperCase())}
                 onKeyPress={handleKeyPress}
                 placeholder="Enter stock ticker (e.g., AAPL, TSLA, MSFT)"
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 maxLength={10}
-                style={{ touchAction: 'pan-x pan-y' }}
               />
             </div>
             <button
               onClick={handleSearch}
               disabled={isLoading}
               className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[120px]"
-              style={{ touchAction: 'manipulation' }}
             >
               {isLoading ? (
                 <RefreshCw className="h-5 w-5 animate-spin" />
@@ -231,7 +209,6 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
                     }, 800);
                   }}
                   className="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-300 transition-colors text-sm font-medium"
-                  style={{ touchAction: 'manipulation' }}
                 >
                   {symbol}
                 </button>
@@ -262,7 +239,7 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
 
         {/* Results */}
         {searchResults && !isLoading && (
-          <div className="no-bounce prevent-bounce">
+          <div>
             {/* Stock Header */}
             <div className="p-6 bg-gradient-to-r from-gray-50 to-blue-50 dark:from-gray-800 dark:to-blue-900/20 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between">
@@ -297,7 +274,6 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
                         ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                         : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
                     }`}
-                    style={{ touchAction: 'manipulation' }}
                   >
                     <tab.icon className="h-5 w-5 mr-2" />
                     {tab.label}
@@ -315,7 +291,6 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block p-6 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800 hover:shadow-lg transition-all duration-200 hover:-translate-y-1 group"
-                    style={{ touchAction: 'manipulation' }}
                   >
                     <div className="flex items-center justify-between">
                       <div>
@@ -340,7 +315,6 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="group p-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800 hover:shadow-lg transition-all duration-200 hover:-translate-y-1"
-                    style={{ touchAction: 'manipulation' }}
                   >
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100">Key Statistics</h3>
@@ -356,7 +330,6 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="group p-6 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800 hover:shadow-lg transition-all duration-200 hover:-translate-y-1"
-                    style={{ touchAction: 'manipulation' }}
                   >
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-lg font-semibold text-green-900 dark:text-green-100">Financial Statements</h3>
@@ -376,7 +349,6 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block p-6 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200 dark:border-purple-800 hover:shadow-lg transition-all duration-200 hover:-translate-y-1 group"
-                    style={{ touchAction: 'manipulation' }}
                   >
                     <div className="flex items-center justify-between">
                       <div>
