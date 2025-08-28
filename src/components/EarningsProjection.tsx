@@ -67,12 +67,38 @@ interface PerformanceMetrics {
 }
 
 export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, selectedDate }) => {
-  const [initialCapital, setInitialCapital] = useState<number>(10000);
-  const [monthlyContribution, setMonthlyContribution] = useState<number>(1000);
+  const [initialCapital, setInitialCapital] = useState<string>('10000');
+  const [monthlyContribution, setMonthlyContribution] = useState<string>('1000');
   const [dividendYield, setDividendYield] = useState<number>(2.5);
   const [dividendGrowthRate, setDividendGrowthRate] = useState<number>(5);
   const [conservativeMode, setConservativeMode] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'projections' | 'dividends' | 'scenarios'>('projections');
+
+  // Helper functions for input handling
+  const handleInitialCapitalChange = useCallback((value: string) => {
+    // Allow empty string, numbers, and decimal points
+    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+      setInitialCapital(value);
+    }
+  }, []);
+
+  const handleMonthlyContributionChange = useCallback((value: string) => {
+    // Allow empty string, numbers, and decimal points
+    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+      setMonthlyContribution(value);
+    }
+  }, []);
+
+  // Convert string values to numbers for calculations
+  const initialCapitalValue = useMemo(() => {
+    const value = parseFloat(initialCapital);
+    return isNaN(value) ? 0 : value;
+  }, [initialCapital]);
+
+  const monthlyContributionValue = useMemo(() => {
+    const value = parseFloat(monthlyContribution);
+    return isNaN(value) ? 0 : value;
+  }, [monthlyContribution]);
 
   // Calculate comprehensive performance metrics
   const performanceMetrics = useMemo((): PerformanceMetrics => {
@@ -135,7 +161,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
     // Calculate Sharpe ratio (assuming 2% risk-free rate)
     const riskFreeRate = 0.02;
-    const excessReturn = avgAnnualPL - (initialCapital * riskFreeRate);
+    const excessReturn = avgAnnualPL - (initialCapitalValue * riskFreeRate);
     const annualVolatility = dailyVolatility * Math.sqrt(252); // 252 trading days per year
     const sharpeRatio = annualVolatility > 0 ? excessReturn / annualVolatility : 0;
 
@@ -182,7 +208,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
       profitFactor,
       consistency
     };
-  }, [trades, initialCapital]);
+  }, [trades, initialCapitalValue]);
 
   // Calculate trading performance projections
   const projections = useMemo((): ProjectionPeriod[] => {
@@ -191,19 +217,19 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     const adjustedAnnualReturn = baseAnnualReturn * conservativeFactor;
     
     // Calculate annual growth rate as percentage of starting capital
-    const annualGrowthRate = initialCapital > 0 ? adjustedAnnualReturn / initialCapital : 0;
+    const annualGrowthRate = initialCapitalValue > 0 ? adjustedAnnualReturn / initialCapitalValue : 0;
     
     const periods = [1, 3, 5, 10, 20];
     
     return periods.map(years => {
       // Compound growth with monthly contributions
-      let portfolioValue = initialCapital;
-      let totalContributions = initialCapital;
+      let portfolioValue = initialCapitalValue;
+      let totalContributions = initialCapitalValue;
       let totalGrowth = 0;
       
       for (let year = 1; year <= years; year++) {
         // Add monthly contributions throughout the year
-        const yearlyContributions = monthlyContribution * 12;
+        const yearlyContributions = monthlyContributionValue * 12;
         totalContributions += yearlyContributions;
         
         // Calculate growth on average portfolio value during the year
@@ -215,7 +241,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
         totalGrowth += yearGrowth;
       }
       
-      const growthPercentage = initialCapital > 0 ? ((portfolioValue - totalContributions) / initialCapital) * 100 : 0;
+      const growthPercentage = initialCapitalValue > 0 ? ((portfolioValue - totalContributions) / initialCapitalValue) * 100 : 0;
       
       return {
         period: years === 1 ? '1 Year' : `${years} Years`,
@@ -224,23 +250,23 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
         totalGrowth: portfolioValue - totalContributions,
         growthPercentage,
         projectedPL: totalGrowth,
-        monthlyContribution: monthlyContribution
+        monthlyContribution: monthlyContributionValue
       };
     });
-  }, [performanceMetrics, initialCapital, monthlyContribution, conservativeMode]);
+  }, [performanceMetrics, initialCapitalValue, monthlyContributionValue, conservativeMode]);
 
   // Calculate dividend projections
   const dividendProjections = useMemo((): DividendProjection[] => {
     const periods = [1, 3, 5, 10, 20];
     
     return periods.map(years => {
-      let portfolioValue = initialCapital;
+      let portfolioValue = initialCapitalValue;
       let totalDividends = 0;
       let currentDividendYield = dividendYield / 100;
       
       for (let year = 1; year <= years; year++) {
         // Add monthly contributions
-        const yearlyContributions = monthlyContribution * 12;
+        const yearlyContributions = monthlyContributionValue * 12;
         portfolioValue += yearlyContributions;
         
         // Calculate dividends for the year (on average portfolio value)
@@ -264,12 +290,11 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
         totalValue: portfolioValue + totalDividends
       };
     });
-  }, [initialCapital, monthlyContribution, dividendYield, dividendGrowthRate]);
+  }, [initialCapitalValue, monthlyContributionValue, dividendYield, dividendGrowthRate]);
 
   // Scenario analysis
   const scenarios = useMemo(() => {
     const baseReturn = performanceMetrics.avgAnnualPL;
-    const volatility = performanceMetrics.dailyVolatility * Math.sqrt(252);
     
     return {
       conservative: {
@@ -325,7 +350,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
       
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="text-center">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Total P&L</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Current Total P&L</p>
           <p className={`text-xl font-bold ${performanceMetrics.totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
             {formatCurrency(performanceMetrics.totalPL)}
           </p>
@@ -394,12 +419,17 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           <div className="relative">
             <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
-              type="number"
+              type="text"
               value={initialCapital}
-              onChange={(e) => setInitialCapital(parseFloat(e.target.value) || 0)}
+              onChange={(e) => handleInitialCapitalChange(e.target.value)}
+              onBlur={(e) => {
+                // If empty on blur, set to '0'
+                if (e.target.value === '') {
+                  setInitialCapital('0');
+                }
+              }}
               className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              min="0"
-              step="1000"
+              placeholder="Enter initial capital"
             />
           </div>
         </div>
@@ -411,12 +441,17 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           <div className="relative">
             <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
-              type="number"
+              type="text"
               value={monthlyContribution}
-              onChange={(e) => setMonthlyContribution(parseFloat(e.target.value) || 0)}
+              onChange={(e) => handleMonthlyContributionChange(e.target.value)}
+              onBlur={(e) => {
+                // If empty on blur, set to '0'
+                if (e.target.value === '') {
+                  setMonthlyContribution('0');
+                }
+              }}
               className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              min="0"
-              step="100"
+              placeholder="Enter monthly contribution"
             />
           </div>
         </div>
@@ -504,7 +539,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
                     <span className={`font-semibold ${getProjectionColor(projection.growthPercentage)}`}>
-                      {calculateCAGR(initialCapital, projection.projectedValue, projection.years).toFixed(1)}%
+                      {calculateCAGR(initialCapitalValue, projection.projectedValue, projection.years).toFixed(1)}%
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
@@ -769,13 +804,13 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           {Object.entries(scenarios).map(([key, scenario]) => {
             // Calculate 5-year projection for this scenario
             const annualReturn = scenario.annualReturn;
-            const growthRate = initialCapital > 0 ? annualReturn / initialCapital : 0;
+            const growthRate = initialCapitalValue > 0 ? annualReturn / initialCapitalValue : 0;
             
-            let portfolioValue = initialCapital;
-            let totalContributions = initialCapital;
+            let portfolioValue = initialCapitalValue;
+            let totalContributions = initialCapitalValue;
             
             for (let year = 1; year <= 5; year++) {
-              const yearlyContributions = monthlyContribution * 12;
+              const yearlyContributions = monthlyContributionValue * 12;
               totalContributions += yearlyContributions;
               const startValue = portfolioValue;
               const avgValueDuringYear = startValue + (yearlyContributions / 2);
@@ -784,7 +819,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
             }
             
             const totalGrowth = portfolioValue - totalContributions;
-            const cagr = calculateCAGR(initialCapital, portfolioValue, 5);
+            const cagr = calculateCAGR(initialCapitalValue, portfolioValue, 5);
             
             return (
               <div
