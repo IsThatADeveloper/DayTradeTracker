@@ -446,7 +446,7 @@ function AppContent() {
     
     if (activeView === 'news') {
       return (
-        <div className="news-section-container no-bounce">
+        <div className="news-section-container no-bounce scrollable-container">
           <MemoizedStockNews trades={activeTrades} />
         </div>
       );
@@ -503,7 +503,14 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors main-content-area no-bounce">
+    <div 
+      className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors main-content-area no-bounce prevent-bounce"
+      style={{ 
+        overscrollBehavior: 'none', 
+        overscrollBehaviorY: 'none', 
+        touchAction: 'pan-x pan-y' 
+      }}
+    >
       {/* Fixed Desktop Sidebar */}
       <div className={`hidden lg:block fixed top-0 left-0 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 z-40 transition-all duration-200 ${
         sidebarCollapsed ? 'w-16' : 'w-72'

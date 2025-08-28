@@ -2,118 +2,176 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ===== MOBILE SAFARI BOUNCE FIX ===== */
+/* ===== AGGRESSIVE MOBILE SAFARI BOUNCE FIX ===== */
 
-/* Modern browsers (Safari 16+, Chrome, Firefox) - Primary fix */
+/* Force disable overscroll on ALL elements */
+* {
+  overscroll-behavior: none !important;
+  overscroll-behavior-y: none !important;
+  overscroll-behavior-x: none !important;
+}
+
+/* Root level fix - most aggressive approach */
 html {
-  overscroll-behavior: none;
-  overscroll-behavior-y: none;
+  overflow: hidden !important;
+  height: 100% !important;
+  width: 100% !important;
+  position: fixed !important;
+  overscroll-behavior: none !important;
+  -webkit-overflow-scrolling: auto !important;
 }
 
 body {
-  overscroll-behavior: none;
-  overscroll-behavior-y: none;
+  overflow: hidden !important;
+  height: 100% !important;
+  width: 100% !important;
+  position: fixed !important;
+  overscroll-behavior: none !important;
+  -webkit-overflow-scrolling: auto !important;
+  touch-action: pan-x pan-y !important;
 }
 
-/* Legacy iOS Safari fix (iOS < 16) */
-@supports not (overscroll-behavior: none) {
-  html {
-    overflow: hidden;
-    height: 100%;
-    position: fixed;
-    width: 100%;
-  }
-
-  body {
-    overflow: hidden;
-    height: 100%;
-    position: fixed;
-    width: 100%;
-  }
-
-  #root {
-    height: 100vh;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-  }
+/* Root container takes over all scrolling */
+#root {
+  height: 100vh !important;
+  width: 100vw !important;
+  overflow: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior: none !important;
+  overscroll-behavior-y: none !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
 }
 
-/* Mobile-specific aggressive fix */
+/* Mobile specific - even more aggressive */
 @media (max-width: 768px) {
-  html {
-    overflow: hidden;
-    height: 100%;
-    position: fixed;
-    width: 100%;
+  html, body {
+    overflow: hidden !important;
+    position: fixed !important;
+    height: 100% !important;
+    width: 100% !important;
+    overscroll-behavior: none !important;
+    touch-action: pan-x pan-y !important;
   }
-
-  body {
-    overflow: hidden;
-    height: 100%;
-    position: fixed;
-    width: 100%;
-  }
-
+  
   #root {
-    height: 100vh;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior: none;
-    overscroll-behavior-y: none;
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    height: 100vh !important;
+    width: 100vw !important;
+    overflow: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: none !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    right: 0 !important;
+  }
+  
+  /* Force all scrollable containers to prevent bounce */
+  .overflow-auto,
+  .overflow-y-auto,
+  .overflow-scroll,
+  .overflow-y-scroll,
+  [style*="overflow"],
+  [style*="overflow-y"] {
+    overscroll-behavior: none !important;
+    overscroll-behavior-y: none !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-x pan-y !important;
   }
 }
 
-/* Prevent bounce on all scrollable containers */
+/* Specific fixes for problematic components */
+.main-content-area,
 .scrollable-container,
-.overflow-auto,
-.overflow-y-auto,
-.overflow-scroll,
-.overflow-y-scroll {
-  overscroll-behavior: none;
-  overscroll-behavior-y: none;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Specific component fixes */
-.main-content-area {
-  overscroll-behavior: none;
-  overscroll-behavior-y: none;
-}
-
-/* News section and other problematic areas */
 .news-section-container,
 .stock-news-container {
-  overscroll-behavior: none;
-  overscroll-behavior-y: none;
-  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: none !important;
+  overscroll-behavior-y: none !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-x pan-y !important;
 }
 
-/* Prevent touch actions that cause bouncing */
+/* Prevent bounce on all Tailwind scrolling classes */
+.overflow-auto {
+  overscroll-behavior: none !important;
+  overscroll-behavior-y: none !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+.overflow-y-auto {
+  overscroll-behavior: none !important;
+  overscroll-behavior-y: none !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+.overflow-scroll {
+  overscroll-behavior: none !important;
+  overscroll-behavior-y: none !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+.overflow-y-scroll {
+  overscroll-behavior: none !important;
+  overscroll-behavior-y: none !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+/* Utility classes for manual application */
 .no-bounce {
-  touch-action: pan-x pan-y;
-  overscroll-behavior: none;
-  overscroll-behavior-y: none;
+  overscroll-behavior: none !important;
+  overscroll-behavior-y: none !important;
+  touch-action: pan-x pan-y !important;
+  -webkit-overflow-scrolling: touch !important;
 }
 
-/* Additional utility classes */
 .prevent-bounce {
   overscroll-behavior: none !important;
   overscroll-behavior-y: none !important;
+  touch-action: pan-x pan-y !important;
+  -webkit-overflow-scrolling: touch !important;
 }
 
-/* Fix for modal/overlay scrolling issues */
-.modal-overlay,
-.fixed {
-  overscroll-behavior: none;
-  overscroll-behavior-y: none;
+/* iOS Safari specific targeting */
+@supports (-webkit-appearance: none) {
+  html {
+    overflow: hidden !important;
+    position: fixed !important;
+    height: 100% !important;
+    width: 100% !important;
+  }
+  
+  body {
+    overflow: hidden !important;
+    position: fixed !important;
+    height: 100% !important;
+    width: 100% !important;
+  }
+  
+  #root {
+    overflow: auto !important;
+    height: 100vh !important;
+    width: 100vw !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: none !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+  }
+}
+
+/* Force disable momentum scrolling that might cause bounce */
+@media (max-width: 768px) {
+  * {
+    -webkit-overflow-scrolling: auto !important;
+  }
+  
+  #root {
+    -webkit-overflow-scrolling: touch !important;
+  }
 }
