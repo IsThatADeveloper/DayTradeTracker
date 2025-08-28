@@ -1,4 +1,4 @@
-// src/App.tsx - Fixed Hook Order to Prevent React Error
+// src/App.tsx - Fixed Hook Order to Prevent React Error + Persistent Active View
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings } from 'lucide-react';
 import { Trade } from './types/trade';
@@ -67,6 +67,8 @@ const NAVIGATION_ITEMS = [
   }
 ];
 
+type ActiveViewType = 'calendar' | 'daily' | 'search' | 'brokers' | 'news';
+
 function AppContent() {
   // CRITICAL FIX: ALL hooks must be called before ANY conditional returns
   // This fixes the "Rendered fewer hooks than expected" error
@@ -88,7 +90,10 @@ function AppContent() {
   const [cloudTrades, setCloudTrades] = useState<Trade[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [activeView, setActiveView] = useState<'calendar' | 'daily' | 'search' | 'brokers' | 'news'>('daily');
+  
+  // FIXED: Use localStorage to persist active view across reloads
+  const [activeView, setActiveView] = useLocalStorage<ActiveViewType>('active-view', 'daily');
+  
   const [darkMode, setDarkMode] = useLocalStorage('day-trader-dark-mode', false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
@@ -113,7 +118,7 @@ function AppContent() {
     setShowHomePage(true);
     setMobileMenuOpen(false);
     setActiveView('daily');
-  }, [setShowHomePage, showHomePage]);
+  }, [setShowHomePage, showHomePage, setActiveView]);
 
   const normalizeToLocalDate = useCallback((date: Date): Date => {
     return new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -271,6 +276,14 @@ function AppContent() {
     }
   }, [syncAllTrades, loadCloudTrades]);
 
+  // FIXED: Add handler for navigation with proper type checking
+  const handleNavigation = useCallback((viewId: string) => {
+    if (['daily', 'calendar', 'search', 'brokers', 'news'].includes(viewId)) {
+      setActiveView(viewId as ActiveViewType);
+      setMobileMenuOpen(false);
+    }
+  }, [setActiveView]);
+
   // All useMemo hooks
   const dailyTrades = useMemo(() => {
     const targetDate = normalizeToLocalDate(selectedDate);
@@ -342,10 +355,7 @@ function AppContent() {
       return (
         <button
           key={item.id}
-          onClick={() => {
-            setActiveView(item.id as any);
-            setMobileMenuOpen(false);
-          }}
+          onClick={() => handleNavigation(item.id)}
           className={`w-full p-2 flex items-center justify-center rounded-lg transition-colors duration-200 relative ${
             isActive
               ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
@@ -366,10 +376,7 @@ function AppContent() {
     return (
       <button
         key={item.id}
-        onClick={() => {
-          setActiveView(item.id as any);
-          setMobileMenuOpen(false);
-        }}
+        onClick={() => handleNavigation(item.id)}
         className={`w-full flex items-center px-3 py-3 text-left rounded-lg transition-colors duration-200 group relative ${
           isActive
             ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 shadow-sm'
@@ -629,10 +636,7 @@ function AppContent() {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => {
-                      setActiveView(item.id as any);
-                      setMobileMenuOpen(false);
-                    }}
+                    onClick={() => handleNavigation(item.id)}
                     className={`w-full flex items-center px-3 py-3 text-left rounded-lg transition-colors ${
                       isActive
                         ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
