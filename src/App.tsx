@@ -1,9 +1,10 @@
-// src/App.tsx - Fixed Hook Order to Prevent React Error
+// src/App.tsx - Fixed Hook Order to Prevent React Error + Mobile Bounce Fix
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings } from 'lucide-react';
 import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useBrokerIntegration } from './hooks/useBrokerIntegration';
+import { usePreventBounce } from './hooks/usePreventBounce'; // NEW: Import bounce prevention hook
 import { calculateDailyStats, getWeeklyStats } from './utils/tradeUtils';
 import { ManualTradeEntry } from './components/ManualTradeEntry';
 import { BulkTradeImport } from './components/BulkTradeImport';
@@ -71,31 +72,7 @@ function AppContent() {
   // =====================================================================================
   // CRITICAL: RULES OF HOOKS - ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // =====================================================================================
-  // 
-  // React requires that hooks are called in the EXACT SAME ORDER on every render.
-  // If you add an early return statement (like for showing the homepage), it must come
-  // AFTER all hooks have been defined. Otherwise you'll get the error:
-  // "Rendered fewer hooks than expected. This may be caused by an accidental early return statement."
-  //
-  // WRONG ❌:
-  // const [state] = useState();
-  // if (condition) return <Component />;  // Early return!
-  // const [otherState] = useState();      // This hook won't be called consistently
-  //
-  // CORRECT ✅:
-  // const [state] = useState();
-  // const [otherState] = useState();      // ALL hooks called first
-  // if (condition) return <Component />;  // Then conditional returns
-  //
-  // The order below is:
-  // 1. All useAuth, useCustomHooks
-  // 2. All useState, useLocalStorage
-  // 3. All useCallback
-  // 4. All useMemo  
-  // 5. All useEffect
-  // 6. THEN conditional returns and render logic
-  // =====================================================================================
-
+  
   // 1. CUSTOM HOOKS (useAuth, useBrokerIntegration, etc.)
   const { currentUser } = useAuth();
   const {
@@ -107,6 +84,9 @@ function AppContent() {
     enableAutoSync,
     disableAutoSync
   } = useBrokerIntegration();
+  
+  // NEW: Add bounce prevention hook
+  usePreventBounce();
   
   // 2. ALL STATE HOOKS (useState, useLocalStorage)
   // =====================================================================================
@@ -272,7 +252,7 @@ function AppContent() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [selectedDate]); // Note: dailyTrades dependency added below in useMemo
+  }, [selectedDate]);
 
   const handleDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value;
@@ -354,12 +334,6 @@ function AppContent() {
 
   // =====================================================================================
   // 🚨 CRITICAL: ALL HOOKS ABOVE - CONDITIONAL RETURNS BELOW
-  // =====================================================================================
-  // Now that ALL hooks have been called in the same order every render,
-  // it's SAFE to do conditional returns. This prevents React hook errors.
-  //
-  // DO NOT add any new hooks after this point!
-  // DO NOT add useState, useEffect, useMemo, useCallback, etc. below this line!
   // =====================================================================================
 
   // SAFE: Homepage conditional return (after all hooks are called)
@@ -471,7 +445,11 @@ function AppContent() {
     }
     
     if (activeView === 'news') {
-      return <MemoizedStockNews trades={activeTrades} />;
+      return (
+        <div className="news-section-container no-bounce">
+          <MemoizedStockNews trades={activeTrades} />
+        </div>
+      );
     }
     
     // Daily view (default)
@@ -525,7 +503,7 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors main-content-area no-bounce">
       {/* Fixed Desktop Sidebar */}
       <div className={`hidden lg:block fixed top-0 left-0 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 z-40 transition-all duration-200 ${
         sidebarCollapsed ? 'w-16' : 'w-72'
@@ -571,7 +549,7 @@ function AppContent() {
         </div>
 
         {/* Navigation Items */}
-        <nav className="flex-1 px-4 py-6 overflow-y-auto">
+        <nav className="flex-1 px-4 py-6 overflow-y-auto scrollable-container">
           <div className="space-y-2">
             {NAVIGATION_ITEMS.map(renderSidebarItem)}
           </div>
@@ -625,7 +603,7 @@ function AppContent() {
       </div>
 
       {/* Main Content Area */}
-      <div className={`min-h-screen transition-all duration-200 ${
+      <div className={`min-h-screen transition-all duration-200 scrollable-container ${
         sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-72'
       }`}>
         {/* Mobile Header - FIXED: Added Dark Mode Toggle */}
@@ -665,7 +643,7 @@ function AppContent() {
 
           {/* Mobile Menu */}
           {mobileMenuOpen && (
-            <div className="border-t border-gray-200 dark:border-gray-700 py-4 px-4 space-y-2">
+            <div className="border-t border-gray-200 dark:border-gray-700 py-4 px-4 space-y-2 no-bounce scrollable-container">
               {NAVIGATION_ITEMS.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeView === item.id;
@@ -752,7 +730,7 @@ function AppContent() {
         </div>
 
         {/* Main Content */}
-        <main className="p-4 sm:p-6 lg:p-8">
+        <main className="p-4 sm:p-6 lg:p-8 scrollable-container no-bounce">
           {renderMainContent()}
         </main>
       </div>

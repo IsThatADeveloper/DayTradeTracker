@@ -73,7 +73,7 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
   });
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md stock-news-container no-bounce">
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-6 rounded-t-lg">
         <div className="flex items-center mb-4">
@@ -96,7 +96,7 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
               onChange={(e) => setTicker(e.target.value.toUpperCase())}
               onKeyPress={handleKeyPress}
               placeholder="Enter stock ticker (e.g., AAPL, TSLA, MSFT)"
-              className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent no-bounce"
               maxLength={10}
             />
           </div>
@@ -171,7 +171,7 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
 
       {/* Results */}
       {searchResults && !isLoading && (
-        <div>
+        <div className="scrollable-container no-bounce">
           {/* Stock Header */}
           <div className="p-6 bg-gradient-to-r from-gray-50 to-blue-50 dark:from-gray-800 dark:to-blue-900/20 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between">
@@ -192,7 +192,7 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
 
           {/* Tabs */}
           <div className="border-b border-gray-200 dark:border-gray-700">
-            <nav className="flex space-x-8 px-6">
+            <nav className="flex space-x-8 px-6 scrollable-container">
               {[
                 { id: 'quote', label: 'Live Quote & Chart', icon: BarChart3 },
                 { id: 'financials', label: 'Financial Data', icon: PieChart },
@@ -214,8 +214,8 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
             </nav>
           </div>
 
-          {/* Tab Content */}
-          <div className="p-6">
+          {/* Tab Content - Scrollable container for long content */}
+          <div className="p-6 scrollable-container no-bounce" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
             {activeTab === 'quote' && (
               <div>
                 <a

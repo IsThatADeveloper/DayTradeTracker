@@ -1,3 +1,119 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ===== MOBILE SAFARI BOUNCE FIX ===== */
+
+/* Modern browsers (Safari 16+, Chrome, Firefox) - Primary fix */
+html {
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+}
+
+body {
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+}
+
+/* Legacy iOS Safari fix (iOS < 16) */
+@supports not (overscroll-behavior: none) {
+  html {
+    overflow: hidden;
+    height: 100%;
+    position: fixed;
+    width: 100%;
+  }
+
+  body {
+    overflow: hidden;
+    height: 100%;
+    position: fixed;
+    width: 100%;
+  }
+
+  #root {
+    height: 100vh;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+}
+
+/* Mobile-specific aggressive fix */
+@media (max-width: 768px) {
+  html {
+    overflow: hidden;
+    height: 100%;
+    position: fixed;
+    width: 100%;
+  }
+
+  body {
+    overflow: hidden;
+    height: 100%;
+    position: fixed;
+    width: 100%;
+  }
+
+  #root {
+    height: 100vh;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+}
+
+/* Prevent bounce on all scrollable containers */
+.scrollable-container,
+.overflow-auto,
+.overflow-y-auto,
+.overflow-scroll,
+.overflow-y-scroll {
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Specific component fixes */
+.main-content-area {
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+}
+
+/* News section and other problematic areas */
+.news-section-container,
+.stock-news-container {
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent touch actions that cause bouncing */
+.no-bounce {
+  touch-action: pan-x pan-y;
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+}
+
+/* Additional utility classes */
+.prevent-bounce {
+  overscroll-behavior: none !important;
+  overscroll-behavior-y: none !important;
+}
+
+/* Fix for modal/overlay scrolling issues */
+.modal-overlay,
+.fixed {
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+}
