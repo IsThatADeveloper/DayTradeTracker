@@ -143,7 +143,7 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
     return stockArray;
   }, [trades, minTrades, timeFilter, sortBy]);
 
-  // Process trades data by time of day - FIXED to include all P&L
+  // Process trades data by time of day
   const timePerformance = useMemo(() => {
     if (!trades || trades.length === 0) return [];
 
@@ -221,16 +221,21 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
     return timeArray.sort((a, b) => a.hour - b.hour);
   }, [trades, timeFilter]);
 
-  // Proper treemap layout algorithm
-  const calculateTreemapLayout = (data: StockPerformance[], containerWidth = 1200, containerHeight = 500): TreemapNode[] => {
+  // MOBILE-RESPONSIVE: Proper treemap layout algorithm with responsive sizing
+  const calculateTreemapLayout = (data: StockPerformance[], containerWidth = 320, containerHeight = 240): TreemapNode[] => {
     if (data.length === 0) return [];
+
+    // Mobile-responsive container sizing
+    const isMobile = window.innerWidth < 768;
+    const actualWidth = isMobile ? Math.min(containerWidth, window.innerWidth - 32) : containerWidth;
+    const actualHeight = isMobile ? Math.min(containerHeight, 300) : containerHeight;
 
     // Sort by display size (largest first)
     const sortedData = [...data].sort((a, b) => b.displaySize - a.displaySize);
     
     // Calculate total area
     const totalArea = sortedData.reduce((sum, item) => sum + item.displaySize, 0);
-    const targetArea = containerWidth * containerHeight;
+    const targetArea = actualWidth * actualHeight;
     
     // Scale factor to fit container
     const scale = targetArea / totalArea;
@@ -240,7 +245,7 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
     let currentRow: StockPerformance[] = [];
     let x = 0;
     let y = 0;
-    let rowWidth = containerWidth;
+    let rowWidth = actualWidth;
     let rowHeight = 0;
     
     const layoutRow = (items: StockPerformance[], width: number, height: number, startX: number, startY: number) => {
@@ -313,16 +318,25 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
       currentRow = [];
       
       // Adjust remaining space
-      const remainingHeight = containerHeight - y;
+      const remainingHeight = actualHeight - y;
       if (remainingHeight > 0 && i < sortedData.length - 1) {
-        rowWidth = containerWidth;
+        rowWidth = actualWidth;
       }
     }
     
     return rectangles;
   };
 
-  const treemapLayout = calculateTreemapLayout(stockPerformance, 1200, 500);
+  // MOBILE-RESPONSIVE: Calculate treemap with responsive dimensions
+  const treemapLayout = useMemo(() => {
+    if (typeof window !== 'undefined') {
+      const isMobile = window.innerWidth < 768;
+      const width = isMobile ? window.innerWidth - 64 : 1200;
+      const height = isMobile ? 250 : 500;
+      return calculateTreemapLayout(stockPerformance, width, height);
+    }
+    return calculateTreemapLayout(stockPerformance);
+  }, [stockPerformance]);
 
   // Professional color scheme
   const getStockStyle = (stock: StockPerformance | TreemapNode) => {
@@ -395,26 +409,26 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
     }).format(amount);
   };
 
-  // Render stock bar chart - REMOVED HOVER EFFECTS
+  // MOBILE-RESPONSIVE: Render stock bar chart
   const renderStockBarChart = () => {
     const maxAbsValue = Math.max(...stockPerformance.map(s => s.absValue));
     
     return (
-      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
-        <div className="space-y-2 max-h-[500px] overflow-y-auto">
+      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 sm:p-4">
+        <div className="space-y-2 max-h-[400px] sm:max-h-[500px] overflow-y-auto">
           {stockPerformance.map((stock) => {
             const barWidth = maxAbsValue > 0 ? (stock.absValue / maxAbsValue) * 100 : 0;
             const style = getStockStyle(stock);
             
             return (
-              <div key={stock.ticker} className="flex items-center space-x-4 p-2">
-                <div className="w-12 text-right">
-                  <span className="font-bold text-sm">{stock.ticker}</span>
+              <div key={stock.ticker} className="flex items-center space-x-2 sm:space-x-4 p-2">
+                <div className="w-8 sm:w-12 text-right">
+                  <span className="font-bold text-xs sm:text-sm">{stock.ticker}</span>
                 </div>
                 
                 <div className="flex-1 relative">
                   <div 
-                    className="h-8 rounded flex items-center justify-between px-2"
+                    className="h-6 sm:h-8 rounded flex items-center justify-between px-1 sm:px-2"
                     style={{
                       backgroundColor: style.backgroundColor,
                       borderLeft: `4px solid ${style.borderColor}`,
@@ -423,16 +437,16 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
                     }}
                   >
                     <span className="text-xs font-medium" style={{ color: style.textColor }}>
-                      {stock.trades} trades
+                      {stock.trades}
                     </span>
-                    <span className="text-sm font-bold" style={{ color: style.textColor }}>
+                    <span className="text-xs sm:text-sm font-bold" style={{ color: style.textColor }}>
                       {formatCurrency(stock.totalPL)}
                     </span>
                   </div>
                 </div>
                 
-                <div className="w-16 text-right">
-                  <span className={`text-sm font-medium ${
+                <div className="w-10 sm:w-16 text-right">
+                  <span className={`text-xs sm:text-sm font-medium ${
                     stock.winRate >= 50 ? 'text-emerald-600' : 'text-red-500'
                   }`}>
                     {stock.winRate}%
@@ -446,27 +460,26 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
     );
   };
 
-  // Render time-based bar chart - REMOVED HOVER EFFECTS
+  // MOBILE-RESPONSIVE: Render time-based bar chart
   const renderTimeBarChart = () => {
-    // FIXED: Use actual total P&L values instead of absolute values for bar sizing
     const maxValue = Math.max(...timePerformance.map(t => Math.abs(t.totalPL)));
     
     return (
-      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
-        <div className="space-y-2 max-h-[500px] overflow-y-auto">
+      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 sm:p-4">
+        <div className="space-y-2 max-h-[400px] sm:max-h-[500px] overflow-y-auto">
           {timePerformance.map((timeData) => {
             const barWidth = maxValue > 0 ? (Math.abs(timeData.totalPL) / maxValue) * 100 : 0;
             const style = getTimeStyle(timeData);
             
             return (
-              <div key={timeData.hour} className="flex items-center space-x-4 p-2">
-                <div className="w-20 text-right">
-                  <span className="font-bold text-sm">{timeData.timeLabel}</span>
+              <div key={timeData.hour} className="flex items-center space-x-2 sm:space-x-4 p-2">
+                <div className="w-16 sm:w-20 text-right">
+                  <span className="font-bold text-xs">{timeData.timeLabel}</span>
                 </div>
                 
                 <div className="flex-1 relative">
                   <div 
-                    className="h-8 rounded flex items-center justify-between px-2"
+                    className="h-6 sm:h-8 rounded flex items-center justify-between px-1 sm:px-2"
                     style={{
                       backgroundColor: style.backgroundColor,
                       borderLeft: `4px solid ${style.borderColor}`,
@@ -475,16 +488,16 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
                     }}
                   >
                     <span className="text-xs font-medium" style={{ color: style.textColor }}>
-                      {timeData.trades} trades
+                      {timeData.trades}
                     </span>
-                    <span className="text-sm font-bold" style={{ color: style.textColor }}>
+                    <span className="text-xs sm:text-sm font-bold" style={{ color: style.textColor }}>
                       {formatCurrency(timeData.totalPL)}
                     </span>
                   </div>
                 </div>
                 
-                <div className="w-16 text-right">
-                  <span className={`text-sm font-medium ${
+                <div className="w-10 sm:w-16 text-right">
+                  <span className={`text-xs sm:text-sm font-medium ${
                     timeData.winRate >= 50 ? 'text-emerald-600' : 'text-red-500'
                   }`}>
                     {timeData.winRate}%
@@ -500,13 +513,13 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
 
   if (!trades || trades.length === 0) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 sm:p-8">
         <div className="text-center">
-          <BarChart3 className="mx-auto h-16 w-16 text-gray-300 dark:text-gray-600 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+          <BarChart3 className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-gray-300 dark:text-gray-600 mb-4" />
+          <h3 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white mb-2">
             No Trading Data Available
           </h3>
-          <p className="text-gray-500 dark:text-gray-400">
+          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400">
             Start trading to see your performance heatmap visualization.
           </p>
         </div>
@@ -515,31 +528,33 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header with Controls */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+    <div className="space-y-4 sm:space-y-6">
+      {/* MOBILE-RESPONSIVE: Header with Controls */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+        <div className="flex flex-col gap-4">
           <div>
             <div className="flex items-center space-x-3 mb-2">
               <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow-sm">
-                <BarChart3 className="h-6 w-6 text-white" />
+                <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+              <h2 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white">
                 Performance Heatmap
               </h2>
             </div>
-            <p className="text-gray-600 dark:text-gray-400">
-              Visual overview of your stock trading performance • Size represents combined profit/loss and trade volume
+            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">
+              Visual overview of your trading performance
             </p>
           </div>
           
-          <div className="flex flex-wrap items-center gap-4">
+          {/* MOBILE-RESPONSIVE: Controls */}
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+            {/* Time Filter */}
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-gray-500" />
               <select
                 value={timeFilter}
                 onChange={(e) => setTimeFilter(e.target.value)}
-                className="px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 sm:flex-none px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="all">All Time</option>
                 <option value="1y">Past Year</option>
@@ -548,12 +563,13 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
               </select>
             </div>
             
+            {/* Min Trades Filter */}
             <div className="flex items-center space-x-2">
               <Settings className="h-4 w-4 text-gray-500" />
               <select
                 value={minTrades}
                 onChange={(e) => setMinTrades(parseInt(e.target.value))}
-                className="px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 sm:flex-none px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value={1}>Min 1 Trade</option>
                 <option value={3}>Min 3 Trades</option>
@@ -562,21 +578,21 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
               </select>
             </div>
 
-            {/* Visualization Mode Toggle */}
+            {/* Visualization Mode Toggle - MOBILE-RESPONSIVE */}
             <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
               <button
                 onClick={() => setVisualMode('grid')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                className={`px-2 sm:px-3 py-1 text-xs font-medium rounded transition-colors ${
                   visualMode === 'grid'
                     ? 'bg-white dark:bg-gray-800 text-blue-600 shadow-sm'
                     : 'text-gray-600 dark:text-gray-400'
                 }`}
               >
-                Treemap
+                Grid
               </button>
               <button
                 onClick={() => setVisualMode('bars')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                className={`px-2 sm:px-3 py-1 text-xs font-medium rounded transition-colors ${
                   visualMode === 'bars'
                     ? 'bg-white dark:bg-gray-800 text-blue-600 shadow-sm'
                     : 'text-gray-600 dark:text-gray-400'
@@ -586,12 +602,12 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
               </button>
             </div>
 
-            {/* Bar Chart Mode Toggle (only show when bars are selected) */}
+            {/* Bar Chart Mode Toggle - MOBILE-RESPONSIVE */}
             {visualMode === 'bars' && (
               <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
                 <button
                   onClick={() => setBarChartMode('stocks')}
-                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                  className={`px-2 sm:px-3 py-1 text-xs font-medium rounded transition-colors ${
                     barChartMode === 'stocks'
                       ? 'bg-white dark:bg-gray-800 text-blue-600 shadow-sm'
                       : 'text-gray-600 dark:text-gray-400'
@@ -601,14 +617,14 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
                 </button>
                 <button
                   onClick={() => setBarChartMode('timeOfDay')}
-                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                  className={`px-2 sm:px-3 py-1 text-xs font-medium rounded transition-colors ${
                     barChartMode === 'timeOfDay'
                       ? 'bg-white dark:bg-gray-800 text-blue-600 shadow-sm'
                       : 'text-gray-600 dark:text-gray-400'
                   }`}
                 >
                   <Clock className="h-3 w-3 mr-1 inline" />
-                  Time of Day
+                  Time
                 </button>
               </div>
             )}
@@ -616,88 +632,88 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
         </div>
       </div>
 
-      {/* Summary Statistics */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+      {/* MOBILE-RESPONSIVE: Summary Statistics */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
           <div className="flex items-center space-x-2 mb-2">
             <DollarSign className={`h-4 w-4 ${summaryStats.totalPL >= 0 ? 'text-emerald-600' : 'text-red-500'}`} />
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total P&L</span>
+            <span className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">Total P&L</span>
           </div>
-          <div className={`text-xl font-bold ${summaryStats.totalPL >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+          <div className={`text-lg sm:text-xl font-bold ${summaryStats.totalPL >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
             {formatCurrency(summaryStats.totalPL)}
           </div>
         </div>
         
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
           <div className="flex items-center space-x-2 mb-2">
             <Target className="h-4 w-4 text-blue-500" />
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Stocks</span>
+            <span className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">Stocks</span>
           </div>
-          <div className="text-xl font-bold text-gray-900 dark:text-white">
+          <div className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
             {summaryStats.stocksTraded}
           </div>
         </div>
         
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
           <div className="flex items-center space-x-2 mb-2">
             <BarChart3 className="h-4 w-4 text-purple-500" />
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Trades</span>
+            <span className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">Trades</span>
           </div>
-          <div className="text-xl font-bold text-gray-900 dark:text-white">
+          <div className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
             {summaryStats.totalTrades}
           </div>
         </div>
         
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
           <div className="flex items-center space-x-2 mb-2">
             <TrendingUp className="h-4 w-4 text-emerald-500" />
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Winners</span>
+            <span className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">Winners</span>
           </div>
-          <div className="text-xl font-bold text-emerald-600">
+          <div className="text-lg sm:text-xl font-bold text-emerald-600">
             {summaryStats.winners}
           </div>
         </div>
         
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
           <div className="flex items-center space-x-2 mb-2">
             <TrendingDown className="h-4 w-4 text-red-500" />
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Losers</span>
+            <span className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">Losers</span>
           </div>
-          <div className="text-xl font-bold text-red-500">
+          <div className="text-lg sm:text-xl font-bold text-red-500">
             {summaryStats.losers}
           </div>
         </div>
         
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
           <div className="flex items-center space-x-2 mb-2">
             <Target className="h-4 w-4 text-indigo-500" />
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Avg Win Rate</span>
+            <span className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">Avg Win Rate</span>
           </div>
-          <div className="text-xl font-bold text-gray-900 dark:text-white">
+          <div className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
             {summaryStats.avgWinRate}%
           </div>
         </div>
       </div>
 
-      {/* Main Visualization */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      {/* MOBILE-RESPONSIVE: Main Visualization */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
         <div className="mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-2">
             {visualMode === 'grid' ? 'Stock Performance Treemap' : 
              barChartMode === 'timeOfDay' ? 'Performance by Time of Day' : 'Stock Performance Bars'}
           </h3>
-          <div className="flex items-center space-x-6 text-sm text-gray-600 dark:text-gray-400">
+          <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
             <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-emerald-400 rounded border border-emerald-600"></div>
+              <div className="w-3 h-3 sm:w-4 sm:h-4 bg-emerald-400 rounded border border-emerald-600"></div>
               <span>Profitable positions</span>
             </div>
             <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-red-400 rounded border border-red-600"></div>
+              <div className="w-3 h-3 sm:w-4 sm:h-4 bg-red-400 rounded border border-red-600"></div>
               <span>Losing positions</span>
             </div>
-            <span className="text-xs">
+            <span className="text-xs hidden sm:inline">
               {visualMode === 'grid' 
-                ? 'Rectangle size = P&L magnitude + trade volume' 
+                ? 'Size = P&L magnitude + trade volume' 
                 : barChartMode === 'timeOfDay' 
                   ? 'Bar length = P&L magnitude by hour' 
                   : 'Bar length = P&L magnitude by stock'}
@@ -707,149 +723,148 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
 
         {stockPerformance.length > 0 ? (
           visualMode === 'grid' ? (
-            <div className="relative w-full" style={{ height: '500px' }}>
-              <svg 
-                width="100%" 
-                height="100%" 
-                viewBox="0 0 1200 500" 
-                className="rounded-lg border border-gray-200 dark:border-gray-700"
-                style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)' }}
-              >
-                {treemapLayout.map((node) => {
-                  const style = getStockStyle(node);
-                  const showFullText = node.width > 80 && node.height > 40;
-                  const showTicker = node.width > 40 && node.height > 25;
-                  
-                  return (
-                    <g key={node.ticker}>
-                      {/* Drop shadow */}
-                      <rect
-                        x={node.x + 2}
-                        y={node.y + 2}
-                        width={node.width}
-                        height={node.height}
-                        fill="rgba(0,0,0,0.1)"
-                        rx="4"
-                      />
-                      
-                      {/* Main rectangle */}
-                      <rect
-                        x={node.x}
-                        y={node.y}
-                        width={node.width}
-                        height={node.height}
-                        fill={style.backgroundColor}
-                        stroke={style.borderColor}
-                        strokeWidth="1.5"
-                        rx="4"
-                        className="cursor-pointer"
-                      />
-                      
-                      {/* Content */}
-                      {showTicker && (
-                        <>
-                          {/* Ticker symbol */}
-                          <text
-                            x={node.x + node.width / 2}
-                            y={node.y + (showFullText ? node.height / 2 - 12 : node.height / 2 - 4)}
-                            textAnchor="middle"
-                            dominantBaseline="middle"
-                            fontSize={Math.min(node.width / 4, showFullText ? 16 : 12)}
-                            fontWeight="700"
-                            fill={style.textColor}
-                            fontFamily="system-ui, -apple-system, sans-serif"
-                          >
-                            {node.ticker}
-                          </text>
-                          
-                          {/* P&L amount */}
-                          <text
-                            x={node.x + node.width / 2}
-                            y={node.y + (showFullText ? node.height / 2 + 4 : node.height / 2 + 8)}
-                            textAnchor="middle"
-                            dominantBaseline="middle"
-                            fontSize={Math.min(node.width / 6, showFullText ? 13 : 10)}
-                            fontWeight="600"
-                            fill={style.textColor}
-                            fontFamily="system-ui, -apple-system, sans-serif"
-                          >
-                            {formatCurrency(node.totalPL)}
-                          </text>
-                          
-                          {/* Trade count and win rate */}
-                          {showFullText && (
-                            <>
+            <div className="relative w-full overflow-x-auto">
+              <div className="min-w-full" style={{ minHeight: '240px' }}>
+                <svg 
+                  width="100%" 
+                  height="240"
+                  viewBox={`0 0 ${typeof window !== 'undefined' && window.innerWidth < 768 ? window.innerWidth - 64 : 1200} 240`}
+                  className="rounded-lg border border-gray-200 dark:border-gray-700"
+                  style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)' }}
+                  preserveAspectRatio="xMidYMid meet"
+                >
+                  {treemapLayout.map((node) => {
+                    const style = getStockStyle(node);
+                    const showFullText = node.width > 60 && node.height > 30;
+                    const showTicker = node.width > 30 && node.height > 20;
+                    
+                    return (
+                      <g key={node.ticker}>
+                        {/* Drop shadow */}
+                        <rect
+                          x={node.x + 1}
+                          y={node.y + 1}
+                          width={node.width}
+                          height={node.height}
+                          fill="rgba(0,0,0,0.1)"
+                          rx="3"
+                        />
+                        
+                        {/* Main rectangle */}
+                        <rect
+                          x={node.x}
+                          y={node.y}
+                          width={node.width}
+                          height={node.height}
+                          fill={style.backgroundColor}
+                          stroke={style.borderColor}
+                          strokeWidth="1"
+                          rx="3"
+                          className="cursor-pointer"
+                        />
+                        
+                        {/* Content */}
+                        {showTicker && (
+                          <>
+                            {/* Ticker symbol */}
+                            <text
+                              x={node.x + node.width / 2}
+                              y={node.y + (showFullText ? node.height / 2 - 8 : node.height / 2 - 2)}
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                              fontSize={Math.min(node.width / 5, showFullText ? 12 : 10)}
+                              fontWeight="700"
+                              fill={style.textColor}
+                              fontFamily="system-ui, -apple-system, sans-serif"
+                            >
+                              {node.ticker}
+                            </text>
+                            
+                            {/* P&L amount */}
+                            <text
+                              x={node.x + node.width / 2}
+                              y={node.y + (showFullText ? node.height / 2 + 2 : node.height / 2 + 6)}
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                              fontSize={Math.min(node.width / 7, showFullText ? 10 : 8)}
+                              fontWeight="600"
+                              fill={style.textColor}
+                              fontFamily="system-ui, -apple-system, sans-serif"
+                            >
+                              {formatCurrency(node.totalPL)}
+                            </text>
+                            
+                            {/* Trade count and win rate - only show if there's enough space */}
+                            {showFullText && node.height > 50 && (
                               <text
                                 x={node.x + node.width / 2}
-                                y={node.y + node.height / 2 + 20}
+                                y={node.y + node.height / 2 + 14}
                                 textAnchor="middle"
                                 dominantBaseline="middle"
-                                fontSize="10"
+                                fontSize="8"
                                 fontWeight="500"
                                 fill={style.textColor}
                                 fontFamily="system-ui, -apple-system, sans-serif"
                               >
-                                {node.trades} trades • {node.winRate}% wins
+                                {node.trades} • {node.winRate}%
                               </text>
-                            </>
-                          )}
-                        </>
-                      )}
-                      
-                      {/* Small indicator for tiny rectangles */}
-                      {!showTicker && node.width > 20 && node.height > 15 && (
-                        <>
+                            )}
+                          </>
+                        )}
+                        
+                        {/* Small indicator for tiny rectangles */}
+                        {!showTicker && node.width > 15 && node.height > 10 && (
                           <text
                             x={node.x + node.width / 2}
                             y={node.y + node.height / 2}
                             textAnchor="middle"
                             dominantBaseline="middle"
-                            fontSize="8"
+                            fontSize="6"
                             fontWeight="700"
                             fill={style.textColor}
                             fontFamily="system-ui, -apple-system, sans-serif"
                           >
-                            {node.ticker.substring(0, 3)}
+                            {node.ticker.substring(0, 2)}
                           </text>
-                        </>
-                      )}
-                    </g>
-                  );
-                })}
-              </svg>
+                        )}
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
             </div>
           ) : (
             barChartMode === 'timeOfDay' ? renderTimeBarChart() : renderStockBarChart()
           )
         ) : (
-          <div className="text-center py-12">
-            <p className="text-gray-500 dark:text-gray-400">
+          <div className="text-center py-8 sm:py-12">
+            <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400">
               No stocks meet the current filter criteria. Try adjusting your filters.
             </p>
           </div>
         )}
       </div>
 
-      {/* Top Performers */}
+      {/* MOBILE-RESPONSIVE: Top Performers */}
       {summaryStats.bestStock && summaryStats.worstStock && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
           {/* Best Performer */}
-          <div className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800 p-6">
+          <div className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800 p-4 sm:p-6">
             <div className="flex items-center space-x-3 mb-4">
               <div className="p-2 bg-emerald-500 rounded-lg shadow-sm">
-                <TrendingUp className="h-5 w-5 text-white" />
+                <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
               </div>
-              <h4 className="text-lg font-bold text-emerald-800 dark:text-emerald-200">
+              <h4 className="text-base sm:text-lg font-bold text-emerald-800 dark:text-emerald-200">
                 Top Performer
               </h4>
             </div>
             
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-2xl font-bold text-emerald-600">
+                <span className="text-xl sm:text-2xl font-bold text-emerald-600">
                   {summaryStats.bestStock.ticker}
                 </span>
-                <span className="text-2xl font-bold text-emerald-600">
+                <span className="text-xl sm:text-2xl font-bold text-emerald-600">
                   {formatCurrency(summaryStats.bestStock.totalPL)}
                 </span>
               </div>
@@ -884,22 +899,22 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
           </div>
 
           {/* Worst Performer */}
-          <div className="bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-900/20 dark:to-rose-900/20 rounded-xl border border-red-200 dark:border-red-800 p-6">
+          <div className="bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-900/20 dark:to-rose-900/20 rounded-xl border border-red-200 dark:border-red-800 p-4 sm:p-6">
             <div className="flex items-center space-x-3 mb-4">
               <div className="p-2 bg-red-500 rounded-lg shadow-sm">
-                <TrendingDown className="h-5 w-5 text-white" />
+                <TrendingDown className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
               </div>
-              <h4 className="text-lg font-bold text-red-800 dark:text-red-200">
+              <h4 className="text-base sm:text-lg font-bold text-red-800 dark:text-red-200">
                 Needs Attention
               </h4>
             </div>
             
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-2xl font-bold text-red-600">
+                <span className="text-xl sm:text-2xl font-bold text-red-600">
                   {summaryStats.worstStock.ticker}
                 </span>
-                <span className="text-2xl font-bold text-red-600">
+                <span className="text-xl sm:text-2xl font-bold text-red-600">
                   {formatCurrency(summaryStats.worstStock.totalPL)}
                 </span>
               </div>
@@ -935,36 +950,36 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
         </div>
       )}
 
-      {/* Best Time of Day Analysis (only show when time data exists) */}
+      {/* MOBILE-RESPONSIVE: Best Time of Day Analysis */}
       {timePerformance.length > 0 && visualMode === 'bars' && barChartMode === 'timeOfDay' && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
           <div className="flex items-center space-x-3 mb-4">
             <div className="p-2 bg-blue-500 rounded-lg shadow-sm">
-              <Clock className="h-5 w-5 text-white" />
+              <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
             </div>
-            <h4 className="text-lg font-bold text-gray-900 dark:text-white">
+            <h4 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
               Trading Hours Analysis
             </h4>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {/* Best Hour */}
             {(() => {
               const bestHour = timePerformance.reduce((best, hour) => 
                 hour.totalPL > best.totalPL ? hour : best
               );
               return (
-                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 border border-emerald-200 dark:border-emerald-800">
-                  <h5 className="font-semibold text-emerald-800 dark:text-emerald-200 mb-2">
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-3 sm:p-4 border border-emerald-200 dark:border-emerald-800">
+                  <h5 className="font-semibold text-emerald-800 dark:text-emerald-200 mb-2 text-sm sm:text-base">
                     Most Profitable Hour
                   </h5>
-                  <div className="text-2xl font-bold text-emerald-600 mb-1">
+                  <div className="text-lg sm:text-2xl font-bold text-emerald-600 mb-1">
                     {bestHour.timeLabel}
                   </div>
-                  <div className="text-lg font-semibold text-emerald-700 dark:text-emerald-300">
+                  <div className="text-base sm:text-lg font-semibold text-emerald-700 dark:text-emerald-300">
                     {formatCurrency(bestHour.totalPL)}
                   </div>
-                  <div className="text-sm text-emerald-600 dark:text-emerald-400">
+                  <div className="text-xs sm:text-sm text-emerald-600 dark:text-emerald-400">
                     {bestHour.trades} trades • {bestHour.winRate}% win rate
                   </div>
                 </div>
@@ -977,17 +992,17 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
                 hour.trades > most.trades ? hour : most
               );
               return (
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-                  <h5 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 sm:p-4 border border-blue-200 dark:border-blue-800">
+                  <h5 className="font-semibold text-blue-800 dark:text-blue-200 mb-2 text-sm sm:text-base">
                     Most Active Hour
                   </h5>
-                  <div className="text-2xl font-bold text-blue-600 mb-1">
+                  <div className="text-lg sm:text-2xl font-bold text-blue-600 mb-1">
                     {mostActiveHour.timeLabel}
                   </div>
-                  <div className="text-lg font-semibold text-blue-700 dark:text-blue-300">
+                  <div className="text-base sm:text-lg font-semibold text-blue-700 dark:text-blue-300">
                     {mostActiveHour.trades} trades
                   </div>
-                  <div className="text-sm text-blue-600 dark:text-blue-400">
+                  <div className="text-xs sm:text-sm text-blue-600 dark:text-blue-400">
                     {formatCurrency(mostActiveHour.totalPL)} • {mostActiveHour.winRate}% wins
                   </div>
                 </div>
@@ -1000,17 +1015,17 @@ const TradingPerformanceHeatmap: React.FC<TradingHeatmapProps> = ({ trades }) =>
                 hour.winRate > best.winRate ? hour : best
               );
               return (
-                <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
-                  <h5 className="font-semibold text-purple-800 dark:text-purple-200 mb-2">
+                <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3 sm:p-4 border border-purple-200 dark:border-purple-800">
+                  <h5 className="font-semibold text-purple-800 dark:text-purple-200 mb-2 text-sm sm:text-base">
                     Best Win Rate Hour
                   </h5>
-                  <div className="text-2xl font-bold text-purple-600 mb-1">
+                  <div className="text-lg sm:text-2xl font-bold text-purple-600 mb-1">
                     {bestWinRateHour.timeLabel}
                   </div>
-                  <div className="text-lg font-semibold text-purple-700 dark:text-purple-300">
+                  <div className="text-base sm:text-lg font-semibold text-purple-700 dark:text-purple-300">
                     {bestWinRateHour.winRate}% wins
                   </div>
-                  <div className="text-sm text-purple-600 dark:text-purple-400">
+                  <div className="text-xs sm:text-sm text-purple-600 dark:text-purple-400">
                     {bestWinRateHour.trades} trades • {formatCurrency(bestWinRateHour.totalPL)}
                   </div>
                 </div>
