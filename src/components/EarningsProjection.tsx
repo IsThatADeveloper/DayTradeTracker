@@ -1,4 +1,4 @@
-// src/components/EarningsProjection.tsx - Enhanced Responsive Version with P&L Chart (fixed)
+// src/components/EarningsProjection.tsx - Fixed to show ONLY actual trading P&L
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   TrendingUp,
@@ -65,29 +65,62 @@ interface PLChartDataPoint {
   label: string;
 }
 
-type TimeRange = 'today' | '7d' | '1m' | '3m' | '1y' | 'all';
+type TimeRange = '7d' | '1m' | '3m' | '1y' | 'all';
 
 const MAX_CAPITAL = 1000000000; // 1 billion cap
 
 export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, selectedDate }) => {
-  // Input states with proper validation
-  const [initialCapital, setInitialCapital] = useState<number>(10000);
-  const [monthlyContribution, setMonthlyContribution] = useState<number>(1000);
+  // Input states with proper validation - FIXED to allow empty editing
+  const [initialCapital, setInitialCapital] = useState<string>('10000');
+  const [monthlyContribution, setMonthlyContribution] = useState<string>('1000');
   const [dividendYield, setDividendYield] = useState<number>(2.5);
   const [dividendGrowthRate, setDividendGrowthRate] = useState<number>(5);
   const [conservativeMode, setConservativeMode] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'projections' | 'dividends' | 'plchart'>('projections');
   const [plTimeRange, setPLTimeRange] = useState<TimeRange>('all');
 
-  // Input validation helpers
+  // Helper to get numeric values for calculations
+  const getNumericInitialCapital = useCallback((): number => {
+    const num = parseFloat(initialCapital);
+    return isNaN(num) || num < 0 ? 0 : Math.min(num, MAX_CAPITAL);
+  }, [initialCapital]);
+
+  const getNumericMonthlyContribution = useCallback((): number => {
+    const num = parseFloat(monthlyContribution);
+    return isNaN(num) || num < 0 ? 0 : Math.min(num, MAX_CAPITAL / 12);
+  }, [monthlyContribution]);
+
+  // Input validation helpers - FIXED to allow empty values
   const handleCapitalChange = useCallback((value: string) => {
-    const numValue = parseFloat(value) || 0;
-    setInitialCapital(Math.min(Math.max(numValue, 0), MAX_CAPITAL));
+    // Allow empty string for editing
+    if (value === '') {
+      setInitialCapital('');
+      return;
+    }
+    
+    // Only allow valid number formats (including decimals)
+    if (/^\d*\.?\d*$/.test(value)) {
+      const numValue = parseFloat(value);
+      if (!isNaN(numValue) && numValue <= MAX_CAPITAL) {
+        setInitialCapital(value);
+      }
+    }
   }, []);
 
   const handleContributionChange = useCallback((value: string) => {
-    const numValue = parseFloat(value) || 0;
-    setMonthlyContribution(Math.min(Math.max(numValue, 0), MAX_CAPITAL / 12)); // Max monthly is 1/12 of cap
+    // Allow empty string for editing
+    if (value === '') {
+      setMonthlyContribution('');
+      return;
+    }
+    
+    // Only allow valid number formats (including decimals)
+    if (/^\d*\.?\d*$/.test(value)) {
+      const numValue = parseFloat(value);
+      if (!isNaN(numValue) && numValue <= MAX_CAPITAL / 12) {
+        setMonthlyContribution(value);
+      }
+    }
   }, []);
 
   // Calculate comprehensive performance metrics
@@ -148,7 +181,8 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
     // Calculate Sharpe ratio (rough)
     const riskFreeRate = 0.02;
-    const excessReturn = avgAnnualPL - initialCapital * riskFreeRate;
+    const initialCapitalNum = getNumericInitialCapital();
+    const excessReturn = avgAnnualPL - initialCapitalNum * riskFreeRate;
     const annualVolatility = dailyVolatility * Math.sqrt(252);
     const sharpeRatio = annualVolatility > 0 ? excessReturn / annualVolatility : 0;
 
@@ -195,25 +229,27 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
       profitFactor,
       consistency,
     };
-  }, [trades, initialCapital]);
+  }, [trades, getNumericInitialCapital]);
 
   // Calculate realistic projections (updated periods)
   const projections = useMemo((): ProjectionPeriod[] => {
     const baseAnnualReturn = performanceMetrics.avgAnnualPL;
     const conservativeFactor = conservativeMode ? 0.6 : 1.0;
     const adjustedAnnualReturn = baseAnnualReturn * conservativeFactor;
-    const annualGrowthRate = initialCapital > 0 ? adjustedAnnualReturn / initialCapital : 0;
+    const initialCapitalNum = getNumericInitialCapital();
+    const monthlyContributionNum = getNumericMonthlyContribution();
+    const annualGrowthRate = initialCapitalNum > 0 ? adjustedAnnualReturn / initialCapitalNum : 0;
 
     // More realistic time periods
     const periods = [1, 3, 5, 10, 15];
 
     return periods.map((years) => {
-      let portfolioValue = initialCapital;
-      let totalContributions = initialCapital;
+      let portfolioValue = initialCapitalNum;
+      let totalContributions = initialCapitalNum;
       let totalGrowth = 0;
 
       for (let year = 1; year <= years; year++) {
-        const yearlyContributions = monthlyContribution * 12;
+        const yearlyContributions = monthlyContributionNum * 12;
         totalContributions += yearlyContributions;
         const startValue = portfolioValue;
         const avgValueDuringYear = startValue + yearlyContributions / 2;
@@ -223,7 +259,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
       }
 
       const growthPercentage =
-        initialCapital > 0 ? ((portfolioValue - totalContributions) / initialCapital) * 100 : 0;
+        initialCapitalNum > 0 ? ((portfolioValue - totalContributions) / initialCapitalNum) * 100 : 0;
 
       return {
         period: years === 1 ? '1 Year' : `${years} Years`,
@@ -232,12 +268,12 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
         totalGrowth: portfolioValue - totalContributions,
         growthPercentage,
         projectedPL: totalGrowth,
-        monthlyContribution: monthlyContribution,
+        monthlyContribution: monthlyContributionNum,
       };
     });
-  }, [performanceMetrics, initialCapital, monthlyContribution, conservativeMode]);
+  }, [performanceMetrics, getNumericInitialCapital, getNumericMonthlyContribution, conservativeMode]);
 
-  // Calculate P&L chart data
+  // FIXED: Calculate P&L chart data - ONLY ACTUAL TRADING PROFITS/LOSSES
   const plChartData = useMemo((): PLChartDataPoint[] => {
     if (trades.length === 0) return [];
 
@@ -247,9 +283,6 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
     // Determine date range
     switch (plTimeRange) {
-      case 'today':
-        startDate = startOfDay(selectedDate);
-        break;
       case '7d':
         startDate = subDays(now, 7);
         break;
@@ -269,37 +302,38 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     // Filter trades by date range
     const filteredTrades = sortedTrades.filter((trade) => trade.timestamp >= startDate);
 
-    // Create data points
+    // Create data points showing ONLY ACTUAL TRADING P&L
     const dataPoints: PLChartDataPoint[] = [];
-    let runningPL = initialCapital;
+    let runningPL = 0; // Start at $0 - only trading profits/losses
 
-    // Add starting point
+    // Add starting point at $0
     if (filteredTrades.length > 0) {
       dataPoints.push({
         date: startDate,
-        value: runningPL,
-        label: formatCurrency(runningPL),
+        value: 0, // Start at zero to show only trading performance
+        label: formatCurrency(0),
       });
     }
 
-    // Add trade points
+    // Add each trade's actual realized P&L
     filteredTrades.forEach((trade) => {
-      runningPL += trade.realizedPL;
+      runningPL += trade.realizedPL; // Cumulative trading profit/loss only
       dataPoints.push({
         date: trade.timestamp,
-        value: runningPL,
+        value: runningPL, // This shows ONLY your trading gains/losses
         label: formatCurrency(runningPL),
       });
     });
 
     return dataPoints;
-  }, [trades, plTimeRange, selectedDate, initialCapital]);
+  }, [trades, plTimeRange, selectedDate]);
 
-  // Get current P&L stats
+  // FIXED: Get current P&L stats - ONLY TRADING PERFORMANCE
   const currentPLStats = useMemo(() => {
-    const currentValue = initialCapital + performanceMetrics.totalPL;
-    const change = performanceMetrics.totalPL;
-    const changePercent = initialCapital > 0 ? (change / initialCapital) * 100 : 0;
+    const currentValue = performanceMetrics.totalPL; // Only trading profits/losses
+    const change = performanceMetrics.totalPL; // Your actual total trading profit/loss
+    const initialCapitalNum = getNumericInitialCapital();
+    const changePercent = initialCapitalNum > 0 ? (change / initialCapitalNum) * 100 : 0; // Percentage return on initial capital
 
     return {
       currentValue,
@@ -307,7 +341,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
       changePercent,
       isPositive: change >= 0,
     };
-  }, [initialCapital, performanceMetrics.totalPL]);
+  }, [performanceMetrics.totalPL, getNumericInitialCapital]);
 
   const renderPLChart = () => {
     if (plChartData.length === 0) {
@@ -349,11 +383,17 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
-        {/* P&L Summary */}
+        {/* P&L Summary - FIXED TO SHOW ONLY TRADING PERFORMANCE */}
         <div className="mb-6">
           <div className="text-center mb-4">
+            <div className="text-lg font-medium text-gray-600 dark:text-gray-400 mb-1">
+              Trading P&L Performance
+            </div>
             <div className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-2">
               {formatCurrency(currentPLStats.currentValue)}
+            </div>
+            <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+              Total trading profit/loss
             </div>
             <div
               className={`flex items-center justify-center text-lg sm:text-xl font-semibold ${
@@ -370,9 +410,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
             </div>
             <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               {plTimeRange === 'all'
-                ? 'All time'
-                : plTimeRange === 'today'
-                ? 'Today'
+                ? 'All time trading performance'
                 : plTimeRange === '7d'
                 ? 'Past 7 days'
                 : plTimeRange === '1m'
@@ -387,7 +425,6 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           <div className="flex items-center justify-center">
             <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-1 flex flex-wrap gap-1">
               {[
-                { key: 'today', label: '1D' },
                 { key: '7d', label: '7D' },
                 { key: '1m', label: '1M' },
                 { key: '3m', label: '3M' },
@@ -483,10 +520,10 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     );
   };
 
-  // Mobile-responsive input component
+  // Mobile-responsive input component - FIXED to handle string values
   const renderInput = (
     label: string,
-    value: number,
+    value: string | number,
     onChange: (value: string) => void,
     prefix: string = '',
     suffix: string = '',
@@ -536,7 +573,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
             No Trading Data Available
           </h3>
           <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400">
-            Start trading to see earnings projections and P&L analysis.
+            Start trading to see your actual P&L performance and earnings projections.
           </p>
         </div>
       </div>
@@ -554,29 +591,17 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
                 <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
               </div>
               <h2 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white">
-                Earnings &amp; P&amp;L Analysis
+                Trading Performance &amp; Projections
               </h2>
             </div>
             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">
-              Track your trading performance and project future earnings
+              Track your actual trading performance and project future earnings
             </p>
           </div>
         </div>
 
         {/* Mobile-responsive tab navigation */}
         <div className="flex flex-wrap items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-          <button
-            onClick={() => setActiveTab('plchart')}
-            className={`flex items-center px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${
-              activeTab === 'plchart'
-                ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            <LineChart className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-            <span className="hidden sm:inline">P&amp;L Chart</span>
-            <span className="sm:hidden">P&amp;L</span>
-          </button>
           <button
             onClick={() => setActiveTab('projections')}
             className={`flex items-center px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${
@@ -588,6 +613,18 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
             <Calculator className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
             <span className="hidden sm:inline">Projections</span>
             <span className="sm:hidden">Proj</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('plchart')}
+            className={`flex items-center px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${
+              activeTab === 'plchart'
+                ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            <LineChart className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+            <span className="hidden sm:inline">Trading P&L</span>
+            <span className="sm:hidden">P&L</span>
           </button>
           <button
             onClick={() => setActiveTab('dividends')}
@@ -617,7 +654,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
           <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Total P&amp;L</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Total P&L</p>
             <p
               className={`text-base sm:text-xl font-bold ${
                 performanceMetrics.totalPL >= 0 ? 'text-green-600' : 'text-red-600'
@@ -639,7 +676,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           </div>
 
           <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Avg Annual P&amp;L</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Avg Annual P&L</p>
             <p
               className={`text-base sm:text-xl font-bold ${
                 performanceMetrics.avgAnnualPL >= 0 ? 'text-green-600' : 'text-red-600'
@@ -659,8 +696,6 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'plchart' && renderPLChart()}
-
       {activeTab === 'projections' && (
         <div className="space-y-4 sm:space-y-6">
           {/* Mobile-responsive input controls */}
@@ -748,7 +783,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
                   {projections.map((projection) => {
                     const cagr =
                       projection.years > 0
-                        ? (Math.pow(projection.projectedValue / initialCapital, 1 / projection.years) - 1) *
+                        ? (Math.pow(projection.projectedValue / getNumericInitialCapital(), 1 / projection.years) - 1) *
                           100
                         : 0;
                     return (
@@ -785,7 +820,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
               {projections.map((projection) => {
                 const cagr =
                   projection.years > 0
-                    ? (Math.pow(projection.projectedValue / initialCapital, 1 / projection.years) - 1) * 100
+                    ? (Math.pow(projection.projectedValue / getNumericInitialCapital(), 1 / projection.years) - 1) * 100
                     : 0;
                 return (
                   <div key={projection.period} className="p-4 space-y-3">
@@ -870,6 +905,8 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
         </div>
       )}
 
+      {activeTab === 'plchart' && renderPLChart()}
+
       {activeTab === 'dividends' && (
         <div className="space-y-4 sm:space-y-6">
           {/* Dividend Input Controls */}
@@ -925,25 +962,25 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
               </div>
               <p className="text-xl sm:text-2xl font-bold text-green-600 mb-2">
                 {formatCurrency(
-                  (initialCapital + performanceMetrics.totalPL) * (dividendYield / 100) * 15
+                  performanceMetrics.totalPL * (dividendYield / 100) * 15
                 )}
               </p>
-              <p className="text-xs sm:text-sm text-green-700 dark:text-green-300">Projected passive income</p>
+              <p className="text-xs sm:text-sm text-green-700 dark:text-green-300">Based on current trading profits</p>
             </div>
 
             <div className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4 sm:p-6">
               <div className="flex items-center space-x-3 mb-4">
                 <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
                 <h4 className="text-sm sm:text-base font-semibold text-blue-800 dark:text-blue-200">
-                  Monthly Dividend (5 Years)
+                  Monthly Dividend (Current)
                 </h4>
               </div>
               <p className="text-xl sm:text-2xl font-bold text-blue-600 mb-2">
                 {formatCurrency(
-                  ((initialCapital + performanceMetrics.totalPL) * (dividendYield / 100)) / 12
+                  (performanceMetrics.totalPL * (dividendYield / 100)) / 12
                 )}
               </p>
-              <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">Estimated monthly income</p>
+              <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">Based on current trading profits</p>
             </div>
 
             <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200 dark:border-purple-800 p-4 sm:p-6">
