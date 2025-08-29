@@ -46,118 +46,177 @@ export const PLChart: React.FC<PLChartProps> = ({
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isMouseOver, setIsMouseOver] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 400 });
+  const [isMounted, setIsMounted] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<HTMLDivElement>(null);
 
   const currentTimeRange = setPLTimeRange ? plTimeRange : localTimeRange;
   const setCurrentTimeRange = setPLTimeRange ? setPLTimeRange : setLocalTimeRange;
 
+  // FIXED: Add mounted state to prevent hydration issues
   useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // FIXED: Improved dimension calculation with error handling
+  useEffect(() => {
+    if (!isMounted) return;
+
     const updateDimensions = () => {
       if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setDimensions({
-          width: Math.max(320, rect.width - 48),
-          height: window.innerWidth < 768 ? 250 : 400
-        });
+        try {
+          const rect = containerRef.current.getBoundingClientRect();
+          const newWidth = Math.max(320, rect.width - 48);
+          const newHeight = typeof window !== 'undefined' && window.innerWidth < 768 ? 250 : 400;
+          
+          setDimensions(prev => {
+            // Only update if dimensions actually changed to prevent unnecessary re-renders
+            if (prev.width !== newWidth || prev.height !== newHeight) {
+              return { width: newWidth, height: newHeight };
+            }
+            return prev;
+          });
+        } catch (error) {
+          console.error('Error updating chart dimensions:', error);
+          // Fallback dimensions
+          setDimensions({ width: 800, height: 400 });
+        }
       }
     };
 
-    updateDimensions();
+    // Initial dimension update
+    const timer = setTimeout(updateDimensions, 100);
+
     const handleResize = () => {
       requestAnimationFrame(updateDimensions);
     };
     
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', handleResize);
+    }
+
+    return () => {
+      clearTimeout(timer);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('resize', handleResize);
+      }
+    };
+  }, [isMounted]);
 
   // Generate P&L chart data based on actual trades
   const plChartData = useMemo((): PLChartDataPoint[] => {
-    if (trades.length === 0) return [];
+    if (!trades || trades.length === 0) return [];
 
-    const sortedTrades = [...trades].sort((a, b) => {
-      const aTime = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
-      const bTime = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
-      return aTime - bTime;
-    });
-
-    const now = new Date();
-    let startDate: Date;
-    let filteredTrades: Trade[];
-
-    // Determine date range
-    switch (currentTimeRange) {
-      case 'today':
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        break;
-      case '7d':
-        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        break;
-      case '1m':
-        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        break;
-      case '3m':
-        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-        break;
-      case '1y':
-        startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-        break;
-      default:
-        startDate = sortedTrades[0]?.timestamp instanceof Date ? 
-          sortedTrades[0].timestamp : 
-          new Date(sortedTrades[0]?.timestamp || now);
-    }
-
-    // Filter trades by date range
-    filteredTrades = sortedTrades.filter(trade => {
-      const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
-      return tradeDate >= startDate;
-    });
-
-    if (filteredTrades.length === 0) return [];
-
-    // Create data points showing cumulative P&L
-    const dataPoints: PLChartDataPoint[] = [];
-    let runningPL = 0;
-
-    // Add starting point at $0
-    dataPoints.push({
-      date: startDate,
-      value: 0,
-      label: formatCurrency(0),
-    });
-
-    // Add each trade's cumulative P&L
-    filteredTrades.forEach((trade) => {
-      runningPL += trade.realizedPL;
-      const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
-      dataPoints.push({
-        date: tradeDate,
-        value: runningPL,
-        label: formatCurrency(runningPL),
+    try {
+      const sortedTrades = [...trades].sort((a, b) => {
+        const aTime = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+        const bTime = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+        return aTime - bTime;
       });
-    });
 
-    return dataPoints;
+      const now = new Date();
+      let startDate: Date;
+      let filteredTrades: Trade[];
+
+      // Determine date range
+      switch (currentTimeRange) {
+        case 'today':
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          break;
+        case '7d':
+          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case '1m':
+          startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          break;
+        case '3m':
+          startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+          break;
+        case '1y':
+          startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+          break;
+        default:
+          startDate = sortedTrades[0]?.timestamp instanceof Date ? 
+            sortedTrades[0].timestamp : 
+            new Date(sortedTrades[0]?.timestamp || now);
+      }
+
+      // Filter trades by date range
+      filteredTrades = sortedTrades.filter(trade => {
+        const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+        return tradeDate >= startDate;
+      });
+
+      if (filteredTrades.length === 0) return [];
+
+      // Create data points showing cumulative P&L
+      const dataPoints: PLChartDataPoint[] = [];
+      let runningPL = 0;
+
+      // Add starting point at $0
+      dataPoints.push({
+        date: startDate,
+        value: 0,
+        label: formatCurrency(0),
+      });
+
+      // Add each trade's cumulative P&L
+      filteredTrades.forEach((trade) => {
+        runningPL += trade.realizedPL;
+        const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+        dataPoints.push({
+          date: tradeDate,
+          value: runningPL,
+          label: formatCurrency(runningPL),
+        });
+      });
+
+      return dataPoints;
+    } catch (error) {
+      console.error('Error generating chart data:', error);
+      return [];
+    }
   }, [trades, currentTimeRange]);
 
   // Calculate current stats
   const currentPLStats = useMemo((): CurrentPLStats => {
-    if (plChartData.length === 0) return { currentValue: 0, change: 0, changePercent: 0, isPositive: true };
-    
-    const current = plChartData[plChartData.length - 1].value;
-    const previous = plChartData.length > 1 ? plChartData[0].value : 0;
-    const change = current - previous;
-    const changePercent = previous !== 0 ? (change / Math.abs(previous)) * 100 : (current !== 0 ? 100 : 0);
-    
-    return {
-      currentValue: current,
-      change,
-      changePercent,
-      isPositive: change >= 0
-    };
+    try {
+      if (plChartData.length === 0) return { currentValue: 0, change: 0, changePercent: 0, isPositive: true };
+      
+      const current = plChartData[plChartData.length - 1].value;
+      const previous = plChartData.length > 1 ? plChartData[0].value : 0;
+      const change = current - previous;
+      const changePercent = previous !== 0 ? (change / Math.abs(previous)) * 100 : (current !== 0 ? 100 : 0);
+      
+      return {
+        currentValue: current,
+        change,
+        changePercent,
+        isPositive: change >= 0
+      };
+    } catch (error) {
+      console.error('Error calculating P&L stats:', error);
+      return { currentValue: 0, change: 0, changePercent: 0, isPositive: true };
+    }
   }, [plChartData]);
+
+  // FIXED: Don't render until mounted
+  if (!isMounted) {
+    return (
+      <div className="w-full bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="flex items-center justify-center h-64 text-gray-500 dark:text-gray-400">
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto">
+              <BarChart3 className="h-8 w-8 opacity-60 animate-pulse" />
+            </div>
+            <div>
+              <p className="text-lg font-medium">Loading chart...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (plChartData.length === 0) {
     return (
@@ -177,76 +236,111 @@ export const PLChart: React.FC<PLChartProps> = ({
     );
   }
 
-  // Chart dimensions and calculations
+  // FIXED: Safer chart dimensions with better fallbacks
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
   const chartPadding = { 
     top: 20, 
-    right: window.innerWidth < 768 ? 20 : 60, 
-    bottom: window.innerWidth < 768 ? 30 : 50, 
-    left: window.innerWidth < 768 ? 50 : 80 
+    right: isMobile ? 20 : 60, 
+    bottom: isMobile ? 30 : 50, 
+    left: isMobile ? 50 : 80 
   };
-  const chartWidth = dimensions.width - chartPadding.left - chartPadding.right;
-  const chartHeight = dimensions.height - chartPadding.top - chartPadding.bottom;
+  const chartWidth = Math.max(200, dimensions.width - chartPadding.left - chartPadding.right);
+  const chartHeight = Math.max(150, dimensions.height - chartPadding.top - chartPadding.bottom);
 
   const values = plChartData.map((d) => d.value);
   const minValue = Math.min(...values);
   const maxValue = Math.max(...values);
-  const valueRange = maxValue - minValue || 1;
+  const valueRange = Math.max(maxValue - minValue, 1); // Prevent division by zero
   const padding = valueRange * 0.1;
 
-  // Helper functions
-  const xAt = (i: number) => plChartData.length === 1 ? chartWidth / 2 : (i / (plChartData.length - 1)) * chartWidth;
-  const yAt = (v: number) => chartHeight - ((v - (minValue - padding)) / (valueRange + 2 * padding)) * chartHeight;
+  // Helper functions with error handling
+  const xAt = (i: number) => {
+    try {
+      return plChartData.length === 1 ? chartWidth / 2 : (i / (plChartData.length - 1)) * chartWidth;
+    } catch (error) {
+      console.error('Error calculating x position:', error);
+      return 0;
+    }
+  };
+
+  const yAt = (v: number) => {
+    try {
+      return chartHeight - ((v - (minValue - padding)) / (valueRange + 2 * padding)) * chartHeight;
+    } catch (error) {
+      console.error('Error calculating y position:', error);
+      return 0;
+    }
+  };
 
   // Find closest point to mouse position
   const findClosestPoint = (mouseX: number) => {
     if (plChartData.length === 0) return null;
     
-    const relativeX = mouseX - chartPadding.left;
-    const pointIndex = Math.round((relativeX / chartWidth) * (plChartData.length - 1));
-    return Math.max(0, Math.min(plChartData.length - 1, pointIndex));
+    try {
+      const relativeX = mouseX - chartPadding.left;
+      const pointIndex = Math.round((relativeX / chartWidth) * (plChartData.length - 1));
+      return Math.max(0, Math.min(plChartData.length - 1, pointIndex));
+    } catch (error) {
+      console.error('Error finding closest point:', error);
+      return null;
+    }
   };
 
-  // Build smooth path
+  // Build smooth path with error handling
   const buildSmoothPath = () => {
     if (plChartData.length < 2) return '';
     
-    let path = `M ${xAt(0)} ${yAt(plChartData[0].value)}`;
-    
-    for (let i = 1; i < plChartData.length; i++) {
-      const prevX = xAt(i - 1);
-      const prevY = yAt(plChartData[i - 1].value);
-      const currentX = xAt(i);
-      const currentY = yAt(plChartData[i].value);
+    try {
+      let path = `M ${xAt(0)} ${yAt(plChartData[0].value)}`;
       
-      const controlPointX = prevX + (currentX - prevX) * 0.5;
-      path += ` Q ${controlPointX} ${prevY} ${currentX} ${currentY}`;
+      for (let i = 1; i < plChartData.length; i++) {
+        const prevX = xAt(i - 1);
+        const prevY = yAt(plChartData[i - 1].value);
+        const currentX = xAt(i);
+        const currentY = yAt(plChartData[i].value);
+        
+        const controlPointX = prevX + (currentX - prevX) * 0.5;
+        path += ` Q ${controlPointX} ${prevY} ${currentX} ${currentY}`;
+      }
+      
+      return path;
+    } catch (error) {
+      console.error('Error building smooth path:', error);
+      return '';
     }
-    
-    return path;
   };
 
-  // Build area path
+  // Build area path with error handling
   const buildAreaPath = () => {
     if (plChartData.length < 2) return '';
     
-    const linePath = buildSmoothPath();
-    const zeroY = Math.min(Math.max(yAt(0), 0), chartHeight);
-    
-    return `${linePath} L ${xAt(plChartData.length - 1)} ${zeroY} L ${xAt(0)} ${zeroY} Z`;
+    try {
+      const linePath = buildSmoothPath();
+      const zeroY = Math.min(Math.max(yAt(0), 0), chartHeight);
+      
+      return `${linePath} L ${xAt(plChartData.length - 1)} ${zeroY} L ${xAt(0)} ${zeroY} Z`;
+    } catch (error) {
+      console.error('Error building area path:', error);
+      return '';
+    }
   };
 
-  // Handle mouse movement
+  // Handle mouse movement with error handling
   const handleMouseMove = (event: React.MouseEvent) => {
-    if (!chartRef.current) return;
-    
-    const rect = chartRef.current.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    
-    setMousePosition({ x, y });
-    
-    const closestPointIndex = findClosestPoint(x);
-    setHoveredPoint(closestPointIndex);
+    try {
+      if (!chartRef.current) return;
+      
+      const rect = chartRef.current.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      
+      setMousePosition({ x, y });
+      
+      const closestPointIndex = findClosestPoint(x);
+      setHoveredPoint(closestPointIndex);
+    } catch (error) {
+      console.error('Error handling mouse move:', error);
+    }
   };
 
   const timeRangeOptions = [
@@ -438,7 +532,7 @@ export const PLChart: React.FC<PLChartProps> = ({
               )}
 
               {/* Crosshair lines */}
-              {isMouseOver && hoveredPoint !== null && (
+              {isMouseOver && hoveredPoint !== null && hoveredPoint < plChartData.length && (
                 <g className="transition-opacity duration-200" style={{ opacity: 0.7 }}>
                   {/* Vertical line */}
                   <line
@@ -495,7 +589,7 @@ export const PLChart: React.FC<PLChartProps> = ({
               })}
 
               {/* Enhanced tooltip */}
-              {isMouseOver && hoveredPoint !== null && (
+              {isMouseOver && hoveredPoint !== null && hoveredPoint < plChartData.length && (
                 <g>
                   <foreignObject 
                     x={Math.max(10, Math.min(chartWidth - 160, xAt(hoveredPoint) - 80))} 
@@ -526,7 +620,7 @@ export const PLChart: React.FC<PLChartProps> = ({
                 <g transform={`translate(0, ${chartHeight + 20})`}>
                   {plChartData
                     .filter((_, i) => {
-                      const maxLabels = window.innerWidth < 768 ? 3 : 6;
+                      const maxLabels = isMobile ? 3 : 6;
                       const step = Math.ceil(plChartData.length / maxLabels);
                       return i === 0 || i === plChartData.length - 1 || i % step === 0;
                     })
