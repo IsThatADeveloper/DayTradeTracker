@@ -139,7 +139,11 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     }
 
     // Sort trades by timestamp
-    const sortedTrades = [...trades].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+    const sortedTrades = [...trades].sort((a, b) => {
+      const aTime = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+      const bTime = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+      return aTime - bTime;
+    });
 
     const totalPL = trades.reduce((sum, trade) => sum + trade.realizedPL, 0);
     const wins = trades.filter((trade) => trade.realizedPL > 0);
@@ -147,13 +151,18 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     const winRate = (wins.length / trades.length) * 100;
 
     // Calculate time-based metrics
-    const firstTradeDate = sortedTrades[0].timestamp;
-    const lastTradeDate = sortedTrades[sortedTrades.length - 1].timestamp;
+    const firstTradeDate = sortedTrades[0].timestamp instanceof Date ? sortedTrades[0].timestamp : new Date(sortedTrades[0].timestamp);
+    const lastTradeDate = sortedTrades[sortedTrades.length - 1].timestamp instanceof Date ? 
+      sortedTrades[sortedTrades.length - 1].timestamp : 
+      new Date(sortedTrades[sortedTrades.length - 1].timestamp);
     const totalDays = Math.max(differenceInDays(lastTradeDate, firstTradeDate), 1);
     const totalMonths = Math.max(differenceInMonths(lastTradeDate, firstTradeDate), 1);
 
     // Get unique trading days
-    const uniqueTradingDays = new Set(trades.map((trade) => format(trade.timestamp, 'yyyy-MM-dd'))).size;
+    const uniqueTradingDays = new Set(trades.map((trade) => {
+      const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+      return format(tradeDate, 'yyyy-MM-dd');
+    })).size;
 
     const avgDailyPL = totalPL / Math.max(uniqueTradingDays, 1);
     const avgMonthlyPL = totalPL / Math.max(totalMonths, 1);
@@ -162,7 +171,8 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     // Calculate volatility (standard deviation of daily returns)
     const dailyPLs = Object.values(
       trades.reduce((acc, trade) => {
-        const dateKey = format(trade.timestamp, 'yyyy-MM-dd');
+        const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+        const dateKey = format(tradeDate, 'yyyy-MM-dd');
         acc[dateKey] = (acc[dateKey] || 0) + trade.realizedPL;
         return acc;
       }, {} as Record<string, number>)
@@ -201,7 +211,8 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     // Calculate consistency
     const monthlyPLs = Object.values(
       trades.reduce((acc, trade) => {
-        const monthKey = format(trade.timestamp, 'yyyy-MM');
+        const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+        const monthKey = format(tradeDate, 'yyyy-MM');
         acc[monthKey] = (acc[monthKey] || 0) + trade.realizedPL;
         return acc;
       }, {} as Record<string, number>)
