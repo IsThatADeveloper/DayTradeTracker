@@ -87,7 +87,7 @@ export const PLChart: React.FC<PLChartProps> = ({
     setMounted(true);
   }, []);
 
-  // Simple dimension update
+  // Simple dimension update - CSP Safe
   useEffect(() => {
     if (!mounted || !containerRef.current) return;
 
@@ -97,23 +97,25 @@ export const PLChart: React.FC<PLChartProps> = ({
       
       const rect = container.getBoundingClientRect();
       const width = Math.max(300, rect.width - 48);
-      const height = window.innerWidth < 768 ? 250 : 400;
+      // Use matchMedia instead of window.innerWidth for CSP safety
+      const isMobile = window.matchMedia('(max-width: 767px)').matches;
+      const height = isMobile ? 250 : 400;
       
       setDimensions({ width, height });
     };
 
     updateSize();
     
-    let timeout: NodeJS.Timeout;
+    let timeout: number;
     const handleResize = () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(updateSize, 100);
+      if (timeout) clearTimeout(timeout);
+      timeout = window.setTimeout(updateSize, 100);
     };
 
     window.addEventListener('resize', handleResize);
     return () => {
       window.removeEventListener('resize', handleResize);
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
     };
   }, [mounted]);
 
@@ -231,7 +233,7 @@ export const PLChart: React.FC<PLChartProps> = ({
     };
   }, [chartData]);
 
-  // Chart layout calculations
+  // Chart layout calculations - CSP Safe
   const layout = useMemo(() => {
     if (chartData.length === 0) return null;
 
@@ -241,7 +243,8 @@ export const PLChart: React.FC<PLChartProps> = ({
     const range = Math.max(maxValue - minValue, 1);
     const padding = range * 0.1;
 
-    const isMobile = window.innerWidth < 768;
+    // Use matchMedia for CSP safety
+    const isMobile = window.matchMedia('(max-width: 767px)').matches;
     const chartPadding = {
       top: 20,
       right: isMobile ? 20 : 60,
@@ -278,20 +281,29 @@ export const PLChart: React.FC<PLChartProps> = ({
     return chartHeight - ((value - adjustedMin) / adjustedRange) * chartHeight;
   }, [layout]);
 
-  // Build line path
+  // Build line path - CSP Safe
   const linePath = useMemo(() => {
     if (!layout || chartData.length < 2) return '';
     
-    const points = chartData.map((_, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(chartData[i].value)}`);
-    return points.join(' ');
+    const pathCommands = [];
+    for (let i = 0; i < chartData.length; i++) {
+      const command = i === 0 ? 'M' : 'L';
+      const x = getX(i);
+      const y = getY(chartData[i].value);
+      pathCommands.push(command + ' ' + x + ' ' + y);
+    }
+    return pathCommands.join(' ');
   }, [chartData, getX, getY, layout]);
 
-  // Build area path
+  // Build area path - CSP Safe
   const areaPath = useMemo(() => {
     if (!layout || chartData.length < 2) return '';
     
     const zeroY = Math.max(0, Math.min(layout.chartHeight, getY(0)));
-    return `${linePath} L ${getX(chartData.length - 1)} ${zeroY} L ${getX(0)} ${zeroY} Z`;
+    const endX = getX(chartData.length - 1);
+    const startX = getX(0);
+    
+    return linePath + ' L ' + endX + ' ' + zeroY + ' L ' + startX + ' ' + zeroY + ' Z';
   }, [linePath, layout, chartData.length, getX, getY]);
 
   // Mouse handlers
