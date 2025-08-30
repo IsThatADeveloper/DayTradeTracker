@@ -1,4 +1,4 @@
-// src/App.tsx - Fixed for Vercel Desktop White Screen Issue
+// src/App.tsx - FIXED: Safe timestamp handling to prevent white screen
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator } from 'lucide-react';
 import { Trade } from './types/trade';
@@ -23,6 +23,23 @@ import { EarningsProjection } from './components/EarningsProjection';
 import { HomePage } from './components/HomePage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
+
+// CRITICAL FIX: Safe date handling functions
+const getValidDate = (timestamp: any): Date | null => {
+  if (!timestamp) return null;
+  
+  if (timestamp instanceof Date) {
+    return isNaN(timestamp.getTime()) ? null : timestamp;
+  }
+  
+  try {
+    const date = new Date(timestamp);
+    return isNaN(date.getTime()) ? null : date;
+  } catch (error) {
+    console.error('Error converting timestamp to date:', timestamp, error);
+    return null;
+  }
+};
 
 // Memoized components to prevent unnecessary re-renders
 const MemoizedDashboard = React.memo(Dashboard);
@@ -295,26 +312,6 @@ function AppContent() {
     }
   }, [currentUser, setLocalTrades]);
 
-  const handleExportTrades = useCallback(() => {
-    if (dailyTrades.length === 0) return;
-    const csv = [
-      'Time,Ticker,Direction,Quantity,Entry Price,Exit Price,Realized P&L,Notes',
-      ...dailyTrades.map(trade =>
-        `${trade.timestamp.toLocaleString()},${trade.ticker},${trade.direction},${trade.quantity},${trade.entryPrice},${trade.exitPrice},${trade.realizedPL},"${trade.notes || ''}"`
-      )
-    ].join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `trades_${selectedDate.toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [selectedDate]); // Note: dailyTrades dependency added below in useMemo
-
   const handleDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value;
     if (inputValue) {
@@ -350,14 +347,23 @@ function AppContent() {
     }
   }, [setActiveView]);
 
-  // All useMemo hooks
+  // CRITICAL FIX: Safe daily trades calculation
   const dailyTrades = useMemo(() => {
     const targetDate = normalizeToLocalDate(selectedDate);
     return activeTrades
-      .map(trade => ({
-        ...trade,
-        timestamp: trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp),
-      }))
+      .map(trade => {
+        // FIXED: Safe timestamp conversion
+        const validDate = getValidDate(trade.timestamp);
+        if (!validDate) {
+          console.warn('Trade with invalid timestamp found:', trade);
+          return null; // Filter this out
+        }
+        return {
+          ...trade,
+          timestamp: validDate,
+        };
+      })
+      .filter((trade): trade is Trade => trade !== null) // Remove null entries
       .filter(trade => isSameDayLocal(trade.timestamp, targetDate));
   }, [activeTrades, selectedDate, normalizeToLocalDate, isSameDayLocal]);
 
@@ -380,6 +386,27 @@ function AppContent() {
     activeTrades.length > 0 ? activeTrades[0] : undefined, 
     [activeTrades]
   );
+
+  // FIXED: Safe export function with proper dependency
+  const handleExportTrades = useCallback(() => {
+    if (dailyTrades.length === 0) return;
+    const csv = [
+      'Time,Ticker,Direction,Quantity,Entry Price,Exit Price,Realized P&L,Notes',
+      ...dailyTrades.map(trade =>
+        `${trade.timestamp.toLocaleString()},${trade.ticker},${trade.direction},${trade.quantity},${trade.entryPrice},${trade.exitPrice},${trade.realizedPL},"${trade.notes || ''}"`
+      )
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `trades_${selectedDate.toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [dailyTrades, selectedDate]); // Fixed: Added dailyTrades dependency
 
   // All useEffect hooks
   useEffect(() => {
