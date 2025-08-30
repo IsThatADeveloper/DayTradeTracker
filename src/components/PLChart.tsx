@@ -1,5 +1,4 @@
-// src/components/PLChart.tsx - Fixed getX function
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   TrendingUp,
   TrendingDown,
@@ -8,12 +7,12 @@ import {
 } from 'lucide-react';
 import { Trade } from '../types/trade';
 import { formatCurrency } from '../utils/tradeUtils';
+import { format } from 'date-fns';
 
 interface PLChartDataPoint {
   date: Date;
   value: number;
   label: string;
-  index: number;
 }
 
 interface CurrentPLStats {
@@ -34,32 +33,27 @@ interface PLChartProps {
   showTimeRangeSelector?: boolean;
 }
 
-// Simple date conversion that always works
-const convertToDate = (timestamp: any): Date | null => {
+// FIXED: Helper function to safely convert timestamp to Date
+const getValidDate = (timestamp: any): Date | null => {
   if (!timestamp) return null;
   
+  if (timestamp instanceof Date) {
+    return isNaN(timestamp.getTime()) ? null : timestamp;
+  }
+  
   try {
-    if (timestamp instanceof Date) {
-      return isNaN(timestamp.getTime()) ? null : timestamp;
-    }
-    
     const date = new Date(timestamp);
     return isNaN(date.getTime()) ? null : date;
-  } catch {
+  } catch (error) {
+    console.error('Error converting timestamp to date:', timestamp, error);
     return null;
   }
 };
 
-// Simple date formatting without external dependencies
-const formatDate = (date: Date, isToday: boolean = false): string => {
-  try {
-    if (isToday) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  } catch {
-    return 'Invalid';
-  }
+// FIXED: Helper function to safely get timestamp for sorting
+const getTimestamp = (trade: Trade): number => {
+  const date = getValidDate(trade.timestamp);
+  return date ? date.getTime() : 0;
 };
 
 export const PLChart: React.FC<PLChartProps> = ({
@@ -72,77 +66,83 @@ export const PLChart: React.FC<PLChartProps> = ({
 }) => {
   const [localTimeRange, setLocalTimeRange] = useState<TimeRange>(plTimeRange);
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isMouseOver, setIsMouseOver] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 400 });
-  const [mounted, setMounted] = useState(false);
-  
+  const [isMounted, setIsMounted] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<HTMLDivElement>(null);
 
   const currentTimeRange = setPLTimeRange ? plTimeRange : localTimeRange;
   const setCurrentTimeRange = setPLTimeRange ? setPLTimeRange : setLocalTimeRange;
 
-  // Mount detection
+  // FIXED: Add mounted state to prevent hydration issues
   useEffect(() => {
-    setMounted(true);
+    setIsMounted(true);
   }, []);
 
-  // Simple dimension update
+  // FIXED: Improved dimension calculation with error handling
   useEffect(() => {
-    if (!mounted || !containerRef.current) return;
+    if (!isMounted) return;
 
-    const updateSize = () => {
-      const container = containerRef.current;
-      if (!container) return;
-      
-      const rect = container.getBoundingClientRect();
-      const width = Math.max(300, rect.width - 48);
-      const height = window.innerWidth < 768 ? 250 : 400;
-      
-      setDimensions({ width, height });
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        try {
+          const rect = containerRef.current.getBoundingClientRect();
+          const newWidth = Math.max(320, rect.width - 48);
+          const newHeight = typeof window !== 'undefined' && window.innerWidth < 768 ? 250 : 400;
+          
+          setDimensions(prev => {
+            // Only update if dimensions actually changed to prevent unnecessary re-renders
+            if (prev.width !== newWidth || prev.height !== newHeight) {
+              return { width: newWidth, height: newHeight };
+            }
+            return prev;
+          });
+        } catch (error) {
+          console.error('Error updating chart dimensions:', error);
+          // Fallback dimensions
+          setDimensions({ width: 800, height: 400 });
+        }
+      }
     };
 
-    updateSize();
-    
-    let timeout: NodeJS.Timeout;
+    // Initial dimension update
+    const timer = setTimeout(updateDimensions, 100);
+
     const handleResize = () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(updateSize, 100);
+      requestAnimationFrame(updateDimensions);
     };
-
-    window.addEventListener('resize', handleResize);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      clearTimeout(timeout);
-    };
-  }, [mounted]);
-
-  // Process trades safely
-  const processedTrades = useMemo(() => {
-    if (!Array.isArray(trades)) return [];
     
-    return trades
-      .filter(trade => {
-        if (!trade || typeof trade.realizedPL !== 'number') return false;
-        return convertToDate(trade.timestamp) !== null;
-      })
-      .sort((a, b) => {
-        const dateA = convertToDate(a.timestamp);
-        const dateB = convertToDate(b.timestamp);
-        if (!dateA || !dateB) return 0;
-        return dateA.getTime() - dateB.getTime();
-      });
-  }, [trades]);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', handleResize);
+    }
 
-  // Generate chart data
-  const chartData = useMemo((): PLChartDataPoint[] => {
-    if (processedTrades.length === 0) return [];
+    return () => {
+      clearTimeout(timer);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('resize', handleResize);
+      }
+    };
+  }, [isMounted]);
+
+  // Generate P&L chart data based on actual trades
+  const plChartData = useMemo((): PLChartDataPoint[] => {
+    if (!trades || trades.length === 0) return [];
 
     try {
-      // Determine start date based on time range
+      // FIXED: Filter out trades with invalid timestamps first
+      const validTrades = trades.filter(trade => getValidDate(trade.timestamp) !== null);
+      
+      if (validTrades.length === 0) return [];
+
+      const sortedTrades = [...validTrades].sort((a, b) => getTimestamp(a) - getTimestamp(b));
+
       const now = new Date();
       let startDate: Date;
+      let filteredTrades: Trade[];
 
+      // Determine date range
       switch (currentTimeRange) {
         case 'today':
           startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -159,193 +159,95 @@ export const PLChart: React.FC<PLChartProps> = ({
         case '1y':
           startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
           break;
-        default: // 'all'
-          const firstTrade = processedTrades[0];
-          startDate = convertToDate(firstTrade?.timestamp) || new Date();
+        default:
+          startDate = getValidDate(sortedTrades[0]?.timestamp) || now;
       }
 
       // Filter trades by date range
-      const filteredTrades = processedTrades.filter(trade => {
-        const tradeDate = convertToDate(trade.timestamp);
+      filteredTrades = sortedTrades.filter(trade => {
+        const tradeDate = getValidDate(trade.timestamp);
         return tradeDate && tradeDate >= startDate;
       });
 
-      if (filteredTrades.length === 0) {
-        return [{
-          date: startDate,
-          value: 0,
-          label: formatCurrency(0),
-          index: 0
-        }];
-      }
+      if (filteredTrades.length === 0) return [];
 
-      const points: PLChartDataPoint[] = [];
-      let cumulativePL = 0;
+      // Create data points showing cumulative P&L
+      const dataPoints: PLChartDataPoint[] = [];
+      let runningPL = 0;
 
-      // Add starting point
-      points.push({
+      // Add starting point at $0
+      dataPoints.push({
         date: startDate,
         value: 0,
         label: formatCurrency(0),
-        index: 0
       });
 
-      // Add each trade point
-      filteredTrades.forEach((trade, index) => {
-        cumulativePL += trade.realizedPL;
-        const tradeDate = convertToDate(trade.timestamp);
-        
-        if (tradeDate) {
-          points.push({
-            date: tradeDate,
-            value: cumulativePL,
-            label: formatCurrency(cumulativePL),
-            index: index + 1
-          });
-        }
+      // Add each trade's cumulative P&L
+      filteredTrades.forEach((trade) => {
+        runningPL += trade.realizedPL;
+        const tradeDate = getValidDate(trade.timestamp)!; // We know it's valid from filter
+        dataPoints.push({
+          date: tradeDate,
+          value: runningPL,
+          label: formatCurrency(runningPL),
+        });
       });
 
-      return points;
+      return dataPoints;
     } catch (error) {
       console.error('Error generating chart data:', error);
       return [];
     }
-  }, [processedTrades, currentTimeRange]);
+  }, [trades, currentTimeRange]);
 
-  // Calculate statistics
-  const stats = useMemo((): CurrentPLStats => {
-    if (chartData.length === 0) {
+  // Calculate current stats
+  const currentPLStats = useMemo((): CurrentPLStats => {
+    try {
+      if (plChartData.length === 0) return { currentValue: 0, change: 0, changePercent: 0, isPositive: true };
+      
+      const current = plChartData[plChartData.length - 1].value;
+      const previous = plChartData.length > 1 ? plChartData[0].value : 0;
+      const change = current - previous;
+      const changePercent = previous !== 0 ? (change / Math.abs(previous)) * 100 : (current !== 0 ? 100 : 0);
+      
+      return {
+        currentValue: current,
+        change,
+        changePercent,
+        isPositive: change >= 0
+      };
+    } catch (error) {
+      console.error('Error calculating P&L stats:', error);
       return { currentValue: 0, change: 0, changePercent: 0, isPositive: true };
     }
+  }, [plChartData]);
 
-    const current = chartData[chartData.length - 1]?.value || 0;
-    const start = chartData[0]?.value || 0;
-    const change = current - start;
-    const changePercent = start !== 0 ? (change / Math.abs(start)) * 100 : (current !== 0 ? 100 : 0);
-
-    return {
-      currentValue: current,
-      change,
-      changePercent,
-      isPositive: change >= 0
-    };
-  }, [chartData]);
-
-  // Chart layout calculations
-  const layout = useMemo(() => {
-    if (chartData.length === 0) return null;
-
-    const values = chartData.map(d => d.value);
-    const minValue = Math.min(...values);
-    const maxValue = Math.max(...values);
-    const range = Math.max(maxValue - minValue, 1);
-    const padding = range * 0.1;
-
-    const isMobile = window.innerWidth < 768;
-    const chartPadding = {
-      top: 20,
-      right: isMobile ? 20 : 60,
-      bottom: isMobile ? 30 : 50,
-      left: isMobile ? 60 : 80
-    };
-
-    const chartWidth = Math.max(200, dimensions.width - chartPadding.left - chartPadding.right);
-    const chartHeight = Math.max(150, dimensions.height - chartPadding.top - chartPadding.bottom);
-
-    return {
-      minValue,
-      maxValue,
-      range,
-      padding,
-      chartPadding,
-      chartWidth,
-      chartHeight
-    };
-  }, [chartData, dimensions]);
-
-  // Position calculations - FIXED
-  const getX = useCallback((index: number): number => {
-    if (!layout) return 0;
-    if (chartData.length <= 1) return layout.chartWidth / 2;
-    return (index / (chartData.length - 1)) * layout.chartWidth;
-  }, [layout, chartData.length]);
-
-  const getY = useCallback((value: number): number => {
-    if (!layout) return 0;
-    const { chartHeight, minValue, padding, range } = layout;
-    const adjustedMin = minValue - padding;
-    const adjustedRange = range + 2 * padding;
-    return chartHeight - ((value - adjustedMin) / adjustedRange) * chartHeight;
-  }, [layout]);
-
-  // Build line path
-  const linePath = useMemo(() => {
-    if (!layout || chartData.length < 2) return '';
-    
-    const points = chartData.map((_, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(chartData[i].value)}`);
-    return points.join(' ');
-  }, [chartData, getX, getY, layout]);
-
-  // Build area path
-  const areaPath = useMemo(() => {
-    if (!layout || chartData.length < 2) return '';
-    
-    const zeroY = Math.max(0, Math.min(layout.chartHeight, getY(0)));
-    return `${linePath} L ${getX(chartData.length - 1)} ${zeroY} L ${getX(0)} ${zeroY} Z`;
-  }, [linePath, layout, chartData.length, getX, getY]);
-
-  // Mouse handlers
-  const handleMouseMove = useCallback((event: React.MouseEvent) => {
-    if (!layout || !chartRef.current) return;
-
-    const rect = chartRef.current.getBoundingClientRect();
-    const x = event.clientX - rect.left - layout.chartPadding.left;
-    const relativeX = Math.max(0, Math.min(1, x / layout.chartWidth));
-    const pointIndex = Math.round(relativeX * (chartData.length - 1));
-    const clampedIndex = Math.max(0, Math.min(chartData.length - 1, pointIndex));
-    
-    setHoveredPoint(clampedIndex);
-  }, [layout, chartData.length]);
-
-  const timeRangeOptions = [
-    { key: 'today', label: '1D' },
-    { key: '7d', label: '7D' },
-    { key: '1m', label: '1M' },
-    { key: '3m', label: '3M' },
-    { key: '1y', label: '1Y' },
-    { key: 'all', label: 'All' },
-  ] as const;
-
-  const getTimeRangeLabel = () => {
-    const labels = {
-      'all': 'All time',
-      'today': 'Today',
-      '7d': 'Past 7 days',
-      '1m': 'Past month',
-      '3m': 'Past 3 months',
-      '1y': 'Past year'
-    };
-    return labels[currentTimeRange] || '';
-  };
-
-  // Don't render until mounted
-  if (!mounted) {
+  // FIXED: Don't render until mounted
+  if (!isMounted) {
     return (
-      <div className="w-full bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700">
+      <div className="w-full bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="flex items-center justify-center h-64 text-gray-500 dark:text-gray-400">
-          <BarChart3 className="h-8 w-8 opacity-60 animate-pulse" />
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto">
+              <BarChart3 className="h-8 w-8 opacity-60 animate-pulse" />
+            </div>
+            <div>
+              <p className="text-lg font-medium">Loading chart...</p>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
-  // No data state
-  if (chartData.length === 0) {
+  if (plChartData.length === 0) {
     return (
       <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-8">
         <div className="flex items-center justify-center h-64 text-gray-500 dark:text-gray-400">
           <div className="text-center space-y-4">
-            <BarChart3 className="h-16 w-16 mx-auto opacity-60" />
+            <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto">
+              <BarChart3 className="h-8 w-8 opacity-60" />
+            </div>
             <div>
               <p className="text-lg font-medium">No trading data available</p>
               <p className="text-sm opacity-75 mt-1">Start trading to see your P&L chart</p>
@@ -356,47 +258,169 @@ export const PLChart: React.FC<PLChartProps> = ({
     );
   }
 
-  if (!layout) {
-    return (
-      <div className="w-full bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-center h-64 text-gray-500 dark:text-gray-400">
-          <p>Loading chart...</p>
-        </div>
-      </div>
-    );
-  }
+  // FIXED: Safer chart dimensions with better fallbacks
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const chartPadding = { 
+    top: 20, 
+    right: isMobile ? 20 : 60, 
+    bottom: isMobile ? 30 : 50, 
+    left: isMobile ? 50 : 80 
+  };
+  const chartWidth = Math.max(200, dimensions.width - chartPadding.left - chartPadding.right);
+  const chartHeight = Math.max(150, dimensions.height - chartPadding.top - chartPadding.bottom);
+
+  const values = plChartData.map((d) => d.value);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const valueRange = Math.max(maxValue - minValue, 1); // Prevent division by zero
+  const padding = valueRange * 0.1;
+
+  // Helper functions with error handling
+  const xAt = (i: number) => {
+    try {
+      return plChartData.length === 1 ? chartWidth / 2 : (i / (plChartData.length - 1)) * chartWidth;
+    } catch (error) {
+      console.error('Error calculating x position:', error);
+      return 0;
+    }
+  };
+
+  const yAt = (v: number) => {
+    try {
+      return chartHeight - ((v - (minValue - padding)) / (valueRange + 2 * padding)) * chartHeight;
+    } catch (error) {
+      console.error('Error calculating y position:', error);
+      return 0;
+    }
+  };
+
+  // Find closest point to mouse position
+  const findClosestPoint = (mouseX: number) => {
+    if (plChartData.length === 0) return null;
+    
+    try {
+      const relativeX = mouseX - chartPadding.left;
+      const pointIndex = Math.round((relativeX / chartWidth) * (plChartData.length - 1));
+      return Math.max(0, Math.min(plChartData.length - 1, pointIndex));
+    } catch (error) {
+      console.error('Error finding closest point:', error);
+      return null;
+    }
+  };
+
+  // Build smooth path with error handling
+  const buildSmoothPath = () => {
+    if (plChartData.length < 2) return '';
+    
+    try {
+      let path = `M ${xAt(0)} ${yAt(plChartData[0].value)}`;
+      
+      for (let i = 1; i < plChartData.length; i++) {
+        const prevX = xAt(i - 1);
+        const prevY = yAt(plChartData[i - 1].value);
+        const currentX = xAt(i);
+        const currentY = yAt(plChartData[i].value);
+        
+        const controlPointX = prevX + (currentX - prevX) * 0.5;
+        path += ` Q ${controlPointX} ${prevY} ${currentX} ${currentY}`;
+      }
+      
+      return path;
+    } catch (error) {
+      console.error('Error building smooth path:', error);
+      return '';
+    }
+  };
+
+  // Build area path with error handling
+  const buildAreaPath = () => {
+    if (plChartData.length < 2) return '';
+    
+    try {
+      const linePath = buildSmoothPath();
+      const zeroY = Math.min(Math.max(yAt(0), 0), chartHeight);
+      
+      return `${linePath} L ${xAt(plChartData.length - 1)} ${zeroY} L ${xAt(0)} ${zeroY} Z`;
+    } catch (error) {
+      console.error('Error building area path:', error);
+      return '';
+    }
+  };
+
+  // Handle mouse movement with error handling
+  const handleMouseMove = (event: React.MouseEvent) => {
+    try {
+      if (!chartRef.current) return;
+      
+      const rect = chartRef.current.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      
+      setMousePosition({ x, y });
+      
+      const closestPointIndex = findClosestPoint(x);
+      setHoveredPoint(closestPointIndex);
+    } catch (error) {
+      console.error('Error handling mouse move:', error);
+    }
+  };
+
+  const timeRangeOptions = [
+    { key: 'today', label: '1D' },
+    { key: '7d', label: '7D' },
+    { key: '1m', label: '1M' },
+    { key: '3m', label: '3M' },
+    { key: '1y', label: '1Y' },
+    { key: 'all', label: 'All' },
+  ];
+
+  const getTimeRangeLabel = () => {
+    switch (currentTimeRange) {
+      case 'all': return 'All time';
+      case 'today': return 'Today';
+      case '7d': return 'Past 7 days';
+      case '1m': return 'Past month';
+      case '3m': return 'Past 3 months';
+      case '1y': return 'Past year';
+      default: return '';
+    }
+  };
 
   return (
     <div className="w-full bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-      {/* Header */}
+      {/* Header Section */}
       <div className="bg-gradient-to-r from-slate-50 via-blue-50 to-slate-50 dark:from-gray-800 dark:via-blue-900/20 dark:to-gray-800 px-6 py-8 border-b border-gray-200 dark:border-gray-700">
         <div className="text-center space-y-4">
+          {/* Main Value */}
           <div className="space-y-3">
             <div className="flex items-center justify-center space-x-3">
               <Activity className="h-8 w-8 text-blue-600 dark:text-blue-400" />
               <div className="text-4xl sm:text-6xl font-bold text-gray-900 dark:text-white tracking-tight">
-                {formatCurrency(stats.currentValue)}
+                {formatCurrency(currentPLStats.currentValue)}
               </div>
             </div>
-            <div className={`inline-flex items-center px-6 py-3 rounded-full text-lg font-semibold shadow-lg transition-all duration-300 ${
-              stats.isPositive 
-                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-emerald-200/50' 
-                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 shadow-red-200/50'
-            }`}>
-              {stats.isPositive ? (
+            <div
+              className={`inline-flex items-center px-6 py-3 rounded-full text-lg font-semibold shadow-lg transition-all duration-300 ${
+                currentPLStats.isPositive 
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-emerald-200/50' 
+                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 shadow-red-200/50'
+              }`}
+            >
+              {currentPLStats.isPositive ? (
                 <TrendingUp className="h-6 w-6 mr-3" />
               ) : (
                 <TrendingDown className="h-6 w-6 mr-3" />
               )}
               <span className="flex items-center space-x-2">
-                <span>{stats.isPositive ? '+' : ''}{formatCurrency(stats.change)}</span>
+                <span>{currentPLStats.isPositive ? '+' : ''}{formatCurrency(currentPLStats.change)}</span>
                 <span className="opacity-75">
-                  ({stats.isPositive ? '+' : ''}{stats.changePercent.toFixed(2)}%)
+                  ({currentPLStats.isPositive ? '+' : ''}{currentPLStats.changePercent.toFixed(2)}%)
                 </span>
               </span>
             </div>
           </div>
           
+          {/* Period Label */}
           <div className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-widest">
             {title} - {getTimeRangeLabel()}
           </div>
@@ -411,11 +435,11 @@ export const PLChart: React.FC<PLChartProps> = ({
               {timeRangeOptions.map(({ key, label }) => (
                 <button
                   key={key}
-                  onClick={() => setCurrentTimeRange(key)}
-                  className={`px-5 py-2.5 text-sm font-semibold rounded-xl transition-all duration-300 ${
+                  onClick={() => setCurrentTimeRange(key as TimeRange)}
+                  className={`px-5 py-2.5 text-sm font-semibold rounded-xl transition-all duration-300 transform ${
                     currentTimeRange === key
                       ? 'bg-blue-600 text-white shadow-lg scale-105 shadow-blue-200/50'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 hover:scale-102'
                   }`}
                 >
                   {label}
@@ -426,11 +450,11 @@ export const PLChart: React.FC<PLChartProps> = ({
         </div>
       )}
 
-      {/* Chart */}
+      {/* Chart Section */}
       <div className="p-6" ref={containerRef}>
         <div 
           ref={chartRef}
-          className="relative rounded-xl bg-gradient-to-br from-gray-50/50 to-white dark:from-gray-800/50 dark:to-gray-900 border border-gray-100 dark:border-gray-700 overflow-hidden cursor-crosshair"
+          className="relative rounded-xl bg-gradient-to-br from-gray-50/50 to-white dark:from-gray-800/50 dark:to-gray-900 border border-gray-100 dark:border-gray-700 overflow-hidden"
           onMouseMove={handleMouseMove}
           onMouseEnter={() => setIsMouseOver(true)}
           onMouseLeave={() => {
@@ -438,7 +462,12 @@ export const PLChart: React.FC<PLChartProps> = ({
             setHoveredPoint(null);
           }}
         >
-          <svg width={dimensions.width} height={dimensions.height} className="w-full h-full">
+          <svg
+            width={dimensions.width}
+            height={dimensions.height}
+            className="w-full h-full"
+          >
+            {/* Gradient Definitions */}
             <defs>
               <linearGradient id="positiveGradient" x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stopColor="rgba(16, 185, 129, 0.4)" />
@@ -448,30 +477,40 @@ export const PLChart: React.FC<PLChartProps> = ({
                 <stop offset="0%" stopColor="rgba(239, 68, 68, 0.4)" />
                 <stop offset="100%" stopColor="rgba(239, 68, 68, 0.02)" />
               </linearGradient>
+              <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+                <feMerge> 
+                  <feMergeNode in="coloredBlur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+              <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+                <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.3"/>
+              </filter>
             </defs>
 
-            <g transform={`translate(${layout.chartPadding.left}, ${layout.chartPadding.top})`}>
-              {/* Grid lines and Y-axis labels */}
+            <g transform={`translate(${chartPadding.left}, ${chartPadding.top})`}>
+              {/* Background grid */}
               {Array.from({ length: 6 }).map((_, i) => {
-                const y = (layout.chartHeight / 5) * i;
-                const value = (layout.minValue - layout.padding) + 
-                  ((layout.range + 2 * layout.padding) / 5) * (5 - i);
+                const y = (chartHeight / 5) * i;
+                const value = (minValue - padding) + ((valueRange + 2 * padding) / 5) * (5 - i);
                 return (
-                  <g key={i} opacity={0.3}>
+                  <g key={i} opacity={0.4}>
                     <line 
                       x1={0} 
                       y1={y} 
-                      x2={layout.chartWidth} 
+                      x2={chartWidth} 
                       y2={y} 
                       stroke="currentColor" 
-                      strokeWidth={0.5}
+                      strokeWidth={i === 0 || i === 5 ? 1.5 : 0.8}
+                      strokeDasharray={i === 0 || i === 5 ? "none" : "3,6"}
                       className="text-gray-300 dark:text-gray-600"
                     />
                     <text
-                      x={-15}
+                      x={-12}
                       y={y + 4}
                       textAnchor="end"
-                      className="fill-gray-500 dark:fill-gray-400 text-xs font-mono"
+                      className="fill-gray-500 dark:fill-gray-400 text-xs font-mono font-medium"
                     >
                       {formatCurrency(value)}
                     </text>
@@ -480,101 +519,118 @@ export const PLChart: React.FC<PLChartProps> = ({
               })}
 
               {/* Zero line */}
-              {layout.minValue < 0 && layout.maxValue > 0 && (
+              {minValue < 0 && maxValue > 0 && (
                 <line
                   x1={0}
-                  y1={getY(0)}
-                  x2={layout.chartWidth}
-                  y2={getY(0)}
+                  y1={yAt(0)}
+                  x2={chartWidth}
+                  y2={yAt(0)}
                   stroke="currentColor"
-                  strokeWidth={1}
-                  strokeDasharray="3,3"
+                  strokeWidth={2}
                   className="text-gray-400 dark:text-gray-500"
+                  strokeDasharray="5,5"
                 />
               )}
 
-              {/* Area fill */}
-              {chartData.length > 1 && areaPath && (
+              {/* Fill area */}
+              {plChartData.length > 1 && (
                 <path
-                  d={areaPath}
-                  fill={`url(#${stats.isPositive ? 'positive' : 'negative'}Gradient)`}
+                  d={buildAreaPath()}
+                  fill={`url(#${currentPLStats.isPositive ? 'positive' : 'negative'}Gradient)`}
+                  className="transition-all duration-500"
                 />
               )}
 
               {/* Main line */}
-              {chartData.length > 1 && linePath && (
+              {plChartData.length > 1 && (
                 <path
-                  d={linePath}
+                  d={buildSmoothPath()}
                   fill="none"
-                  stroke={stats.isPositive ? 'rgb(16, 185, 129)' : 'rgb(239, 68, 68)'}
+                  stroke={currentPLStats.isPositive ? 'rgb(16, 185, 129)' : 'rgb(239, 68, 68)'}
                   strokeWidth={3}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+                  filter="url(#glow)"
+                  className="transition-all duration-500"
                 />
               )}
 
+              {/* Crosshair lines */}
+              {isMouseOver && hoveredPoint !== null && hoveredPoint < plChartData.length && (
+                <g className="transition-opacity duration-200" style={{ opacity: 0.7 }}>
+                  {/* Vertical line */}
+                  <line
+                    x1={xAt(hoveredPoint)}
+                    y1={0}
+                    x2={xAt(hoveredPoint)}
+                    y2={chartHeight}
+                    stroke="rgb(99, 102, 241)"
+                    strokeWidth={1.5}
+                    strokeDasharray="4,4"
+                    className="animate-pulse"
+                  />
+                  {/* Horizontal line */}
+                  <line
+                    x1={0}
+                    y1={yAt(plChartData[hoveredPoint].value)}
+                    x2={chartWidth}
+                    y2={yAt(plChartData[hoveredPoint].value)}
+                    stroke="rgb(99, 102, 241)"
+                    strokeWidth={1.5}
+                    strokeDasharray="4,4"
+                    className="animate-pulse"
+                  />
+                </g>
+              )}
+
               {/* Data points */}
-              {chartData.map((point, i) => {
+              {plChartData.map((point, i) => {
+                const cx = xAt(i);
+                const cy = yAt(point.value);
                 const isHovered = hoveredPoint === i;
-                const shouldShow = chartData.length <= 20 || isHovered || i === 0 || i === chartData.length - 1;
+                const isVisible = plChartData.length < 100 || isHovered || i % Math.ceil(plChartData.length / 20) === 0;
                 
-                if (!shouldShow) return null;
+                if (!isVisible && !isHovered) return null;
                 
                 return (
-                  <circle
-                    key={i}
-                    cx={getX(i)}
-                    cy={getY(point.value)}
-                    r={isHovered ? 6 : 3}
-                    fill="white"
-                    stroke={stats.isPositive ? 'rgb(16, 185, 129)' : 'rgb(239, 68, 68)'}
-                    strokeWidth={isHovered ? 3 : 2}
-                    className="transition-all duration-200 drop-shadow-sm"
-                    style={{
-                      filter: isHovered ? 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))' : undefined
-                    }}
-                  />
+                  <g key={i}>
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={isHovered ? 8 : 4}
+                      fill="white"
+                      stroke={currentPLStats.isPositive ? 'rgb(16, 185, 129)' : 'rgb(239, 68, 68)'}
+                      strokeWidth={isHovered ? 4 : 2}
+                      className={`cursor-pointer transition-all duration-300 ${isHovered ? 'drop-shadow-lg' : 'drop-shadow-md'}`}
+                      filter={isHovered ? "url(#shadow)" : undefined}
+                      style={{ 
+                        transform: isHovered ? 'scale(1.2)' : 'scale(1)',
+                        transformOrigin: 'center'
+                      }}
+                    />
+                  </g>
                 );
               })}
 
-              {/* Hover tooltip */}
-              {isMouseOver && hoveredPoint !== null && hoveredPoint < chartData.length && (
+              {/* Enhanced tooltip */}
+              {isMouseOver && hoveredPoint !== null && hoveredPoint < plChartData.length && (
                 <g>
-                  {/* Crosshair lines */}
-                  <line
-                    x1={getX(hoveredPoint)}
-                    y1={0}
-                    x2={getX(hoveredPoint)}
-                    y2={layout.chartHeight}
-                    stroke="rgb(99, 102, 241)"
-                    strokeWidth={1}
-                    strokeDasharray="2,2"
-                    opacity={0.5}
-                  />
-                  <line
-                    x1={0}
-                    y1={getY(chartData[hoveredPoint].value)}
-                    x2={layout.chartWidth}
-                    y2={getY(chartData[hoveredPoint].value)}
-                    stroke="rgb(99, 102, 241)"
-                    strokeWidth={1}
-                    strokeDasharray="2,2"
-                    opacity={0.5}
-                  />
-                  
-                  {/* Tooltip */}
                   <foreignObject 
-                    x={Math.max(10, Math.min(layout.chartWidth - 140, getX(hoveredPoint) - 70))} 
-                    y={Math.max(10, getY(chartData[hoveredPoint].value) - 55)} 
-                    width={140} 
-                    height={45}
+                    x={Math.max(10, Math.min(chartWidth - 160, xAt(hoveredPoint) - 80))} 
+                    y={Math.max(10, yAt(plChartData[hoveredPoint].value) - 80)} 
+                    width={160} 
+                    height={70}
                   >
-                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg p-2 text-xs">
-                      <div className="font-semibold text-gray-900 dark:text-white">
-                        {formatCurrency(chartData[hoveredPoint].value)}
+                    <div className="bg-white dark:bg-gray-800 border-2 border-blue-200 dark:border-blue-600 rounded-lg shadow-xl p-3 text-sm font-medium transform transition-all duration-200 hover:scale-105">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-gray-600 dark:text-gray-400">Value</span>
+                        <span className={`font-bold ${currentPLStats.isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {formatCurrency(plChartData[hoveredPoint].value)}
+                        </span>
                       </div>
-                      <div className="text-gray-600 dark:text-gray-400 mt-1">
-                        {formatDate(chartData[hoveredPoint].date, currentTimeRange === 'today')}
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600 dark:text-gray-400">Date</span>
+                        <span className="text-gray-900 dark:text-white font-medium">
+                          {format(plChartData[hoveredPoint].date, currentTimeRange === 'today' ? 'HH:mm' : 'MMM d, yyyy')}
+                        </span>
                       </div>
                     </div>
                   </foreignObject>
@@ -582,35 +638,30 @@ export const PLChart: React.FC<PLChartProps> = ({
               )}
 
               {/* X-axis labels */}
-              <g transform={`translate(0, ${layout.chartHeight + 20})`}>
-                {chartData.length <= 10 ? (
-                  // Show all points for small datasets
-                  chartData.map((point, i) => (
-                    <text
-                      key={i}
-                      x={getX(i)}
-                      y={0}
-                      textAnchor="middle"
-                      className="fill-gray-500 dark:fill-gray-400 text-xs"
-                    >
-                      {formatDate(point.date, currentTimeRange === 'today')}
-                    </text>
-                  ))
-                ) : (
-                  // Show only key points for larger datasets
-                  [0, Math.floor(chartData.length / 2), chartData.length - 1].map(i => (
-                    <text
-                      key={i}
-                      x={getX(i)}
-                      y={0}
-                      textAnchor="middle"
-                      className="fill-gray-500 dark:fill-gray-400 text-xs"
-                    >
-                      {formatDate(chartData[i].date, currentTimeRange === 'today')}
-                    </text>
-                  ))
-                )}
-              </g>
+              {plChartData.length > 1 && (
+                <g transform={`translate(0, ${chartHeight + 20})`}>
+                  {plChartData
+                    .filter((_, i) => {
+                      const maxLabels = isMobile ? 3 : 6;
+                      const step = Math.ceil(plChartData.length / maxLabels);
+                      return i === 0 || i === plChartData.length - 1 || i % step === 0;
+                    })
+                    .map((point, _, filtered) => {
+                      const originalIndex = plChartData.indexOf(point);
+                      return (
+                        <text
+                          key={originalIndex}
+                          x={xAt(originalIndex)}
+                          y={0}
+                          textAnchor="middle"
+                          className="fill-gray-500 dark:fill-gray-400 text-xs font-semibold"
+                        >
+                          {format(point.date, currentTimeRange === 'today' ? 'HH:mm' : 'MMM d')}
+                        </text>
+                      );
+                    })}
+                </g>
+              )}
             </g>
           </svg>
         </div>

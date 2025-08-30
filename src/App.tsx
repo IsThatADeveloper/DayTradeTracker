@@ -1,4 +1,4 @@
-// src/App.tsx - Fixed Hook Order to Prevent React Error + Persistent Active View + EarningsProjection
+// src/App.tsx - Fixed for Vercel Desktop White Screen Issue
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator } from 'lucide-react';
 import { Trade } from './types/trade';
@@ -77,6 +77,50 @@ const NAVIGATION_ITEMS = [
 
 type ActiveViewType = 'calendar' | 'daily' | 'search' | 'brokers' | 'news' | 'projections';
 
+// Error Boundary Component
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('App Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+          <div className="max-w-md w-full text-center">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+              <h2 className="text-xl font-bold text-red-600 mb-4">Something went wrong</h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                The application encountered an error. Please try refreshing the page.
+              </p>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+              >
+                Refresh Page
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 function AppContent() {
   // CRITICAL FIX: ALL hooks must be called before ANY conditional returns
   // This fixes the "Rendered fewer hooks than expected" error
@@ -108,11 +152,19 @@ function AppContent() {
   const [isLoadingCloudData, setIsLoadingCloudData] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useLocalStorage<string | null>('last-sync-time', null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  
+  // FIXED: Better sidebar state management for Vercel desktop
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
   // All computed values
   const activeTrades = currentUser ? cloudTrades : localTrades;
   const totalBrokerTrades = getTotalBrokerTrades();
+
+  // FIXED: Add mounted check to prevent hydration issues
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // All useCallback hooks
   const handleGetStarted = useCallback(() => {
@@ -145,6 +197,7 @@ function AppContent() {
       const userTrades = await tradeService.getUserTrades(currentUser.uid);
       setCloudTrades(userTrades);
     } catch (error: any) {
+      console.error('Failed to load cloud data:', error);
       alert(`Failed to load cloud data: ${error.message}`);
     } finally {
       setIsLoadingCloudData(false);
@@ -158,6 +211,7 @@ function AppContent() {
         const tradeWithId = { ...newTrade, id: tradeId };
         setCloudTrades(prev => [tradeWithId, ...prev]);
       } catch (error: any) {
+        console.error('Failed to save trade:', error);
         alert(`Failed to save trade: ${error.message}`);
       }
     } else {
@@ -176,6 +230,7 @@ function AppContent() {
         );
         setCloudTrades(prev => [...tradesWithIds, ...prev]);
       } catch (error: any) {
+        console.error('Failed to save trades:', error);
         alert(`Failed to save trades: ${error.message}`);
       }
     } else {
@@ -209,6 +264,7 @@ function AppContent() {
           throw new Error('Trade not found in local state');
         }
       } catch (error: any) {
+        console.error('Update failed:', error);
         alert(`Update failed: ${error.message}`);
       }
     } else {
@@ -231,6 +287,7 @@ function AppContent() {
         await tradeService.deleteTrade(tradeId);
         setCloudTrades(prev => prev.filter(trade => trade.id !== tradeId));
       } catch (error: any) {
+        console.error('Delete failed:', error);
         alert(`Delete failed: ${error.message}`);
       }
     } else {
@@ -280,6 +337,7 @@ function AppContent() {
         alert('All brokers are up to date - no new trades found.');
       }
     } catch (error: any) {
+      console.error('Broker sync failed:', error);
       alert(`Broker sync failed: ${error.message}`);
     }
   }, [syncAllTrades, loadCloudTrades]);
@@ -341,6 +399,34 @@ function AppContent() {
       setIsLoadingCloudData(false);
     }
   }, [currentUser, loadCloudTrades]);
+
+  // FIXED: Add error handling for export function
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      console.error('Global error:', event.error);
+    };
+    
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      console.error('Unhandled promise rejection:', event.reason);
+    };
+
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+
+  // FIXED: Prevent render until mounted (fixes hydration issues)
+  if (!isMounted) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div className="text-gray-600 dark:text-gray-400">Loading...</div>
+      </div>
+    );
+  }
 
   // CRITICAL FIX: Now that ALL hooks have been called, we can safely do conditional returns
   // This prevents the "Rendered fewer hooks than expected" error
@@ -411,102 +497,114 @@ function AppContent() {
 
   // Render main content based on active view
   const renderMainContent = () => {
-    if (activeView === 'calendar') {
+    try {
+      if (activeView === 'calendar') {
+        return (
+          <MemoizedCalendar 
+            trades={activeTrades} 
+            selectedDate={selectedDate} 
+            onDateSelect={setSelectedDate} 
+            onMonthChange={setCurrentMonth} 
+            currentMonth={currentMonth}
+            onDateDoubleClick={(date) => {
+              setSelectedDate(date);
+              setActiveView('daily');
+            }}
+          />
+        );
+      }
+      
+      if (activeView === 'search') {
+        return (
+          <MemoizedStockSearch
+            trades={activeTrades}
+            onDateSelect={(date) => setSelectedDate(date)}
+            onViewChange={setActiveView}
+          />
+        );
+      }
+      
+      if (activeView === 'brokers') {
+        return <BrokerSetup onTradesImported={() => loadCloudTrades()} />;
+      }
+      
+      if (activeView === 'news') {
+        return <MemoizedStockNews trades={activeTrades} />;
+      }
+      
+      if (activeView === 'projections') {
+        return <MemoizedEarningsProjection trades={activeTrades} selectedDate={selectedDate} />;
+      }
+      
+      // Daily view (default)
       return (
-        <MemoizedCalendar 
-          trades={activeTrades} 
-          selectedDate={selectedDate} 
-          onDateSelect={setSelectedDate} 
-          onMonthChange={setCurrentMonth} 
-          currentMonth={currentMonth}
-          onDateDoubleClick={(date) => {
-            setSelectedDate(date);
-            setActiveView('daily');
-          }}
-        />
-      );
-    }
-    
-    if (activeView === 'search') {
-      return (
-        <MemoizedStockSearch
-          trades={activeTrades}
-          onDateSelect={(date) => setSelectedDate(date)}
-          onViewChange={setActiveView}
-        />
-      );
-    }
-    
-    if (activeView === 'brokers') {
-      return <BrokerSetup onTradesImported={() => loadCloudTrades()} />;
-    }
-    
-    if (activeView === 'news') {
-      return <MemoizedStockNews trades={activeTrades} />;
-    }
-    
-    if (activeView === 'projections') {
-      return <MemoizedEarningsProjection trades={activeTrades} selectedDate={selectedDate} />;
-    }
-    
-    // Daily view (default)
-    return (
-      <div className="space-y-6 sm:space-y-8">
-        {/* Trade entry forms */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <ManualTradeEntry onTradeAdded={handleTradeAdded} />
-          <BulkTradeImport onTradesAdded={handleTradesAdded} lastTrade={lastTrade} />
-        </div>
-        
-        {/* Broker notification */}
-        {currentUser && brokerConnections.length === 0 && (
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <Link className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                <div>
-                  <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                    Connect Your Broker
-                  </h4>
-                  <p className="text-sm text-blue-700 dark:text-blue-300">
-                    Automatically import trades from Alpaca, Interactive Brokers, Binance, and more
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setActiveView('brokers')}
-                className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
-              >
-                Connect Now
-              </button>
-            </div>
+        <div className="space-y-6 sm:space-y-8">
+          {/* Trade entry forms */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <ManualTradeEntry onTradeAdded={handleTradeAdded} />
+            <BulkTradeImport onTradesAdded={handleTradesAdded} lastTrade={lastTrade} />
           </div>
-        )}
+          
+          {/* Broker notification */}
+          {currentUser && brokerConnections.length === 0 && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <Link className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                  <div>
+                    <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                      Connect Your Broker
+                    </h4>
+                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                      Automatically import trades from Alpaca, Interactive Brokers, Binance, and more
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveView('brokers')}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Connect Now
+                </button>
+              </div>
+            </div>
+          )}
 
-        <MemoizedDashboard dailyStats={dailyStats} selectedDate={selectedDate} />
-        <MemoizedAIInsights trades={activeTrades} selectedDate={selectedDate} />
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8">
-          <MemoizedTimeAnalysis trades={activeTrades} selectedDate={selectedDate} />
-          <MemoizedEquityCurve trades={activeTrades} selectedDate={selectedDate} />
+          <MemoizedDashboard dailyStats={dailyStats} selectedDate={selectedDate} />
+          <MemoizedAIInsights trades={activeTrades} selectedDate={selectedDate} />
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8">
+            <MemoizedTimeAnalysis trades={activeTrades} selectedDate={selectedDate} />
+            <MemoizedEquityCurve trades={activeTrades} selectedDate={selectedDate} />
+          </div>
+          <MemoizedTradeTable 
+            trades={dailyTrades} 
+            onUpdateTrade={handleUpdateTrade} 
+            onExportTrades={handleExportTrades} 
+            onDeleteTrade={handleDeleteTrade} 
+          />
         </div>
-        <MemoizedTradeTable 
-          trades={dailyTrades} 
-          onUpdateTrade={handleUpdateTrade} 
-          onExportTrades={handleExportTrades} 
-          onDeleteTrade={handleDeleteTrade} 
-        />
-      </div>
-    );
+      );
+    } catch (error) {
+      console.error('Error rendering main content:', error);
+      return (
+        <div className="bg-white dark:bg-gray-800 rounded-lg p-8 text-center">
+          <h3 className="text-lg font-semibold text-red-600 mb-2">Content Error</h3>
+          <p className="text-gray-600 dark:text-gray-400">
+            There was an error loading this section. Please try refreshing the page.
+          </p>
+        </div>
+      );
+    }
   };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-      {/* Fixed Desktop Sidebar */}
-      <div className={`hidden lg:block fixed top-0 left-0 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 z-40 transition-all duration-200 ${
+      {/* FIXED: Better sidebar positioning for Vercel */}
+      <div className={`hidden lg:flex fixed top-0 left-0 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 z-40 transition-all duration-200 flex-col ${
         sidebarCollapsed ? 'w-16' : 'w-72'
       }`}>
         {/* Sidebar Header */}
-        <div className="flex items-center p-4 border-b border-gray-200 dark:border-gray-700 h-16">
+        <div className="flex items-center p-4 border-b border-gray-200 dark:border-gray-700 h-16 flex-shrink-0">
           {sidebarCollapsed ? (
             <div className="w-full flex justify-center">
               <button
@@ -553,7 +651,7 @@ function AppContent() {
         </nav>
 
         {/* Sidebar Footer */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-3 flex-shrink-0">
           {/* Broker Sync Button */}
           {currentUser && brokerConnections.length > 0 && (
             <button
@@ -599,7 +697,7 @@ function AppContent() {
         </div>
       </div>
 
-      {/* Main Content Area */}
+      {/* FIXED: Better main content positioning */}
       <div className={`min-h-screen transition-all duration-200 ${
         sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-72'
       }`}>
@@ -751,9 +849,11 @@ function AppContent() {
 
 function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

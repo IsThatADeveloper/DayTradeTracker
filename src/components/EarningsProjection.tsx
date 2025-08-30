@@ -1,4 +1,4 @@
-// src/components/EarningsProjection.tsx - Fixed to show ONLY actual trading P&L
+// src/components/EarningsProjection.tsx - Fixed date handling
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   TrendingUp,
@@ -15,6 +15,7 @@ import {
   ArrowUp,
   ArrowDown,
 } from 'lucide-react';
+import { PLChart } from './PLChart';
 import { Trade } from '../types/trade';
 import { formatCurrency } from '../utils/tradeUtils';
 import {
@@ -59,15 +60,32 @@ interface PerformanceMetrics {
   consistency: number;
 }
 
-interface PLChartDataPoint {
-  date: Date;
-  value: number;
-  label: string;
-}
-
-type TimeRange = '7d' | '1m' | '3m' | '1y' | 'all';
+type TimeRange = 'today' | '7d' | '1m' | '3m' | '1y' | 'all';
 
 const MAX_CAPITAL = 1000000000; // 1 billion cap
+
+// FIXED: Helper function to safely convert timestamp to Date
+const getValidDate = (timestamp: any): Date | null => {
+  if (!timestamp) return null;
+  
+  if (timestamp instanceof Date) {
+    return isNaN(timestamp.getTime()) ? null : timestamp;
+  }
+  
+  try {
+    const date = new Date(timestamp);
+    return isNaN(date.getTime()) ? null : date;
+  } catch (error) {
+    console.error('Error converting timestamp to date:', timestamp, error);
+    return null;
+  }
+};
+
+// FIXED: Helper function to safely get timestamp for sorting
+const getTimestamp = (trade: Trade): number => {
+  const date = getValidDate(trade.timestamp);
+  return date ? date.getTime() : 0;
+};
 
 export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, selectedDate }) => {
   // Input states with proper validation - FIXED to allow empty editing
@@ -143,22 +161,45 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
       };
     }
 
-    // Sort trades by timestamp
-    const sortedTrades = [...trades].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+    // FIXED: Filter out trades with invalid timestamps and sort safely
+    const validTrades = trades.filter(trade => getValidDate(trade.timestamp) !== null);
+    
+    if (validTrades.length === 0) {
+      return {
+        totalPL: 0,
+        totalTrades: 0,
+        winRate: 0,
+        avgDailyPL: 0,
+        avgMonthlyPL: 0,
+        avgAnnualPL: 0,
+        tradingDays: 0,
+        dailyVolatility: 0,
+        monthlyVolatility: 0,
+        sharpeRatio: 0,
+        maxDrawdown: 0,
+        profitFactor: 0,
+        consistency: 0,
+      };
+    }
 
-    const totalPL = trades.reduce((sum, trade) => sum + trade.realizedPL, 0);
-    const wins = trades.filter((trade) => trade.realizedPL > 0);
-    const losses = trades.filter((trade) => trade.realizedPL < 0);
-    const winRate = (wins.length / trades.length) * 100;
+    const sortedTrades = [...validTrades].sort((a, b) => getTimestamp(a) - getTimestamp(b));
+
+    const totalPL = validTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
+    const wins = validTrades.filter((trade) => trade.realizedPL > 0);
+    const losses = validTrades.filter((trade) => trade.realizedPL < 0);
+    const winRate = (wins.length / validTrades.length) * 100;
 
     // Calculate time-based metrics
-    const firstTradeDate = sortedTrades[0].timestamp;
-    const lastTradeDate = sortedTrades[sortedTrades.length - 1].timestamp;
+    const firstTradeDate = getValidDate(sortedTrades[0].timestamp)!;
+    const lastTradeDate = getValidDate(sortedTrades[sortedTrades.length - 1].timestamp)!;
     const totalDays = Math.max(differenceInDays(lastTradeDate, firstTradeDate), 1);
     const totalMonths = Math.max(differenceInMonths(lastTradeDate, firstTradeDate), 1);
 
     // Get unique trading days
-    const uniqueTradingDays = new Set(trades.map((trade) => format(trade.timestamp, 'yyyy-MM-dd'))).size;
+    const uniqueTradingDays = new Set(validTrades.map((trade) => {
+      const tradeDate = getValidDate(trade.timestamp)!;
+      return format(tradeDate, 'yyyy-MM-dd');
+    })).size;
 
     const avgDailyPL = totalPL / Math.max(uniqueTradingDays, 1);
     const avgMonthlyPL = totalPL / Math.max(totalMonths, 1);
@@ -166,8 +207,9 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
     // Calculate volatility (standard deviation of daily returns)
     const dailyPLs = Object.values(
-      trades.reduce((acc, trade) => {
-        const dateKey = format(trade.timestamp, 'yyyy-MM-dd');
+      validTrades.reduce((acc, trade) => {
+        const tradeDate = getValidDate(trade.timestamp)!;
+        const dateKey = format(tradeDate, 'yyyy-MM-dd');
         acc[dateKey] = (acc[dateKey] || 0) + trade.realizedPL;
         return acc;
       }, {} as Record<string, number>)
@@ -205,8 +247,9 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
     // Calculate consistency
     const monthlyPLs = Object.values(
-      trades.reduce((acc, trade) => {
-        const monthKey = format(trade.timestamp, 'yyyy-MM');
+      validTrades.reduce((acc, trade) => {
+        const tradeDate = getValidDate(trade.timestamp)!;
+        const monthKey = format(tradeDate, 'yyyy-MM');
         acc[monthKey] = (acc[monthKey] || 0) + trade.realizedPL;
         return acc;
       }, {} as Record<string, number>)
@@ -216,7 +259,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
     return {
       totalPL,
-      totalTrades: trades.length,
+      totalTrades: validTrades.length,
       winRate,
       avgDailyPL,
       avgMonthlyPL,
@@ -272,253 +315,6 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
       };
     });
   }, [performanceMetrics, getNumericInitialCapital, getNumericMonthlyContribution, conservativeMode]);
-
-  // FIXED: Calculate P&L chart data - ONLY ACTUAL TRADING PROFITS/LOSSES
-  const plChartData = useMemo((): PLChartDataPoint[] => {
-    if (trades.length === 0) return [];
-
-    const sortedTrades = [...trades].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-    const now = new Date();
-    let startDate: Date;
-
-    // Determine date range
-    switch (plTimeRange) {
-      case '7d':
-        startDate = subDays(now, 7);
-        break;
-      case '1m':
-        startDate = subMonths(now, 1);
-        break;
-      case '3m':
-        startDate = subMonths(now, 3);
-        break;
-      case '1y':
-        startDate = subYears(now, 1);
-        break;
-      default:
-        startDate = sortedTrades[0]?.timestamp || now;
-    }
-
-    // Filter trades by date range
-    const filteredTrades = sortedTrades.filter((trade) => trade.timestamp >= startDate);
-
-    // Create data points showing ONLY ACTUAL TRADING P&L
-    const dataPoints: PLChartDataPoint[] = [];
-    let runningPL = 0; // Start at $0 - only trading profits/losses
-
-    // Add starting point at $0
-    if (filteredTrades.length > 0) {
-      dataPoints.push({
-        date: startDate,
-        value: 0, // Start at zero to show only trading performance
-        label: formatCurrency(0),
-      });
-    }
-
-    // Add each trade's actual realized P&L
-    filteredTrades.forEach((trade) => {
-      runningPL += trade.realizedPL; // Cumulative trading profit/loss only
-      dataPoints.push({
-        date: trade.timestamp,
-        value: runningPL, // This shows ONLY your trading gains/losses
-        label: formatCurrency(runningPL),
-      });
-    });
-
-    return dataPoints;
-  }, [trades, plTimeRange, selectedDate]);
-
-  // FIXED: Get current P&L stats - ONLY TRADING PERFORMANCE
-  const currentPLStats = useMemo(() => {
-    const currentValue = performanceMetrics.totalPL; // Only trading profits/losses
-    const change = performanceMetrics.totalPL; // Your actual total trading profit/loss
-    const initialCapitalNum = getNumericInitialCapital();
-    const changePercent = initialCapitalNum > 0 ? (change / initialCapitalNum) * 100 : 0; // Percentage return on initial capital
-
-    return {
-      currentValue,
-      change,
-      changePercent,
-      isPositive: change >= 0,
-    };
-  }, [performanceMetrics.totalPL, getNumericInitialCapital]);
-
-  const renderPLChart = () => {
-    if (plChartData.length === 0) {
-      return (
-        <div className="flex items-center justify-center h-64 sm:h-80 text-gray-500 dark:text-gray-400">
-          <div className="text-center">
-            <LineChart className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>No trading data available</p>
-          </div>
-        </div>
-      );
-    }
-
-    // Compute chart dimensions and scales
-    const chartHeight = 240;
-    const baseWidth = 320;
-    const viewWidth = Math.max(baseWidth, plChartData.length * 10);
-
-    const values = plChartData.map((d) => d.value);
-    const minValue = Math.min(...values);
-    const maxValue = Math.max(...values);
-    const valueRange = maxValue - minValue || 1;
-
-    // Helpers to map data -> pixels
-    const xAt = (i: number) =>
-      plChartData.length === 1 ? 0 : (i / (plChartData.length - 1)) * viewWidth;
-    const yAt = (v: number) => chartHeight - ((v - minValue) / valueRange) * chartHeight;
-
-    // Build polyline path points
-    const linePoints = plChartData.map((pt, i) => `${xAt(i)},${yAt(pt.value)}`).join(' ');
-
-    // Build filled area path (from first point, along line, then down to bottom and back)
-    const areaPath = [
-      `M ${xAt(0)} ${chartHeight}`,
-      ...plChartData.map((pt, i) => `${i === 0 ? 'L' : 'L'} ${xAt(i)} ${yAt(pt.value)}`),
-      `L ${xAt(plChartData.length - 1)} ${chartHeight}`,
-      'Z',
-    ].join(' ');
-
-    return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
-        {/* P&L Summary - FIXED TO SHOW ONLY TRADING PERFORMANCE */}
-        <div className="mb-6">
-          <div className="text-center mb-4">
-            <div className="text-lg font-medium text-gray-600 dark:text-gray-400 mb-1">
-              Trading P&L Performance
-            </div>
-            <div className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-2">
-              {formatCurrency(currentPLStats.currentValue)}
-            </div>
-            <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-              Total trading profit/loss
-            </div>
-            <div
-              className={`flex items-center justify-center text-lg sm:text-xl font-semibold ${
-                currentPLStats.isPositive ? 'text-green-600' : 'text-red-600'
-              }`}
-            >
-              {currentPLStats.isPositive ? (
-                <ArrowUp className="h-5 w-5 mr-2" />
-              ) : (
-                <ArrowDown className="h-5 w-5 mr-2" />
-              )}
-              {formatCurrency(Math.abs(currentPLStats.change))} (
-              {Math.abs(currentPLStats.changePercent).toFixed(2)}%)
-            </div>
-            <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              {plTimeRange === 'all'
-                ? 'All time trading performance'
-                : plTimeRange === '7d'
-                ? 'Past 7 days'
-                : plTimeRange === '1m'
-                ? 'Past month'
-                : plTimeRange === '3m'
-                ? 'Past 3 months'
-                : 'Past year'}
-            </div>
-          </div>
-
-          {/* Time Range Selector */}
-          <div className="flex items-center justify-center">
-            <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-1 flex flex-wrap gap-1">
-              {[
-                { key: '7d', label: '7D' },
-                { key: '1m', label: '1M' },
-                { key: '3m', label: '3M' },
-                { key: '1y', label: '1Y' },
-                { key: 'all', label: 'All' },
-              ].map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => setPLTimeRange(key as TimeRange)}
-                  className={`px-3 py-1 text-xs sm:text-sm font-medium rounded transition-colors ${
-                    plTimeRange === key
-                      ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Responsive Chart */}
-        <div className="w-full overflow-x-auto">
-          <div className="min-w-full" style={{ minWidth: '320px', minHeight: `${chartHeight}px` }}>
-            <svg
-              width="100%"
-              height={chartHeight}
-              viewBox={`0 0 ${viewWidth} ${chartHeight}`}
-              className="w-full h-auto"
-              preserveAspectRatio="xMidYMid meet"
-            >
-              {/* Grid lines & labels */}
-              {Array.from({ length: 5 }).map((_, i) => {
-                const y = (chartHeight / 4) * i;
-                const value = maxValue - (valueRange / 4) * i;
-                return (
-                  <g key={i}>
-                    <line x1={0} y1={y} x2={viewWidth} y2={y} stroke="rgba(156,163,175,0.2)" strokeWidth={1} />
-                    <text
-                      x={10}
-                      y={y + 4}
-                      fill="rgba(156, 163, 175, 0.8)"
-                      fontSize={10}
-                      className="font-mono"
-                    >
-                      {formatCurrency(value)}
-                    </text>
-                  </g>
-                );
-              })}
-
-              {/* Fill area */}
-              {plChartData.length > 1 && (
-                <path
-                  d={areaPath}
-                  fill={currentPLStats.isPositive ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)'}
-                />
-              )}
-
-              {/* Chart line */}
-              {plChartData.length > 1 && (
-                <polyline
-                  points={linePoints}
-                  fill="none"
-                  stroke={currentPLStats.isPositive ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)'}
-                  strokeWidth={2}
-                  vectorEffect="non-scaling-stroke"
-                />
-              )}
-
-              {/* Data points */}
-              {plChartData.map((point, i) => {
-                const cx = xAt(i);
-                const cy = yAt(point.value);
-                return (
-                  <circle
-                    key={i}
-                    cx={cx}
-                    cy={cy}
-                    r={3}
-                    fill={currentPLStats.isPositive ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)'}
-                    className="opacity-75 hover:opacity-100"
-                  >
-                    <title>{`${format(point.date, 'MMM d, yyyy')}: ${point.label}`}</title>
-                  </circle>
-                );
-              })}
-            </svg>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   // Mobile-responsive input component - FIXED to handle string values
   const renderInput = (
@@ -905,7 +701,16 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
         </div>
       )}
 
-      {activeTab === 'plchart' && renderPLChart()}
+      {activeTab === 'plchart' && (
+        <PLChart 
+          trades={trades}
+          selectedDate={selectedDate}
+          plTimeRange={plTimeRange}
+          setPLTimeRange={setPLTimeRange}
+          title="Trading P&L Performance"
+          showTimeRangeSelector={true}
+        />
+      )}
 
       {activeTab === 'dividends' && (
         <div className="space-y-4 sm:space-y-6">
