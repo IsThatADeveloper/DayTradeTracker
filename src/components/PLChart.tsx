@@ -33,6 +33,29 @@ interface PLChartProps {
   showTimeRangeSelector?: boolean;
 }
 
+// FIXED: Helper function to safely convert timestamp to Date
+const getValidDate = (timestamp: any): Date | null => {
+  if (!timestamp) return null;
+  
+  if (timestamp instanceof Date) {
+    return isNaN(timestamp.getTime()) ? null : timestamp;
+  }
+  
+  try {
+    const date = new Date(timestamp);
+    return isNaN(date.getTime()) ? null : date;
+  } catch (error) {
+    console.error('Error converting timestamp to date:', timestamp, error);
+    return null;
+  }
+};
+
+// FIXED: Helper function to safely get timestamp for sorting
+const getTimestamp = (trade: Trade): number => {
+  const date = getValidDate(trade.timestamp);
+  return date ? date.getTime() : 0;
+};
+
 export const PLChart: React.FC<PLChartProps> = ({
   trades,
   selectedDate,
@@ -108,11 +131,12 @@ export const PLChart: React.FC<PLChartProps> = ({
     if (!trades || trades.length === 0) return [];
 
     try {
-      const sortedTrades = [...trades].sort((a, b) => {
-        const aTime = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
-        const bTime = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
-        return aTime - bTime;
-      });
+      // FIXED: Filter out trades with invalid timestamps first
+      const validTrades = trades.filter(trade => getValidDate(trade.timestamp) !== null);
+      
+      if (validTrades.length === 0) return [];
+
+      const sortedTrades = [...validTrades].sort((a, b) => getTimestamp(a) - getTimestamp(b));
 
       const now = new Date();
       let startDate: Date;
@@ -136,15 +160,13 @@ export const PLChart: React.FC<PLChartProps> = ({
           startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
           break;
         default:
-          startDate = sortedTrades[0]?.timestamp instanceof Date ? 
-            sortedTrades[0].timestamp : 
-            new Date(sortedTrades[0]?.timestamp || now);
+          startDate = getValidDate(sortedTrades[0]?.timestamp) || now;
       }
 
       // Filter trades by date range
       filteredTrades = sortedTrades.filter(trade => {
-        const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
-        return tradeDate >= startDate;
+        const tradeDate = getValidDate(trade.timestamp);
+        return tradeDate && tradeDate >= startDate;
       });
 
       if (filteredTrades.length === 0) return [];
@@ -163,7 +185,7 @@ export const PLChart: React.FC<PLChartProps> = ({
       // Add each trade's cumulative P&L
       filteredTrades.forEach((trade) => {
         runningPL += trade.realizedPL;
-        const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+        const tradeDate = getValidDate(trade.timestamp)!; // We know it's valid from filter
         dataPoints.push({
           date: tradeDate,
           value: runningPL,

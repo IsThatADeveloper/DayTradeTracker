@@ -1,4 +1,4 @@
-// src/components/EarningsProjection.tsx - Updated to use PLChart component
+// src/components/EarningsProjection.tsx - Fixed date handling
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   TrendingUp,
@@ -63,6 +63,29 @@ interface PerformanceMetrics {
 type TimeRange = 'today' | '7d' | '1m' | '3m' | '1y' | 'all';
 
 const MAX_CAPITAL = 1000000000; // 1 billion cap
+
+// FIXED: Helper function to safely convert timestamp to Date
+const getValidDate = (timestamp: any): Date | null => {
+  if (!timestamp) return null;
+  
+  if (timestamp instanceof Date) {
+    return isNaN(timestamp.getTime()) ? null : timestamp;
+  }
+  
+  try {
+    const date = new Date(timestamp);
+    return isNaN(date.getTime()) ? null : date;
+  } catch (error) {
+    console.error('Error converting timestamp to date:', timestamp, error);
+    return null;
+  }
+};
+
+// FIXED: Helper function to safely get timestamp for sorting
+const getTimestamp = (trade: Trade): number => {
+  const date = getValidDate(trade.timestamp);
+  return date ? date.getTime() : 0;
+};
 
 export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, selectedDate }) => {
   // Input states with proper validation - FIXED to allow empty editing
@@ -138,29 +161,43 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
       };
     }
 
-    // Sort trades by timestamp
-    const sortedTrades = [...trades].sort((a, b) => {
-      const aTime = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
-      const bTime = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
-      return aTime - bTime;
-    });
+    // FIXED: Filter out trades with invalid timestamps and sort safely
+    const validTrades = trades.filter(trade => getValidDate(trade.timestamp) !== null);
+    
+    if (validTrades.length === 0) {
+      return {
+        totalPL: 0,
+        totalTrades: 0,
+        winRate: 0,
+        avgDailyPL: 0,
+        avgMonthlyPL: 0,
+        avgAnnualPL: 0,
+        tradingDays: 0,
+        dailyVolatility: 0,
+        monthlyVolatility: 0,
+        sharpeRatio: 0,
+        maxDrawdown: 0,
+        profitFactor: 0,
+        consistency: 0,
+      };
+    }
 
-    const totalPL = trades.reduce((sum, trade) => sum + trade.realizedPL, 0);
-    const wins = trades.filter((trade) => trade.realizedPL > 0);
-    const losses = trades.filter((trade) => trade.realizedPL < 0);
-    const winRate = (wins.length / trades.length) * 100;
+    const sortedTrades = [...validTrades].sort((a, b) => getTimestamp(a) - getTimestamp(b));
+
+    const totalPL = validTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
+    const wins = validTrades.filter((trade) => trade.realizedPL > 0);
+    const losses = validTrades.filter((trade) => trade.realizedPL < 0);
+    const winRate = (wins.length / validTrades.length) * 100;
 
     // Calculate time-based metrics
-    const firstTradeDate = sortedTrades[0].timestamp instanceof Date ? sortedTrades[0].timestamp : new Date(sortedTrades[0].timestamp);
-    const lastTradeDate = sortedTrades[sortedTrades.length - 1].timestamp instanceof Date ? 
-      sortedTrades[sortedTrades.length - 1].timestamp : 
-      new Date(sortedTrades[sortedTrades.length - 1].timestamp);
+    const firstTradeDate = getValidDate(sortedTrades[0].timestamp)!;
+    const lastTradeDate = getValidDate(sortedTrades[sortedTrades.length - 1].timestamp)!;
     const totalDays = Math.max(differenceInDays(lastTradeDate, firstTradeDate), 1);
     const totalMonths = Math.max(differenceInMonths(lastTradeDate, firstTradeDate), 1);
 
     // Get unique trading days
-    const uniqueTradingDays = new Set(trades.map((trade) => {
-      const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+    const uniqueTradingDays = new Set(validTrades.map((trade) => {
+      const tradeDate = getValidDate(trade.timestamp)!;
       return format(tradeDate, 'yyyy-MM-dd');
     })).size;
 
@@ -170,8 +207,8 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
     // Calculate volatility (standard deviation of daily returns)
     const dailyPLs = Object.values(
-      trades.reduce((acc, trade) => {
-        const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+      validTrades.reduce((acc, trade) => {
+        const tradeDate = getValidDate(trade.timestamp)!;
         const dateKey = format(tradeDate, 'yyyy-MM-dd');
         acc[dateKey] = (acc[dateKey] || 0) + trade.realizedPL;
         return acc;
@@ -210,8 +247,8 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
     // Calculate consistency
     const monthlyPLs = Object.values(
-      trades.reduce((acc, trade) => {
-        const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+      validTrades.reduce((acc, trade) => {
+        const tradeDate = getValidDate(trade.timestamp)!;
         const monthKey = format(tradeDate, 'yyyy-MM');
         acc[monthKey] = (acc[monthKey] || 0) + trade.realizedPL;
         return acc;
@@ -222,7 +259,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
     return {
       totalPL,
-      totalTrades: trades.length,
+      totalTrades: validTrades.length,
       winRate,
       avgDailyPL,
       avgMonthlyPL,
