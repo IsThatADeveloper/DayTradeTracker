@@ -1,22 +1,31 @@
-// src/components/EarningsProjection.tsx - Completely rewritten with robust error handling
+// src/components/EarningsProjection.tsx - Trading Performance Projections & Dividend Calculator
 import React, { useState, useMemo, useCallback } from 'react';
-import {
-  TrendingUp,
-  Calculator,
-  DollarSign,
-  Calendar,
-  Target,
+import { 
+  TrendingUp, 
+  Calculator, 
+  DollarSign, 
+  Calendar, 
+  Target, 
   AlertTriangle,
   Info,
   PieChart,
   BarChart3,
   Percent,
+  Clock,
   LineChart,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
-import { PLChart } from './PLChart';
 import { Trade } from '../types/trade';
 import { formatCurrency } from '../utils/tradeUtils';
-import { format } from 'date-fns';
+import { 
+  differenceInDays, 
+  differenceInMonths, 
+  subDays, 
+  subMonths,
+  format,
+  addYears 
+} from 'date-fns';
 
 interface EarningsProjectionProps {
   trades: Trade[];
@@ -31,6 +40,14 @@ interface ProjectionPeriod {
   growthPercentage: number;
   projectedPL: number;
   monthlyContribution: number;
+}
+
+interface DividendProjection {
+  period: string;
+  years: number;
+  totalDividends: number;
+  portfolioValue: number;
+  totalValue: number;
 }
 
 interface PerformanceMetrics {
@@ -49,104 +66,17 @@ interface PerformanceMetrics {
   consistency: number;
 }
 
-type TimeRange = 'today' | '7d' | '1m' | '3m' | '1y' | 'all';
-
-const MAX_CAPITAL = 1000000000; // 1 billion cap
-
-// Robust timestamp conversion utility
-const safeGetDate = (timestamp: unknown): Date | null => {
-  if (timestamp == null) return null;
-
-  try {
-    if (timestamp instanceof Date) {
-      return isNaN(timestamp.getTime()) ? null : timestamp;
-    }
-
-    // Handle numbers (ms since epoch) or strings
-    const date = new Date(timestamp as string | number);
-    return isNaN(date.getTime()) ? null : date;
-  } catch {
-    return null;
-  }
-};
-
-// Safe timestamp for sorting
-const safeGetTimestamp = (trade: Trade): number => {
-  const date = safeGetDate(trade.timestamp);
-  return date && !isNaN(date.getTime()) ? date.getTime() : 0;
-};
-
-// Safe date formatting
-const safeFormatDate = (timestamp: unknown, formatString = "yyyy-MM-dd"): string => {
-  const date = safeGetDate(timestamp);
-  if (!date) return "Invalid Date";
-
-  try {
-    return format(date, formatString);
-  } catch {
-    return "Invalid Date";
-  }
-};
-
 export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, selectedDate }) => {
-  // Input states
-  const [initialCapital, setInitialCapital] = useState<string>('10000');
-  const [monthlyContribution, setMonthlyContribution] = useState<string>('1000');
+  const [initialCapital, setInitialCapital] = useState<number>(10000);
+  const [monthlyContribution, setMonthlyContribution] = useState<number>(1000);
   const [dividendYield, setDividendYield] = useState<number>(2.5);
   const [dividendGrowthRate, setDividendGrowthRate] = useState<number>(5);
   const [conservativeMode, setConservativeMode] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'projections' | 'dividends' | 'plchart'>('projections');
-  const [plTimeRange, setPLTimeRange] = useState<TimeRange>('all');
+  const [activeTab, setActiveTab] = useState<'projections' | 'dividends' | 'scenarios'>('projections');
 
-  // Get numeric values safely
-  const getNumericInitialCapital = useCallback((): number => {
-    const num = parseFloat(initialCapital) || 0;
-    return Math.max(0, Math.min(num, MAX_CAPITAL));
-  }, [initialCapital]);
-
-  const getNumericMonthlyContribution = useCallback((): number => {
-    const num = parseFloat(monthlyContribution) || 0;
-    return Math.max(0, Math.min(num, MAX_CAPITAL / 12));
-  }, [monthlyContribution]);
-
-  // Input handlers with validation
-  const handleCapitalChange = useCallback((value: string) => {
-    if (value === '' || /^\d*\.?\d*$/.test(value)) {
-      const numValue = parseFloat(value);
-      if (value === '' || (!isNaN(numValue) && numValue <= MAX_CAPITAL)) {
-        setInitialCapital(value);
-      }
-    }
-  }, []);
-
-  const handleContributionChange = useCallback((value: string) => {
-    if (value === '' || /^\d*\.?\d*$/.test(value)) {
-      const numValue = parseFloat(value);
-      if (value === '' || (!isNaN(numValue) && numValue <= MAX_CAPITAL / 12)) {
-        setMonthlyContribution(value);
-      }
-    }
-  }, []);
-
-  // Filter and sort trades safely
-  const validTrades = useMemo(() => {
-    if (!trades || !Array.isArray(trades)) return [];
-    
-    return trades
-      .filter(trade => {
-        // Check if trade has required properties
-        if (!trade || typeof trade.realizedPL !== 'number') return false;
-        
-        // Check if timestamp is valid
-        const date = safeGetDate(trade.timestamp);
-        return date !== null;
-      })
-      .sort((a, b) => safeGetTimestamp(a) - safeGetTimestamp(b));
-  }, [trades]);
-
-  // Calculate performance metrics with robust error handling
+  // Calculate comprehensive performance metrics
   const performanceMetrics = useMemo((): PerformanceMetrics => {
-    if (validTrades.length === 0) {
+    if (trades.length === 0) {
       return {
         totalPL: 0,
         totalTrades: 0,
@@ -160,239 +90,801 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
         sharpeRatio: 0,
         maxDrawdown: 0,
         profitFactor: 0,
-        consistency: 0,
+        consistency: 0
       };
     }
 
-    try {
-      const totalPL = validTrades.reduce((sum, trade) => sum + (trade.realizedPL || 0), 0);
-      const wins = validTrades.filter(trade => (trade.realizedPL || 0) > 0);
-      const losses = validTrades.filter(trade => (trade.realizedPL || 0) < 0);
-      const winRate = validTrades.length > 0 ? (wins.length / validTrades.length) * 100 : 0;
+    // Sort trades by timestamp
+    const sortedTrades = [...trades].sort((a, b) => 
+      a.timestamp.getTime() - b.timestamp.getTime()
+    );
 
-      // Calculate time-based metrics
-      const firstDate = safeGetDate(validTrades[0]?.timestamp);
-      const lastDate = safeGetDate(validTrades[validTrades.length - 1]?.timestamp);
-      
-      if (!firstDate || !lastDate) {
-        return {
-          totalPL,
-          totalTrades: validTrades.length,
-          winRate,
-          avgDailyPL: 0,
-          avgMonthlyPL: 0,
-          avgAnnualPL: 0,
-          tradingDays: 0,
-          dailyVolatility: 0,
-          monthlyVolatility: 0,
-          sharpeRatio: 0,
-          maxDrawdown: 0,
-          profitFactor: 0,
-          consistency: 0,
-        };
-      }
+    const totalPL = trades.reduce((sum, trade) => sum + trade.realizedPL, 0);
+    const wins = trades.filter(trade => trade.realizedPL > 0);
+    const losses = trades.filter(trade => trade.realizedPL < 0);
+    const winRate = (wins.length / trades.length) * 100;
 
-      const daysDiff = Math.max(1, Math.ceil((lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)));
-      const monthsDiff = Math.max(1, Math.ceil(daysDiff / 30));
+    // Calculate time-based metrics
+    const firstTradeDate = sortedTrades[0].timestamp;
+    const lastTradeDate = sortedTrades[sortedTrades.length - 1].timestamp;
+    const totalDays = Math.max(differenceInDays(lastTradeDate, firstTradeDate), 1);
+    const totalMonths = Math.max(differenceInMonths(lastTradeDate, firstTradeDate), 1);
 
-      // Get unique trading days
-      const uniqueDays = new Set(
-        validTrades.map(trade => safeFormatDate(trade.timestamp, 'yyyy-MM-dd'))
-      ).size;
+    // Get unique trading days
+    const uniqueTradingDays = new Set(
+      trades.map(trade => format(trade.timestamp, 'yyyy-MM-dd'))
+    ).size;
 
-      const avgDailyPL = uniqueDays > 0 ? totalPL / uniqueDays : 0;
-      const avgMonthlyPL = monthsDiff > 0 ? totalPL / monthsDiff : 0;
-      const avgAnnualPL = daysDiff > 0 ? (totalPL / daysDiff) * 365 : 0;
+    const avgDailyPL = totalPL / Math.max(uniqueTradingDays, 1);
+    const avgMonthlyPL = totalPL / Math.max(totalMonths, 1);
+    const avgAnnualPL = (totalPL / Math.max(totalDays, 1)) * 365;
 
-      // Calculate daily P&Ls for volatility
-      const dailyPLs: number[] = [];
-      const dailyPLMap = new Map<string, number>();
+    // Calculate volatility (standard deviation of daily returns)
+    const dailyPLs = Object.values(
+      trades.reduce((acc, trade) => {
+        const dateKey = format(trade.timestamp, 'yyyy-MM-dd');
+        acc[dateKey] = (acc[dateKey] || 0) + trade.realizedPL;
+        return acc;
+      }, {} as Record<string, number>)
+    );
 
-      validTrades.forEach(trade => {
-        const dateKey = safeFormatDate(trade.timestamp, 'yyyy-MM-dd');
-        if (dateKey !== 'Invalid Date') {
-          dailyPLMap.set(dateKey, (dailyPLMap.get(dateKey) || 0) + (trade.realizedPL || 0));
-        }
-      });
+    const dailyMean = dailyPLs.reduce((sum, pl) => sum + pl, 0) / dailyPLs.length;
+    const dailyVariance = dailyPLs.reduce((sum, pl) => sum + Math.pow(pl - dailyMean, 2), 0) / dailyPLs.length;
+    const dailyVolatility = Math.sqrt(dailyVariance);
+    const monthlyVolatility = dailyVolatility * Math.sqrt(21); // 21 trading days per month
 
-      dailyPLs.push(...dailyPLMap.values());
+    // Calculate Sharpe ratio (assuming 2% risk-free rate)
+    const riskFreeRate = 0.02;
+    const excessReturn = avgAnnualPL - (initialCapital * riskFreeRate);
+    const annualVolatility = dailyVolatility * Math.sqrt(252); // 252 trading days per year
+    const sharpeRatio = annualVolatility > 0 ? excessReturn / annualVolatility : 0;
 
-      let dailyVolatility = 0;
-      if (dailyPLs.length > 1) {
-        const mean = dailyPLs.reduce((sum, pl) => sum + pl, 0) / dailyPLs.length;
-        const variance = dailyPLs.reduce((sum, pl) => sum + Math.pow(pl - mean, 2), 0) / dailyPLs.length;
-        dailyVolatility = Math.sqrt(variance);
-      }
+    // Calculate maximum drawdown
+    let runningPL = 0;
+    let peak = 0;
+    let maxDrawdown = 0;
+    
+    sortedTrades.forEach(trade => {
+      runningPL += trade.realizedPL;
+      if (runningPL > peak) peak = runningPL;
+      const drawdown = peak - runningPL;
+      if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+    });
 
-      const monthlyVolatility = dailyVolatility * Math.sqrt(21);
+    // Calculate profit factor
+    const totalWins = wins.reduce((sum, trade) => sum + trade.realizedPL, 0);
+    const totalLosses = Math.abs(losses.reduce((sum, trade) => sum + trade.realizedPL, 0));
+    const profitFactor = totalLosses > 0 ? totalWins / totalLosses : totalWins > 0 ? 999 : 0;
 
-      // Sharpe ratio calculation
-      const initialCapitalNum = getNumericInitialCapital();
-      const riskFreeRate = 0.02;
-      const excessReturn = avgAnnualPL - (initialCapitalNum * riskFreeRate);
-      const annualVolatility = dailyVolatility * Math.sqrt(252);
-      const sharpeRatio = annualVolatility > 0 ? excessReturn / annualVolatility : 0;
+    // Calculate consistency (percentage of profitable months)
+    const monthlyPLs = Object.values(
+      trades.reduce((acc, trade) => {
+        const monthKey = format(trade.timestamp, 'yyyy-MM');
+        acc[monthKey] = (acc[monthKey] || 0) + trade.realizedPL;
+        return acc;
+      }, {} as Record<string, number>)
+    );
+    const profitableMonths = monthlyPLs.filter(pl => pl > 0).length;
+    const consistency = monthlyPLs.length > 0 ? (profitableMonths / monthlyPLs.length) * 100 : 0;
 
-      // Max drawdown calculation
-      let runningPL = 0;
-      let peak = 0;
-      let maxDrawdown = 0;
+    return {
+      totalPL,
+      totalTrades: trades.length,
+      winRate,
+      avgDailyPL,
+      avgMonthlyPL,
+      avgAnnualPL,
+      tradingDays: uniqueTradingDays,
+      dailyVolatility,
+      monthlyVolatility,
+      sharpeRatio,
+      maxDrawdown,
+      profitFactor,
+      consistency
+    };
+  }, [trades, initialCapital]);
 
-      validTrades.forEach(trade => {
-        runningPL += trade.realizedPL || 0;
-        if (runningPL > peak) peak = runningPL;
-        const drawdown = peak - runningPL;
-        if (drawdown > maxDrawdown) maxDrawdown = drawdown;
-      });
-
-      // Profit factor
-      const totalWins = wins.reduce((sum, trade) => sum + (trade.realizedPL || 0), 0);
-      const totalLosses = Math.abs(losses.reduce((sum, trade) => sum + (trade.realizedPL || 0), 0));
-      const profitFactor = totalLosses > 0 ? totalWins / totalLosses : (totalWins > 0 ? 999 : 0);
-
-      // Monthly consistency
-      const monthlyPLMap = new Map<string, number>();
-      validTrades.forEach(trade => {
-        const monthKey = safeFormatDate(trade.timestamp, 'yyyy-MM');
-        if (monthKey !== 'Invalid Date') {
-          monthlyPLMap.set(monthKey, (monthlyPLMap.get(monthKey) || 0) + (trade.realizedPL || 0));
-        }
-      });
-
-      const monthlyPLs = Array.from(monthlyPLMap.values());
-      const profitableMonths = monthlyPLs.filter(pl => pl > 0).length;
-      const consistency = monthlyPLs.length > 0 ? (profitableMonths / monthlyPLs.length) * 100 : 0;
-
-      return {
-        totalPL,
-        totalTrades: validTrades.length,
-        winRate,
-        avgDailyPL,
-        avgMonthlyPL,
-        avgAnnualPL,
-        tradingDays: uniqueDays,
-        dailyVolatility,
-        monthlyVolatility,
-        sharpeRatio,
-        maxDrawdown,
-        profitFactor,
-        consistency,
-      };
-    } catch (error) {
-      console.error('Error calculating performance metrics:', error);
-      return {
-        totalPL: 0,
-        totalTrades: 0,
-        winRate: 0,
-        avgDailyPL: 0,
-        avgMonthlyPL: 0,
-        avgAnnualPL: 0,
-        tradingDays: 0,
-        dailyVolatility: 0,
-        monthlyVolatility: 0,
-        sharpeRatio: 0,
-        maxDrawdown: 0,
-        profitFactor: 0,
-        consistency: 0,
-      };
-    }
-  }, [validTrades, getNumericInitialCapital]);
-
-  // Calculate projections
+  // Calculate trading performance projections
   const projections = useMemo((): ProjectionPeriod[] => {
-    try {
-      const baseAnnualReturn = performanceMetrics.avgAnnualPL;
-      const conservativeFactor = conservativeMode ? 0.6 : 1.0;
-      const adjustedAnnualReturn = baseAnnualReturn * conservativeFactor;
-      const initialCapitalNum = getNumericInitialCapital();
-      const monthlyContributionNum = getNumericMonthlyContribution();
-      const annualGrowthRate = initialCapitalNum > 0 ? adjustedAnnualReturn / initialCapitalNum : 0;
+    const baseAnnualReturn = performanceMetrics.avgAnnualPL;
+    const conservativeFactor = conservativeMode ? 0.6 : 1.0; // 40% discount for conservative mode
+    const adjustedAnnualReturn = baseAnnualReturn * conservativeFactor;
+    
+    // Calculate annual growth rate as percentage of starting capital
+    const annualGrowthRate = initialCapital > 0 ? adjustedAnnualReturn / initialCapital : 0;
+    
+    const periods = [1, 3, 5, 10, 20];
+    
+    return periods.map(years => {
+      // Compound growth with monthly contributions
+      let portfolioValue = initialCapital;
+      let totalContributions = initialCapital;
+      let totalGrowth = 0;
+      
+      for (let year = 1; year <= years; year++) {
+        // Add monthly contributions throughout the year
+        const yearlyContributions = monthlyContribution * 12;
+        totalContributions += yearlyContributions;
+        
+        // Calculate growth on average portfolio value during the year
+        const startValue = portfolioValue;
+        const avgValueDuringYear = startValue + (yearlyContributions / 2);
+        const yearGrowth = avgValueDuringYear * annualGrowthRate;
+        
+        portfolioValue += yearlyContributions + yearGrowth;
+        totalGrowth += yearGrowth;
+      }
+      
+      const growthPercentage = initialCapital > 0 ? ((portfolioValue - totalContributions) / initialCapital) * 100 : 0;
+      
+      return {
+        period: years === 1 ? '1 Year' : `${years} Years`,
+        years,
+        projectedValue: portfolioValue,
+        totalGrowth: portfolioValue - totalContributions,
+        growthPercentage,
+        projectedPL: totalGrowth,
+        monthlyContribution: monthlyContribution
+      };
+    });
+  }, [performanceMetrics, initialCapital, monthlyContribution, conservativeMode]);
 
-      const periods = [1, 3, 5, 10, 15];
+  // Calculate dividend projections
+  const dividendProjections = useMemo((): DividendProjection[] => {
+    const periods = [1, 3, 5, 10, 20];
+    
+    return periods.map(years => {
+      let portfolioValue = initialCapital;
+      let totalDividends = 0;
+      let currentDividendYield = dividendYield / 100;
+      
+      for (let year = 1; year <= years; year++) {
+        // Add monthly contributions
+        const yearlyContributions = monthlyContribution * 12;
+        portfolioValue += yearlyContributions;
+        
+        // Calculate dividends for the year (on average portfolio value)
+        const startValue = portfolioValue - yearlyContributions;
+        const avgValueDuringYear = startValue + (yearlyContributions / 2);
+        const yearDividends = avgValueDuringYear * currentDividendYield;
+        totalDividends += yearDividends;
+        
+        // Reinvest dividends
+        portfolioValue += yearDividends;
+        
+        // Grow dividend yield
+        currentDividendYield *= (1 + dividendGrowthRate / 100);
+      }
+      
+      return {
+        period: years === 1 ? '1 Year' : `${years} Years`,
+        years,
+        totalDividends,
+        portfolioValue,
+        totalValue: portfolioValue + totalDividends
+      };
+    });
+  }, [initialCapital, monthlyContribution, dividendYield, dividendGrowthRate]);
 
-      return periods.map(years => {
-        let portfolioValue = initialCapitalNum;
-        let totalContributions = initialCapitalNum;
-        let totalGrowth = 0;
+  // Scenario analysis
+  const scenarios = useMemo(() => {
+    const baseReturn = performanceMetrics.avgAnnualPL;
+    const volatility = performanceMetrics.dailyVolatility * Math.sqrt(252);
+    
+    return {
+      conservative: {
+        name: 'Conservative',
+        description: 'Bear market conditions (-50% performance)',
+        annualReturn: baseReturn * 0.5,
+        color: 'text-orange-600',
+        bgColor: 'bg-orange-50 dark:bg-orange-900/20',
+        borderColor: 'border-orange-200 dark:border-orange-800'
+      },
+      realistic: {
+        name: 'Realistic',
+        description: 'Based on current performance',
+        annualReturn: baseReturn,
+        color: 'text-blue-600',
+        bgColor: 'bg-blue-50 dark:bg-blue-900/20',
+        borderColor: 'border-blue-200 dark:border-blue-800'
+      },
+      optimistic: {
+        name: 'Optimistic',
+        description: 'Bull market conditions (+50% performance)',
+        annualReturn: baseReturn * 1.5,
+        color: 'text-green-600',
+        bgColor: 'bg-green-50 dark:bg-green-900/20',
+        borderColor: 'border-green-200 dark:border-green-800'
+      }
+    };
+  }, [performanceMetrics]);
 
-        for (let year = 1; year <= years; year++) {
-          const yearlyContributions = monthlyContributionNum * 12;
-          totalContributions += yearlyContributions;
-          const startValue = portfolioValue;
-          const avgValueDuringYear = startValue + yearlyContributions / 2;
-          const yearGrowth = avgValueDuringYear * annualGrowthRate;
-          portfolioValue += yearlyContributions + yearGrowth;
-          totalGrowth += yearGrowth;
-        }
+  // Helper functions
+  const getProjectionColor = (growthPercentage: number) => {
+    if (growthPercentage > 100) return 'text-green-600';
+    if (growthPercentage > 50) return 'text-blue-600';
+    if (growthPercentage > 0) return 'text-yellow-600';
+    return 'text-red-600';
+  };
 
-        const growthPercentage = initialCapitalNum > 0 
-          ? ((portfolioValue - totalContributions) / initialCapitalNum) * 100 
-          : 0;
+  const calculateCAGR = (startValue: number, endValue: number, years: number): number => {
+    if (startValue <= 0 || endValue <= 0 || years <= 0) return 0;
+    return (Math.pow(endValue / startValue, 1 / years) - 1) * 100;
+  };
 
-        return {
-          period: years === 1 ? '1 Year' : `${years} Years`,
-          years,
-          projectedValue: portfolioValue,
-          totalGrowth: portfolioValue - totalContributions,
-          growthPercentage,
-          projectedPL: totalGrowth,
-          monthlyContribution: monthlyContributionNum,
-        };
-      });
-    } catch (error) {
-      console.error('Error calculating projections:', error);
-      return [];
-    }
-  }, [performanceMetrics, getNumericInitialCapital, getNumericMonthlyContribution, conservativeMode]);
-
-  // Input component
-  const renderInput = (
-    label: string,
-    value: string | number,
-    onChange: (value: string) => void,
-    prefix: string = '',
-    suffix: string = '',
-    step: number = 1
-  ) => (
-    <div className="space-y-2">
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{label}</label>
-      <div className="relative">
-        {prefix && (
-          <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm">
-            {prefix}
-          </span>
-        )}
-        <input
-          type="number"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          step={step}
-          min={0}
-          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base ${
-            prefix ? 'pl-8' : ''
-          } ${suffix ? 'pr-12' : ''}`}
-          placeholder="0"
-        />
-        {suffix && (
-          <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm">
-            {suffix}
-          </span>
-        )}
+  const renderMetricsCard = () => (
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      <div className="flex items-center space-x-3 mb-6">
+        <div className="p-2 bg-blue-500 rounded-lg">
+          <BarChart3 className="h-5 w-5 text-white" />
+        </div>
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+          Trading Performance Metrics
+        </h3>
+      </div>
+      
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="text-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Total P&L</p>
+          <p className={`text-xl font-bold ${performanceMetrics.totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {formatCurrency(performanceMetrics.totalPL)}
+          </p>
+        </div>
+        
+        <div className="text-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Win Rate</p>
+          <p className={`text-xl font-bold ${performanceMetrics.winRate >= 50 ? 'text-green-600' : 'text-red-600'}`}>
+            {performanceMetrics.winRate.toFixed(1)}%
+          </p>
+        </div>
+        
+        <div className="text-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Avg Annual P&L</p>
+          <p className={`text-xl font-bold ${performanceMetrics.avgAnnualPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {formatCurrency(performanceMetrics.avgAnnualPL)}
+          </p>
+        </div>
+        
+        <div className="text-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Sharpe Ratio</p>
+          <p className={`text-xl font-bold ${performanceMetrics.sharpeRatio >= 1 ? 'text-green-600' : performanceMetrics.sharpeRatio >= 0.5 ? 'text-yellow-600' : 'text-red-600'}`}>
+            {performanceMetrics.sharpeRatio.toFixed(2)}
+          </p>
+        </div>
+        
+        <div className="text-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Trading Days</p>
+          <p className="text-xl font-bold text-gray-900 dark:text-white">
+            {performanceMetrics.tradingDays}
+          </p>
+        </div>
+        
+        <div className="text-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Profit Factor</p>
+          <p className={`text-xl font-bold ${performanceMetrics.profitFactor >= 2 ? 'text-green-600' : performanceMetrics.profitFactor >= 1 ? 'text-yellow-600' : 'text-red-600'}`}>
+            {performanceMetrics.profitFactor >= 999 ? '∞' : performanceMetrics.profitFactor.toFixed(2)}
+          </p>
+        </div>
+        
+        <div className="text-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Max Drawdown</p>
+          <p className="text-xl font-bold text-red-600">
+            {formatCurrency(performanceMetrics.maxDrawdown)}
+          </p>
+        </div>
+        
+        <div className="text-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Consistency</p>
+          <p className={`text-xl font-bold ${performanceMetrics.consistency >= 70 ? 'text-green-600' : performanceMetrics.consistency >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+            {performanceMetrics.consistency.toFixed(1)}%
+          </p>
+        </div>
       </div>
     </div>
   );
 
-  // Early return for no data
-  if (validTrades.length === 0) {
+  const renderProjectionsTab = () => (
+    <div className="space-y-6">
+      {/* Input Controls */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Initial Capital
+          </label>
+          <div className="relative">
+            <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="number"
+              value={initialCapital}
+              onChange={(e) => setInitialCapital(parseFloat(e.target.value) || 0)}
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              min="0"
+              step="1000"
+            />
+          </div>
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Monthly Contribution
+          </label>
+          <div className="relative">
+            <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="number"
+              value={monthlyContribution}
+              onChange={(e) => setMonthlyContribution(parseFloat(e.target.value) || 0)}
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              min="0"
+              step="100"
+            />
+          </div>
+        </div>
+        
+        <div className="flex items-center">
+          <label className="flex items-center space-x-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={conservativeMode}
+              onChange={(e) => setConservativeMode(e.target.checked)}
+              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+            />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Conservative Mode (40% discount)
+            </span>
+          </label>
+        </div>
+      </div>
+
+      {/* Warning for insufficient data */}
+      {performanceMetrics.tradingDays < 30 && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+          <div className="flex items-start">
+            <AlertTriangle className="h-5 w-5 text-yellow-600 mr-2 mt-0.5" />
+            <div>
+              <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                Limited Data Warning
+              </h4>
+              <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                Projections are based on {performanceMetrics.tradingDays} trading days. 
+                For more accurate projections, consider trading for at least 30-90 days.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Projections Table */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+            Portfolio Projections {conservativeMode && '(Conservative)'}
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            Based on {formatCurrency(performanceMetrics.avgAnnualPL)} average annual return
+          </p>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 dark:bg-gray-700">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Time Period
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Portfolio Value
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Total Growth
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  CAGR
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Growth %
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+              {projections.map((projection, index) => (
+                <tr key={projection.period} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                    {projection.period}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white text-right">
+                    <span className="font-semibold">
+                      {formatCurrency(projection.projectedValue)}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                    <span className={`font-semibold ${projection.totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCurrency(projection.totalGrowth)}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                    <span className={`font-semibold ${getProjectionColor(projection.growthPercentage)}`}>
+                      {calculateCAGR(initialCapital, projection.projectedValue, projection.years).toFixed(1)}%
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                    <div className="flex items-center justify-end">
+                      {projection.growthPercentage >= 0 ? 
+                        <ArrowUp className="h-4 w-4 text-green-500 mr-1" /> : 
+                        <ArrowDown className="h-4 w-4 text-red-500 mr-1" />
+                      }
+                      <span className={`font-semibold ${getProjectionColor(projection.growthPercentage)}`}>
+                        {Math.abs(projection.growthPercentage).toFixed(1)}%
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Key Insights */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800 p-6">
+          <div className="flex items-center space-x-3 mb-4">
+            <TrendingUp className="h-6 w-6 text-green-600" />
+            <h4 className="font-semibold text-green-800 dark:text-green-200">
+              Growth Potential
+            </h4>
+          </div>
+          <p className="text-2xl font-bold text-green-600 mb-2">
+            {projections[2] ? formatCurrency(projections[2].projectedValue) : formatCurrency(0)}
+          </p>
+          <p className="text-sm text-green-700 dark:text-green-300">
+            Projected portfolio value in 5 years
+          </p>
+        </div>
+        
+        <div className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-6">
+          <div className="flex items-center space-x-3 mb-4">
+            <Calculator className="h-6 w-6 text-blue-600" />
+            <h4 className="font-semibold text-blue-800 dark:text-blue-200">
+              Monthly Income
+            </h4>
+          </div>
+          <p className="text-2xl font-bold text-blue-600 mb-2">
+            {formatCurrency(performanceMetrics.avgMonthlyPL)}
+          </p>
+          <p className="text-sm text-blue-700 dark:text-blue-300">
+            Average monthly trading profit
+          </p>
+        </div>
+        
+        <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200 dark:border-purple-800 p-6">
+          <div className="flex items-center space-x-3 mb-4">
+            <Target className="h-6 w-6 text-purple-600" />
+            <h4 className="font-semibold text-purple-800 dark:text-purple-200">
+              Risk-Adjusted Return
+            </h4>
+          </div>
+          <p className="text-2xl font-bold text-purple-600 mb-2">
+            {performanceMetrics.sharpeRatio.toFixed(2)}
+          </p>
+          <p className="text-sm text-purple-700 dark:text-purple-300">
+            Sharpe ratio (risk vs reward)
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderDividendsTab = () => (
+    <div className="space-y-6">
+      {/* Dividend Input Controls */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Dividend Yield (%)
+          </label>
+          <div className="relative">
+            <Percent className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="number"
+              value={dividendYield}
+              onChange={(e) => setDividendYield(parseFloat(e.target.value) || 0)}
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              min="0"
+              max="20"
+              step="0.1"
+            />
+          </div>
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Dividend Growth Rate (%)
+          </label>
+          <div className="relative">
+            <TrendingUp className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="number"
+              value={dividendGrowthRate}
+              onChange={(e) => setDividendGrowthRate(parseFloat(e.target.value) || 0)}
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              min="0"
+              max="15"
+              step="0.1"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Dividend Info Box */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div className="flex items-start">
+          <Info className="h-5 w-5 text-blue-600 mr-2 mt-0.5" />
+          <div>
+            <h4 className="text-sm font-medium text-blue-800 dark:text-blue-200">
+              Dividend Calculation Info
+            </h4>
+            <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+              This calculator assumes your trading profits are invested in dividend-paying stocks. 
+              Dividends are reinvested annually and the yield grows by the specified rate each year.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Dividend Projections Table */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+            Dividend Income Projections
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            Starting yield: {dividendYield}% • Growth rate: {dividendGrowthRate}% annually
+          </p>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 dark:bg-gray-700">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Time Period
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Portfolio Value
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Total Dividends
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Annual Dividend Income
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Current Yield
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+              {dividendProjections.map((projection, index) => {
+                const currentYield = dividendYield * Math.pow(1 + dividendGrowthRate / 100, projection.years);
+                const annualDividendIncome = projection.portfolioValue * (currentYield / 100);
+                
+                return (
+                  <tr key={projection.period} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                      {projection.period}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white text-right">
+                      <span className="font-semibold">
+                        {formatCurrency(projection.portfolioValue)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                      <span className="font-semibold text-green-600">
+                        {formatCurrency(projection.totalDividends)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                      <span className="font-semibold text-blue-600">
+                        {formatCurrency(annualDividendIncome)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                      <span className="font-medium text-purple-600">
+                        {currentYield.toFixed(1)}%
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Dividend Insights */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800 p-6">
+          <div className="flex items-center space-x-3 mb-4">
+            <DollarSign className="h-6 w-6 text-green-600" />
+            <h4 className="font-semibold text-green-800 dark:text-green-200">
+              20-Year Dividend Income
+            </h4>
+          </div>
+          <p className="text-2xl font-bold text-green-600 mb-2">
+            {dividendProjections[4] ? formatCurrency(dividendProjections[4].totalDividends) : formatCurrency(0)}
+          </p>
+          <p className="text-sm text-green-700 dark:text-green-300">
+            Total passive income over 20 years
+          </p>
+        </div>
+        
+        <div className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-6">
+          <div className="flex items-center space-x-3 mb-4">
+            <Calendar className="h-6 w-6 text-blue-600" />
+            <h4 className="font-semibold text-blue-800 dark:text-blue-200">
+              Monthly Dividend (5 Years)
+            </h4>
+          </div>
+          <p className="text-2xl font-bold text-blue-600 mb-2">
+            {dividendProjections[2] ? 
+              formatCurrency((dividendProjections[2].portfolioValue * (dividendYield * Math.pow(1 + dividendGrowthRate / 100, 5) / 100)) / 12) : 
+              formatCurrency(0)
+            }
+          </p>
+          <p className="text-sm text-blue-700 dark:text-blue-300">
+            Estimated monthly passive income
+          </p>
+        </div>
+        
+        <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200 dark:border-purple-800 p-6">
+          <div className="flex items-center space-x-3 mb-4">
+            <Percent className="h-6 w-6 text-purple-600" />
+            <h4 className="font-semibold text-purple-800 dark:text-purple-200">
+              Future Yield on Cost
+            </h4>
+          </div>
+          <p className="text-2xl font-bold text-purple-600 mb-2">
+            {(dividendYield * Math.pow(1 + dividendGrowthRate / 100, 10)).toFixed(1)}%
+          </p>
+          <p className="text-sm text-purple-700 dark:text-purple-300">
+            Dividend yield in 10 years
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderScenariosTab = () => (
+    <div className="space-y-6">
+      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+          Scenario Analysis - 5 Year Projections
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+          Compare how different market conditions could affect your portfolio growth over 5 years.
+        </p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {Object.entries(scenarios).map(([key, scenario]) => {
+            // Calculate 5-year projection for this scenario
+            const annualReturn = scenario.annualReturn;
+            const growthRate = initialCapital > 0 ? annualReturn / initialCapital : 0;
+            
+            let portfolioValue = initialCapital;
+            let totalContributions = initialCapital;
+            
+            for (let year = 1; year <= 5; year++) {
+              const yearlyContributions = monthlyContribution * 12;
+              totalContributions += yearlyContributions;
+              const startValue = portfolioValue;
+              const avgValueDuringYear = startValue + (yearlyContributions / 2);
+              const yearGrowth = avgValueDuringYear * growthRate;
+              portfolioValue += yearlyContributions + yearGrowth;
+            }
+            
+            const totalGrowth = portfolioValue - totalContributions;
+            const cagr = calculateCAGR(initialCapital, portfolioValue, 5);
+            
+            return (
+              <div
+                key={key}
+                className={`${scenario.bgColor} ${scenario.borderColor} border rounded-xl p-6`}
+              >
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className={`p-2 rounded-lg ${key === 'conservative' ? 'bg-orange-500' : key === 'realistic' ? 'bg-blue-500' : 'bg-green-500'}`}>
+                    {key === 'conservative' ? <ArrowDown className="h-5 w-5 text-white" /> :
+                     key === 'realistic' ? <LineChart className="h-5 w-5 text-white" /> :
+                     <ArrowUp className="h-5 w-5 text-white" />}
+                  </div>
+                  <h4 className={`font-semibold ${scenario.color}`}>
+                    {scenario.name}
+                  </h4>
+                </div>
+                
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  {scenario.description}
+                </p>
+                
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Annual Return</p>
+                    <p className={`text-xl font-bold ${scenario.color}`}>
+                      {formatCurrency(scenario.annualReturn)}
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">5-Year Value</p>
+                    <p className={`text-xl font-bold ${scenario.color}`}>
+                      {formatCurrency(portfolioValue)}
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Total Growth</p>
+                    <p className={`text-lg font-semibold ${totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCurrency(totalGrowth)}
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">CAGR</p>
+                    <p className={`text-lg font-semibold ${cagr >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {cagr.toFixed(1)}%
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Risk Analysis */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <div className="flex items-center space-x-3 mb-4">
+          <AlertTriangle className="h-6 w-6 text-yellow-600" />
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+            Risk Considerations
+          </h3>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <h4 className="font-semibold text-gray-900 dark:text-white mb-3">Market Risks</h4>
+            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+              <li>• Trading performance can vary significantly</li>
+              <li>• Past results don't guarantee future returns</li>
+              <li>• Market conditions change over time</li>
+              <li>• Consider diversification beyond trading</li>
+            </ul>
+          </div>
+          
+          <div>
+            <h4 className="font-semibold text-gray-900 dark:text-white mb-3">Recommendations</h4>
+            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+              <li>• Maintain 3-6 months emergency fund</li>
+              <li>• Don't rely solely on trading income</li>
+              <li>• Consider tax implications of trading</li>
+              <li>• Review and adjust strategy regularly</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (trades.length === 0) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 sm:p-8">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
         <div className="text-center">
-          <Calculator className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-gray-300 dark:text-gray-600 mb-4" />
-          <h3 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white mb-2">
+          <Calculator className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600 mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
             No Trading Data Available
           </h3>
-          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400">
-            Start trading to see your actual P&L performance and earnings projections.
+          <p className="text-gray-500 dark:text-gray-400">
+            Start trading to see earnings projections and dividend calculations.
           </p>
         </div>
       </div>
@@ -400,407 +892,70 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 gap-4">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <div className="flex items-center justify-between mb-4">
           <div>
             <div className="flex items-center space-x-3 mb-2">
               <div className="p-2 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg shadow-sm">
-                <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+                <TrendingUp className="h-6 w-6 text-white" />
               </div>
-              <h2 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white">
-                Trading Performance &amp; Projections
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Earnings Projections & Dividend Calculator
               </h2>
             </div>
-            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">
-              Track your actual trading performance and project future earnings
+            <p className="text-gray-600 dark:text-gray-400">
+              Project your trading performance and calculate potential dividend income
             </p>
           </div>
         </div>
-
-        {/* Tab navigation */}
-        <div className="flex flex-wrap items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+        
+        {/* Tab Navigation */}
+        <div className="flex items-center space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
           <button
             onClick={() => setActiveTab('projections')}
-            className={`flex items-center px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${
+            className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
               activeTab === 'projections'
                 ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
             }`}
           >
-            <Calculator className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-            <span className="hidden sm:inline">Projections</span>
-            <span className="sm:hidden">Proj</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('plchart')}
-            className={`flex items-center px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${
-              activeTab === 'plchart'
-                ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            <LineChart className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-            <span className="hidden sm:inline">Trading P&L</span>
-            <span className="sm:hidden">P&L</span>
+            <Calculator className="h-4 w-4 mr-2" />
+            Performance Projections
           </button>
           <button
             onClick={() => setActiveTab('dividends')}
-            className={`flex items-center px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${
+            className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
               activeTab === 'dividends'
                 ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
             }`}
           >
-            <PieChart className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-            <span className="hidden sm:inline">Dividends</span>
-            <span className="sm:hidden">Div</span>
+            <PieChart className="h-4 w-4 mr-2" />
+            Dividend Calculator
+          </button>
+          <button
+            onClick={() => setActiveTab('scenarios')}
+            className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+              activeTab === 'scenarios'
+                ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            <BarChart3 className="h-4 w-4 mr-2" />
+            Scenario Analysis
           </button>
         </div>
       </div>
 
       {/* Performance Metrics */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
-        <div className="flex items-center space-x-3 mb-4 sm:mb-6">
-          <div className="p-2 bg-blue-500 rounded-lg">
-            <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
-          </div>
-          <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
-            Trading Performance Metrics
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-          <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Total P&L</p>
-            <p className={`text-base sm:text-xl font-bold ${
-              performanceMetrics.totalPL >= 0 ? 'text-green-600' : 'text-red-600'
-            }`}>
-              {formatCurrency(performanceMetrics.totalPL)}
-            </p>
-          </div>
-
-          <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Win Rate</p>
-            <p className={`text-base sm:text-xl font-bold ${
-              performanceMetrics.winRate >= 50 ? 'text-green-600' : 'text-red-600'
-            }`}>
-              {performanceMetrics.winRate.toFixed(1)}%
-            </p>
-          </div>
-
-          <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Avg Annual P&L</p>
-            <p className={`text-base sm:text-xl font-bold ${
-              performanceMetrics.avgAnnualPL >= 0 ? 'text-green-600' : 'text-red-600'
-            }`}>
-              {formatCurrency(performanceMetrics.avgAnnualPL)}
-            </p>
-          </div>
-
-          <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Trading Days</p>
-            <p className="text-base sm:text-xl font-bold text-gray-900 dark:text-white">
-              {performanceMetrics.tradingDays}
-            </p>
-          </div>
-        </div>
-      </div>
+      {renderMetricsCard()}
 
       {/* Tab Content */}
-      {activeTab === 'projections' && (
-        <div className="space-y-4 sm:space-y-6">
-          {/* Input controls */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
-            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              Projection Settings
-            </h3>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-              {renderInput('Initial Capital', initialCapital, handleCapitalChange, '$', '', 1000)}
-              {renderInput('Monthly Contribution', monthlyContribution, handleContributionChange, '$', '', 100)}
-            </div>
-
-            <div className="mt-4 sm:mt-6">
-              <label className="flex items-center space-x-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={conservativeMode}
-                  onChange={(e) => setConservativeMode(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Conservative Mode (40% discount on projections)
-                </span>
-              </label>
-            </div>
-          </div>
-
-          {/* Warning for insufficient data */}
-          {performanceMetrics.tradingDays < 30 && (
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-              <div className="flex items-start">
-                <AlertTriangle className="h-5 w-5 text-yellow-600 mr-2 mt-0.5 flex-shrink-0" />
-                <div>
-                  <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-                    Limited Data Warning
-                  </h4>
-                  <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-                    Projections are based on {performanceMetrics.tradingDays} trading days. For more accurate
-                    projections, consider trading for at least 30–90 days.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Projections table */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
-                Portfolio Projections {conservativeMode && '(Conservative)'}
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Based on {formatCurrency(performanceMetrics.avgAnnualPL)} average annual return
-              </p>
-            </div>
-
-            {/* Desktop table */}
-            <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 dark:bg-gray-700">
-                  <tr>
-                    <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Time Period
-                    </th>
-                    <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Portfolio Value
-                    </th>
-                    <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Total Growth
-                    </th>
-                    <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      CAGR
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                  {projections.map((projection) => {
-                    const cagr = projection.years > 0 && getNumericInitialCapital() > 0
-                      ? (Math.pow(projection.projectedValue / getNumericInitialCapital(), 1 / projection.years) - 1) * 100
-                      : 0;
-                    return (
-                      <tr key={projection.period} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                          {projection.period}
-                        </td>
-                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white text-right">
-                          <span className="font-semibold">{formatCurrency(projection.projectedValue)}</span>
-                        </td>
-                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-right">
-                          <span className={`font-semibold ${
-                            projection.totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {formatCurrency(projection.totalGrowth)}
-                          </span>
-                        </td>
-                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-right">
-                          <span className={`font-semibold ${cagr >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {cagr.toFixed(1)}%
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile card view */}
-            <div className="sm:hidden divide-y divide-gray-200 dark:divide-gray-700">
-              {projections.map((projection) => {
-                const cagr = projection.years > 0 && getNumericInitialCapital() > 0
-                  ? (Math.pow(projection.projectedValue / getNumericInitialCapital(), 1 / projection.years) - 1) * 100
-                  : 0;
-                return (
-                  <div key={projection.period} className="p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-semibold text-gray-900 dark:text-white">{projection.period}</h4>
-                      <span className={`text-sm px-2 py-1 rounded ${
-                        cagr >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                      }`}>
-                        {cagr.toFixed(1)}% CAGR
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-500 dark:text-gray-400">Portfolio Value:</span>
-                        <div className="font-semibold text-gray-900 dark:text-white">
-                          {formatCurrency(projection.projectedValue)}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-gray-500 dark:text-gray-400">Total Growth:</span>
-                        <div className={`font-semibold ${
-                          projection.totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                          {formatCurrency(projection.totalGrowth)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Key insights */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-            <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4 sm:p-6">
-              <div className="flex items-center space-x-3 mb-4">
-                <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
-                <h4 className="text-sm sm:text-base font-semibold text-green-800 dark:text-green-200">
-                  5-Year Growth
-                </h4>
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-green-600 mb-2">
-                {projections[2] ? formatCurrency(projections[2].projectedValue) : formatCurrency(0)}
-              </p>
-              <p className="text-xs sm:text-sm text-green-700 dark:text-green-300">Projected portfolio value</p>
-            </div>
-
-            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4 sm:p-6">
-              <div className="flex items-center space-x-3 mb-4">
-                <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
-                <h4 className="text-sm sm:text-base font-semibold text-blue-800 dark:text-blue-200">
-                  Monthly Income
-                </h4>
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-blue-600 mb-2">
-                {formatCurrency(performanceMetrics.avgMonthlyPL)}
-              </p>
-              <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">
-                Average monthly trading profit
-              </p>
-            </div>
-
-            <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200 dark:border-purple-800 p-4 sm:p-6">
-              <div className="flex items-center space-x-3 mb-4">
-                <Target className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
-                <h4 className="text-sm sm:text-base font-semibold text-purple-800 dark:text-purple-200">
-                  Sharpe Ratio
-                </h4>
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-purple-600 mb-2">
-                {performanceMetrics.sharpeRatio.toFixed(2)}
-              </p>
-              <p className="text-xs sm:text-sm text-purple-700 dark:text-purple-300">Risk-adjusted returns</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'plchart' && (
-        <PLChart 
-          trades={validTrades}
-          selectedDate={selectedDate}
-          plTimeRange={plTimeRange}
-          setPLTimeRange={setPLTimeRange}
-          title="Trading P&L Performance"
-          showTimeRangeSelector={true}
-        />
-      )}
-
-      {activeTab === 'dividends' && (
-        <div className="space-y-4 sm:space-y-6">
-          {/* Dividend controls */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
-            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              Dividend Settings
-            </h3>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-              {renderInput(
-                'Dividend Yield (%)',
-                dividendYield,
-                (value) => setDividendYield(parseFloat(value) || 0),
-                '',
-                '%',
-                0.1
-              )}
-              {renderInput(
-                'Dividend Growth Rate (%)',
-                dividendGrowthRate,
-                (value) => setDividendGrowthRate(parseFloat(value) || 0),
-                '',
-                '%',
-                0.1
-              )}
-            </div>
-
-            <div className="mt-4 sm:mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-              <div className="flex items-start">
-                <Info className="h-5 w-5 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
-                <div>
-                  <h4 className="text-sm font-medium text-blue-800 dark:text-blue-200">
-                    Dividend Calculator Info
-                  </h4>
-                  <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                    This calculator assumes your trading profits are invested in dividend-paying stocks with
-                    reinvested dividends.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Dividend insights */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-            <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4 sm:p-6">
-              <div className="flex items-center space-x-3 mb-4">
-                <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
-                <h4 className="text-sm sm:text-base font-semibold text-green-800 dark:text-green-200">
-                  15-Year Dividend Income
-                </h4>
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-green-600 mb-2">
-                {formatCurrency(performanceMetrics.totalPL * (dividendYield / 100) * 15)}
-              </p>
-              <p className="text-xs sm:text-sm text-green-700 dark:text-green-300">Based on current trading profits</p>
-            </div>
-
-            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4 sm:p-6">
-              <div className="flex items-center space-x-3 mb-4">
-                <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
-                <h4 className="text-sm sm:text-base font-semibold text-blue-800 dark:text-blue-200">
-                  Monthly Dividend (Current)
-                </h4>
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-blue-600 mb-2">
-                {formatCurrency((performanceMetrics.totalPL * (dividendYield / 100)) / 12)}
-              </p>
-              <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">Based on current trading profits</p>
-            </div>
-
-            <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200 dark:border-purple-800 p-4 sm:p-6">
-              <div className="flex items-center space-x-3 mb-4">
-                <Percent className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
-                <h4 className="text-sm sm:text-base font-semibold text-purple-800 dark:text-purple-200">
-                  Future Yield on Cost
-                </h4>
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-purple-600 mb-2">
-                {(dividendYield * Math.pow(1 + dividendGrowthRate / 100, 10)).toFixed(1)}%
-              </p>
-              <p className="text-xs sm:text-sm text-purple-700 dark:text-purple-300">
-                Dividend yield in 10 years
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      {activeTab === 'projections' && renderProjectionsTab()}
+      {activeTab === 'dividends' && renderDividendsTab()}
+      {activeTab === 'scenarios' && renderScenariosTab()}
     </div>
   );
 };
