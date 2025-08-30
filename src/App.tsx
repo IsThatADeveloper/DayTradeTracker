@@ -1,6 +1,6 @@
-// src/App.tsx - Fixed Hook Order to Prevent React Error + Persistent Active View
+// src/App.tsx - Fixed Hook Order to Prevent React Error + Persistent Active View + EarningsProjection
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings } from 'lucide-react';
+import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator } from 'lucide-react';
 import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useBrokerIntegration } from './hooks/useBrokerIntegration';
@@ -19,6 +19,7 @@ import { Profile } from './components/Profile';
 import { AIInsights } from './components/AIInsights';
 import { StockSearch } from './components/StockSearch';
 import { StockNews } from './components/StockNews';
+import { EarningsProjection } from './components/EarningsProjection';
 import { HomePage } from './components/HomePage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
@@ -32,6 +33,7 @@ const MemoizedTradeTable = React.memo(TradeTable);
 const MemoizedCalendar = React.memo(Calendar);
 const MemoizedStockSearch = React.memo(StockSearch);
 const MemoizedStockNews = React.memo(StockNews);
+const MemoizedEarningsProjection = React.memo(EarningsProjection);
 
 // Navigation items configuration
 const NAVIGATION_ITEMS = [
@@ -64,10 +66,16 @@ const NAVIGATION_ITEMS = [
     label: 'Market News',
     icon: Globe,
     description: 'Market research center'
+  },
+  {
+    id: 'projections',
+    label: 'Projections',
+    icon: Calculator,
+    description: 'Earnings and dividend calculator'
   }
 ];
 
-type ActiveViewType = 'calendar' | 'daily' | 'search' | 'brokers' | 'news';
+type ActiveViewType = 'calendar' | 'daily' | 'search' | 'brokers' | 'news' | 'projections';
 
 function AppContent() {
   // CRITICAL FIX: ALL hooks must be called before ANY conditional returns
@@ -278,7 +286,7 @@ function AppContent() {
 
   // FIXED: Add handler for navigation with proper type checking
   const handleNavigation = useCallback((viewId: string) => {
-    if (['daily', 'calendar', 'search', 'brokers', 'news'].includes(viewId)) {
+    if (['daily', 'calendar', 'search', 'brokers', 'news', 'projections'].includes(viewId)) {
       setActiveView(viewId as ActiveViewType);
       setMobileMenuOpen(false);
     }
@@ -435,6 +443,10 @@ function AppContent() {
     
     if (activeView === 'news') {
       return <MemoizedStockNews trades={activeTrades} />;
+    }
+    
+    if (activeView === 'projections') {
+      return <MemoizedEarningsProjection trades={activeTrades} selectedDate={selectedDate} />;
     }
     
     // Daily view (default)
