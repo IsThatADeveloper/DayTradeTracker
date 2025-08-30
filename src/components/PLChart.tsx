@@ -87,7 +87,7 @@
 //     setMounted(true);
 //   }, []);
 
-//   // Simple dimension update - CSP Safe
+//   // Simple dimension update
 //   useEffect(() => {
 //     if (!mounted || !containerRef.current) return;
 
@@ -97,25 +97,23 @@
       
 //       const rect = container.getBoundingClientRect();
 //       const width = Math.max(300, rect.width - 48);
-//       // Use matchMedia instead of window.innerWidth for CSP safety
-//       const isMobile = window.matchMedia('(max-width: 767px)').matches;
-//       const height = isMobile ? 250 : 400;
+//       const height = window.innerWidth < 768 ? 250 : 400;
       
 //       setDimensions({ width, height });
 //     };
 
 //     updateSize();
     
-//     let timeout: number;
+//     let timeout: NodeJS.Timeout;
 //     const handleResize = () => {
-//       if (timeout) clearTimeout(timeout);
-//       timeout = window.setTimeout(updateSize, 100);
+//       clearTimeout(timeout);
+//       timeout = setTimeout(updateSize, 100);
 //     };
 
 //     window.addEventListener('resize', handleResize);
 //     return () => {
 //       window.removeEventListener('resize', handleResize);
-//       if (timeout) clearTimeout(timeout);
+//       clearTimeout(timeout);
 //     };
 //   }, [mounted]);
 
@@ -233,7 +231,7 @@
 //     };
 //   }, [chartData]);
 
-//   // Chart layout calculations - CSP Safe
+//   // Chart layout calculations
 //   const layout = useMemo(() => {
 //     if (chartData.length === 0) return null;
 
@@ -243,8 +241,7 @@
 //     const range = Math.max(maxValue - minValue, 1);
 //     const padding = range * 0.1;
 
-//     // Use matchMedia for CSP safety
-//     const isMobile = window.matchMedia('(max-width: 767px)').matches;
+//     const isMobile = window.innerWidth < 768;
 //     const chartPadding = {
 //       top: 20,
 //       right: isMobile ? 20 : 60,
@@ -281,29 +278,20 @@
 //     return chartHeight - ((value - adjustedMin) / adjustedRange) * chartHeight;
 //   }, [layout]);
 
-//   // Build line path - CSP Safe
+//   // Build line path
 //   const linePath = useMemo(() => {
 //     if (!layout || chartData.length < 2) return '';
     
-//     const pathCommands = [];
-//     for (let i = 0; i < chartData.length; i++) {
-//       const command = i === 0 ? 'M' : 'L';
-//       const x = getX(i);
-//       const y = getY(chartData[i].value);
-//       pathCommands.push(command + ' ' + x + ' ' + y);
-//     }
-//     return pathCommands.join(' ');
+//     const points = chartData.map((_, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(chartData[i].value)}`);
+//     return points.join(' ');
 //   }, [chartData, getX, getY, layout]);
 
-//   // Build area path - CSP Safe
+//   // Build area path
 //   const areaPath = useMemo(() => {
 //     if (!layout || chartData.length < 2) return '';
     
 //     const zeroY = Math.max(0, Math.min(layout.chartHeight, getY(0)));
-//     const endX = getX(chartData.length - 1);
-//     const startX = getX(0);
-    
-//     return linePath + ' L ' + endX + ' ' + zeroY + ' L ' + startX + ' ' + zeroY + ' Z';
+//     return `${linePath} L ${getX(chartData.length - 1)} ${zeroY} L ${getX(0)} ${zeroY} Z`;
 //   }, [linePath, layout, chartData.length, getX, getY]);
 
 //   // Mouse handlers
