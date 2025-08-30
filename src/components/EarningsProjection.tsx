@@ -54,17 +54,16 @@ type TimeRange = 'today' | '7d' | '1m' | '3m' | '1y' | 'all';
 const MAX_CAPITAL = 1000000000; // 1 billion cap
 
 // Robust timestamp conversion utility
-const safeGetDate = (timestamp: any): Date | null => {
-  if (!timestamp) return null;
-  
+const safeGetDate = (timestamp: unknown): Date | null => {
+  if (timestamp == null) return null;
+
   try {
-    // If it's already a Date object
     if (timestamp instanceof Date) {
       return isNaN(timestamp.getTime()) ? null : timestamp;
     }
-    
-    // If it's a string or number, try to convert
-    const date = new Date(timestamp);
+
+    // Handle numbers (ms since epoch) or strings
+    const date = new Date(timestamp as string | number);
     return isNaN(date.getTime()) ? null : date;
   } catch {
     return null;
@@ -74,18 +73,18 @@ const safeGetDate = (timestamp: any): Date | null => {
 // Safe timestamp for sorting
 const safeGetTimestamp = (trade: Trade): number => {
   const date = safeGetDate(trade.timestamp);
-  return date ? date.getTime() : 0;
+  return date && !isNaN(date.getTime()) ? date.getTime() : 0;
 };
 
 // Safe date formatting
-const safeFormatDate = (timestamp: any, formatString: string = 'yyyy-MM-dd'): string => {
+const safeFormatDate = (timestamp: unknown, formatString = "yyyy-MM-dd"): string => {
   const date = safeGetDate(timestamp);
-  if (!date) return 'Invalid Date';
-  
+  if (!date) return "Invalid Date";
+
   try {
     return format(date, formatString);
   } catch {
-    return 'Invalid Date';
+    return "Invalid Date";
   }
 };
 
