@@ -13,6 +13,7 @@ interface PLChartDataPoint {
   date: Date;
   value: number;
   label: string;
+  portfolioValue: number; // Added: track total portfolio value
 }
 
 interface CurrentPLStats {
@@ -20,6 +21,8 @@ interface CurrentPLStats {
   change: number;
   changePercent: number;
   isPositive: boolean;
+  portfolioValue: number; // Added: current portfolio value
+  initialCapital: number; // Added: initial capital
 }
 
 type TimeRange = 'today' | '7d' | '1m' | '3m' | '1y' | 'all';
@@ -31,6 +34,7 @@ interface PLChartProps {
   setPLTimeRange?: (range: TimeRange) => void;
   title?: string;
   showTimeRangeSelector?: boolean;
+  initialCapital?: number; // Added: prop for initial capital
 }
 
 // Helper function to safely convert timestamp to Date
@@ -62,7 +66,8 @@ export const PLChart: React.FC<PLChartProps> = ({
   plTimeRange = '1m',
   setPLTimeRange,
   title = 'P&L Performance',
-  showTimeRangeSelector = true
+  showTimeRangeSelector = true,
+  initialCapital = 10000 // Default initial capital
 }) => {
   const [localTimeRange, setLocalTimeRange] = useState<TimeRange>(plTimeRange);
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
@@ -141,7 +146,7 @@ export const PLChart: React.FC<PLChartProps> = ({
     };
   }, [isMounted]);
 
-  // Generate P&L chart data with proper date filtering and mobile optimization
+  // FIXED: Generate P&L chart data with proper portfolio value tracking
   const plChartData = useMemo((): PLChartDataPoint[] => {
     if (!trades || trades.length === 0) return [];
 
@@ -203,27 +208,47 @@ export const PLChart: React.FC<PLChartProps> = ({
 
       if (filteredTrades.length === 0) return [];
 
-      // Create data points showing cumulative P&L
+      // FIXED: Create data points showing both cumulative P&L and portfolio value
       const dataPoints: PLChartDataPoint[] = [];
       let runningPL = 0;
+      
+      // Calculate initial P&L before the filtered period for proper portfolio value calculation
+      let initialPLBeforePeriod = 0;
+      if (currentTimeRange !== 'all') {
+        // Sum all P&L from trades before the start date
+        const tradesBeforeStart = sortedTrades.filter(trade => {
+          const tradeDate = getValidDate(trade.timestamp);
+          return tradeDate && tradeDate < startDate;
+        });
+        initialPLBeforePeriod = tradesBeforeStart.reduce((sum, trade) => sum + trade.realizedPL, 0);
+      }
 
-      // For "all time", don't add a starting point at $0 since we want to show actual cumulative P&L
+      // Starting portfolio value for the period
+      const startingPortfolioValue = initialCapital + initialPLBeforePeriod;
+
+      // Add starting point for non-"all" time ranges
       if (currentTimeRange !== 'all') {
         dataPoints.push({
           date: startDate,
-          value: 0,
+          value: 0, // P&L change from start of period
           label: formatCurrency(0),
+          portfolioValue: startingPortfolioValue,
         });
       }
 
-      // Add each trade's cumulative P&L
+      // Add each trade's cumulative effect
       filteredTrades.forEach((trade) => {
         runningPL += trade.realizedPL;
         const tradeDate = getValidDate(trade.timestamp)!;
+        const currentPortfolioValue = currentTimeRange === 'all' 
+          ? initialCapital + runningPL  // For "all", portfolio = initial + total P&L
+          : startingPortfolioValue + runningPL; // For periods, portfolio = period start + period P&L
+        
         dataPoints.push({
           date: tradeDate,
-          value: runningPL,
+          value: runningPL, // P&L change within the period
           label: formatCurrency(runningPL),
+          portfolioValue: currentPortfolioValue,
         });
       });
 
@@ -244,72 +269,64 @@ export const PLChart: React.FC<PLChartProps> = ({
       console.error('Error generating chart data:', error);
       return [];
     }
-  }, [trades, currentTimeRange, selectedDate]);
+  }, [trades, currentTimeRange, selectedDate, initialCapital]);
 
-  // FIXED: Calculate current stats with proper percentage calculation for all timeframes
+  // FIXED: Calculate current stats with proper percentage based on portfolio value
   const currentPLStats = useMemo((): CurrentPLStats => {
     try {
-      if (plChartData.length === 0) return { currentValue: 0, change: 0, changePercent: 0, isPositive: true };
+      if (plChartData.length === 0) {
+        return { 
+          currentValue: 0, 
+          change: 0, 
+          changePercent: 0, 
+          isPositive: true,
+          portfolioValue: initialCapital,
+          initialCapital
+        };
+      }
       
       const current = plChartData[plChartData.length - 1].value;
+      const currentPortfolioValue = plChartData[plChartData.length - 1].portfolioValue;
       
-      // Calculate the actual P&L change for the selected time period
       let change: number;
       let changePercent: number;
+      let startingPortfolioValue: number;
 
       if (currentTimeRange === 'all') {
-        // For "all time", the change is the total cumulative P&L from 0
-        change = current;
-        // For P&L from 0 starting point, percentage doesn't make much sense
-        // We'll show the absolute change as the meaningful metric
-        changePercent = 0; // We'll show "Total P&L" instead of percentage
+        // For "all time", compare against initial capital
+        change = current; // Total P&L
+        startingPortfolioValue = initialCapital;
+        changePercent = initialCapital > 0 ? (change / initialCapital) * 100 : 0;
       } else {
-        // For other time ranges, we need to find the P&L value at the start of the period
-        // This is tricky because plChartData might start with a 0 point we added
+        // For time periods, compare against the starting portfolio value for that period
+        const periodStartPoint = plChartData[0];
+        change = current - periodStartPoint.value; // P&L change within period
+        startingPortfolioValue = periodStartPoint.portfolioValue;
         
-        let periodStartValue: number;
-        
-        if (plChartData.length === 1) {
-          // Only one data point, so change from 0
-          periodStartValue = 0;
-        } else if (plChartData[0].value === 0 && plChartData.length > 1) {
-          // First point is our added 0 starting point, so use it
-          periodStartValue = 0;
-        } else {
-          // First point is actual trade data, use it
-          periodStartValue = plChartData[0].value;
-        }
-        
-        change = current - periodStartValue;
-        
-        // For percentage calculation, we need to base it on the absolute portfolio value, not P&L
-        // Since P&L can be negative, we'll calculate percentage based on the absolute change
-        // relative to the starting P&L position
-        if (periodStartValue === 0) {
-          // Starting from break-even, any gain/loss is essentially infinite percentage
-          // We'll show absolute change as more meaningful
-          changePercent = change !== 0 ? (change > 0 ? 100 : -100) : 0;
-        } else {
-          // Calculate percentage change from the starting P&L position
-          changePercent = (change / Math.abs(periodStartValue)) * 100;
-          // If we're moving from negative to positive or vice versa, cap the percentage display
-          if (Math.abs(changePercent) > 999) {
-            changePercent = changePercent > 0 ? 999 : -999;
-          }
-        }
+        // Calculate percentage based on portfolio value at start of period
+        changePercent = startingPortfolioValue > 0 ? (change / startingPortfolioValue) * 100 : 0;
       }
       
       return {
         currentValue: current,
         change,
         changePercent,
-        isPositive: change >= 0
+        isPositive: change >= 0,
+        portfolioValue: currentPortfolioValue,
+        initialCapital
       };
     } catch (error) {
       console.error('Error calculating P&L stats:', error);
-      return { currentValue: 0, change: 0, changePercent: 0, isPositive: true };
+      return { 
+        currentValue: 0, 
+        change: 0, 
+        changePercent: 0, 
+        isPositive: true,
+        portfolioValue: initialCapital,
+        initialCapital
+      };
     }
-  }, [plChartData, currentTimeRange]);
+  }, [plChartData, currentTimeRange, initialCapital]);
 
   // Don't render until mounted
   if (!isMounted) {
@@ -487,14 +504,21 @@ export const PLChart: React.FC<PLChartProps> = ({
       {/* Header Section */}
       <div className="bg-gradient-to-r from-slate-50 via-blue-50 to-slate-50 dark:from-gray-800 dark:via-blue-900/20 dark:to-gray-800 px-6 py-8 border-b border-gray-200 dark:border-gray-700">
         <div className="text-center space-y-4">
-          {/* Main Value */}
-          <div className="space-y-3">
+          {/* Portfolio Value - Main Display */}
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-widest">
+              Portfolio Value
+            </div>
             <div className="flex items-center justify-center space-x-3">
               <Activity className="h-8 w-8 text-blue-600 dark:text-blue-400" />
               <div className="text-4xl sm:text-6xl font-bold text-gray-900 dark:text-white tracking-tight">
-                {formatCurrency(currentPLStats.currentValue)}
+                {formatCurrency(currentPLStats.portfolioValue)}
               </div>
             </div>
+          </div>
+
+          {/* P&L Change and Percentage */}
+          <div className="space-y-3">
             <div
               className={`inline-flex items-center px-6 py-3 rounded-full text-lg font-semibold shadow-lg transition-all duration-300 ${
                 currentPLStats.isPositive 
@@ -510,14 +534,17 @@ export const PLChart: React.FC<PLChartProps> = ({
               <span className="flex items-center space-x-2">
                 <span>{currentPLStats.isPositive ? '+' : ''}{formatCurrency(currentPLStats.change)}</span>
                 <span className="opacity-75">
-                  {currentTimeRange === 'all' 
-                    ? `(Total P&L)` 
-                    : Math.abs(currentPLStats.changePercent) > 999
-                      ? `(${currentPLStats.changePercent > 0 ? '+' : ''}999%+)`
-                      : `(${currentPLStats.isPositive ? '+' : ''}${currentPLStats.changePercent.toFixed(1)}%)`
-                  }
+                  ({currentPLStats.isPositive ? '+' : ''}{currentPLStats.changePercent.toFixed(2)}%)
                 </span>
               </span>
+            </div>
+
+            {/* Additional context */}
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {currentTimeRange === 'all' 
+                ? `vs Initial Capital (${formatCurrency(initialCapital)})`
+                : `${getTimeRangeLabel()} performance`
+              }
             </div>
           </div>
           
@@ -679,7 +706,7 @@ export const PLChart: React.FC<PLChartProps> = ({
                 </g>
               )}
 
-              {/* FIXED: Static data points - removed bouncing/scaling effects */}
+              {/* Data points */}
               {plChartData.map((point, i) => {
                 const cx = xAt(i);
                 const cy = yAt(point.value);
@@ -710,18 +737,24 @@ export const PLChart: React.FC<PLChartProps> = ({
                 );
               })}
 
-              {/* Enhanced tooltip - only show info popup */}
+              {/* Enhanced tooltip */}
               {isMouseOver && hoveredPoint !== null && hoveredPoint < plChartData.length && (
                 <g>
                   <foreignObject 
-                    x={Math.max(10, Math.min(chartWidth - 160, xAt(hoveredPoint) - 80))} 
-                    y={Math.max(10, yAt(plChartData[hoveredPoint].value) - 80)} 
-                    width={160} 
-                    height={70}
+                    x={Math.max(10, Math.min(chartWidth - 180, xAt(hoveredPoint) - 90))} 
+                    y={Math.max(10, yAt(plChartData[hoveredPoint].value) - 100)} 
+                    width={180} 
+                    height={90}
                   >
                     <div className="bg-white dark:bg-gray-800 border-2 border-blue-200 dark:border-blue-600 rounded-lg shadow-xl p-3 text-sm font-medium">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-gray-600 dark:text-gray-400">Value</span>
+                        <span className="text-gray-600 dark:text-gray-400">Portfolio Value</span>
+                        <span className="font-bold text-gray-900 dark:text-white">
+                          {formatCurrency(plChartData[hoveredPoint].portfolioValue)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-gray-600 dark:text-gray-400">P&L Change</span>
                         <span className={`font-bold ${currentPLStats.isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                           {formatCurrency(plChartData[hoveredPoint].value)}
                         </span>
