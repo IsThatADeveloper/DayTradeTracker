@@ -1,4 +1,4 @@
-// src/components/EarningsProjection.tsx - Fixed date handling
+// src/components/EarningsProjection.tsx - Fixed percentage calculations
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   TrendingUp,
@@ -42,6 +42,8 @@ interface ProjectionPeriod {
   growthPercentage: number;
   projectedPL: number;
   monthlyContribution: number;
+  totalContributions: number;
+  cagr: number;
 }
 
 interface PerformanceMetrics {
@@ -58,13 +60,14 @@ interface PerformanceMetrics {
   maxDrawdown: number;
   profitFactor: number;
   consistency: number;
+  annualReturnRate: number; // Added: Annual return rate as percentage of initial capital
 }
 
 type TimeRange = 'today' | '7d' | '1m' | '3m' | '1y' | 'all';
 
 const MAX_CAPITAL = 1000000000; // 1 billion cap
 
-// FIXED: Helper function to safely convert timestamp to Date
+// Helper function to safely convert timestamp to Date
 const getValidDate = (timestamp: any): Date | null => {
   if (!timestamp) return null;
   
@@ -81,14 +84,14 @@ const getValidDate = (timestamp: any): Date | null => {
   }
 };
 
-// FIXED: Helper function to safely get timestamp for sorting
+// Helper function to safely get timestamp for sorting
 const getTimestamp = (trade: Trade): number => {
   const date = getValidDate(trade.timestamp);
   return date ? date.getTime() : 0;
 };
 
 export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, selectedDate }) => {
-  // Input states with proper validation - FIXED to allow empty editing
+  // Input states with proper validation
   const [initialCapital, setInitialCapital] = useState<string>('10000');
   const [monthlyContribution, setMonthlyContribution] = useState<string>('1000');
   const [dividendYield, setDividendYield] = useState<number>(2.5);
@@ -108,15 +111,13 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     return isNaN(num) || num < 0 ? 0 : Math.min(num, MAX_CAPITAL / 12);
   }, [monthlyContribution]);
 
-  // Input validation helpers - FIXED to allow empty values
+  // Input validation helpers
   const handleCapitalChange = useCallback((value: string) => {
-    // Allow empty string for editing
     if (value === '') {
       setInitialCapital('');
       return;
     }
     
-    // Only allow valid number formats (including decimals)
     if (/^\d*\.?\d*$/.test(value)) {
       const numValue = parseFloat(value);
       if (!isNaN(numValue) && numValue <= MAX_CAPITAL) {
@@ -126,13 +127,11 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
   }, []);
 
   const handleContributionChange = useCallback((value: string) => {
-    // Allow empty string for editing
     if (value === '') {
       setMonthlyContribution('');
       return;
     }
     
-    // Only allow valid number formats (including decimals)
     if (/^\d*\.?\d*$/.test(value)) {
       const numValue = parseFloat(value);
       if (!isNaN(numValue) && numValue <= MAX_CAPITAL / 12) {
@@ -141,7 +140,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     }
   }, []);
 
-  // Calculate comprehensive performance metrics
+  // FIXED: Calculate comprehensive performance metrics with proper return rate
   const performanceMetrics = useMemo((): PerformanceMetrics => {
     if (trades.length === 0) {
       return {
@@ -158,10 +157,10 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
         maxDrawdown: 0,
         profitFactor: 0,
         consistency: 0,
+        annualReturnRate: 0,
       };
     }
 
-    // FIXED: Filter out trades with invalid timestamps and sort safely
     const validTrades = trades.filter(trade => getValidDate(trade.timestamp) !== null);
     
     if (validTrades.length === 0) {
@@ -179,6 +178,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
         maxDrawdown: 0,
         profitFactor: 0,
         consistency: 0,
+        annualReturnRate: 0,
       };
     }
 
@@ -194,6 +194,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     const lastTradeDate = getValidDate(sortedTrades[sortedTrades.length - 1].timestamp)!;
     const totalDays = Math.max(differenceInDays(lastTradeDate, firstTradeDate), 1);
     const totalMonths = Math.max(differenceInMonths(lastTradeDate, firstTradeDate), 1);
+    const totalYears = totalDays / 365.25;
 
     // Get unique trading days
     const uniqueTradingDays = new Set(validTrades.map((trade) => {
@@ -203,7 +204,11 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
     const avgDailyPL = totalPL / Math.max(uniqueTradingDays, 1);
     const avgMonthlyPL = totalPL / Math.max(totalMonths, 1);
-    const avgAnnualPL = (totalPL / Math.max(totalDays, 1)) * 365;
+    const avgAnnualPL = totalPL / Math.max(totalYears, 1);
+
+    // FIXED: Calculate annual return rate as percentage of initial capital
+    const initialCapitalNum = getNumericInitialCapital();
+    const annualReturnRate = initialCapitalNum > 0 ? (avgAnnualPL / initialCapitalNum) * 100 : 0;
 
     // Calculate volatility (standard deviation of daily returns)
     const dailyPLs = Object.values(
@@ -221,11 +226,10 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     const dailyVolatility = Math.sqrt(dailyVariance);
     const monthlyVolatility = dailyVolatility * Math.sqrt(21);
 
-    // Calculate Sharpe ratio (rough)
-    const riskFreeRate = 0.02;
-    const initialCapitalNum = getNumericInitialCapital();
-    const excessReturn = avgAnnualPL - initialCapitalNum * riskFreeRate;
-    const annualVolatility = dailyVolatility * Math.sqrt(252);
+    // Calculate Sharpe ratio using return rate
+    const riskFreeRate = 2.0; // 2% annual risk-free rate
+    const excessReturn = annualReturnRate - riskFreeRate;
+    const annualVolatility = initialCapitalNum > 0 ? (dailyVolatility * Math.sqrt(252) / initialCapitalNum) * 100 : 0;
     const sharpeRatio = annualVolatility > 0 ? excessReturn / annualVolatility : 0;
 
     // Calculate maximum drawdown
@@ -271,52 +275,62 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
       maxDrawdown,
       profitFactor,
       consistency,
+      annualReturnRate,
     };
   }, [trades, getNumericInitialCapital]);
 
-  // Calculate realistic projections (updated periods)
+  // FIXED: Calculate realistic projections with proper percentage calculations
   const projections = useMemo((): ProjectionPeriod[] => {
-    const baseAnnualReturn = performanceMetrics.avgAnnualPL;
-    const conservativeFactor = conservativeMode ? 0.6 : 1.0;
-    const adjustedAnnualReturn = baseAnnualReturn * conservativeFactor;
     const initialCapitalNum = getNumericInitialCapital();
     const monthlyContributionNum = getNumericMonthlyContribution();
-    const annualGrowthRate = initialCapitalNum > 0 ? adjustedAnnualReturn / initialCapitalNum : 0;
+    
+    // Use the annual return rate (percentage of capital) rather than absolute dollars
+    const baseAnnualReturnRate = performanceMetrics.annualReturnRate / 100; // Convert percentage to decimal
+    const conservativeFactor = conservativeMode ? 0.6 : 1.0;
+    const adjustedAnnualReturnRate = baseAnnualReturnRate * conservativeFactor;
 
-    // More realistic time periods
     const periods = [1, 3, 5, 10, 15];
 
     return periods.map((years) => {
       let portfolioValue = initialCapitalNum;
       let totalContributions = initialCapitalNum;
-      let totalGrowth = 0;
 
-      for (let year = 1; year <= years; year++) {
-        const yearlyContributions = monthlyContributionNum * 12;
-        totalContributions += yearlyContributions;
-        const startValue = portfolioValue;
-        const avgValueDuringYear = startValue + yearlyContributions / 2;
-        const yearGrowth = avgValueDuringYear * annualGrowthRate;
-        portfolioValue += yearlyContributions + yearGrowth;
-        totalGrowth += yearGrowth;
+      // Compound growth with monthly contributions
+      for (let month = 1; month <= years * 12; month++) {
+        // Add monthly contribution
+        portfolioValue += monthlyContributionNum;
+        totalContributions += monthlyContributionNum;
+        
+        // Apply monthly growth (annual rate divided by 12)
+        const monthlyReturnRate = adjustedAnnualReturnRate / 12;
+        portfolioValue *= (1 + monthlyReturnRate);
       }
 
-      const growthPercentage =
-        initialCapitalNum > 0 ? ((portfolioValue - totalContributions) / initialCapitalNum) * 100 : 0;
+      const totalGrowth = portfolioValue - totalContributions;
+      
+      // FIXED: Calculate growth percentage based on total contributions
+      const growthPercentage = totalContributions > 0 ? (totalGrowth / totalContributions) * 100 : 0;
+      
+      // FIXED: Calculate CAGR properly
+      const cagr = totalContributions > 0 && years > 0 
+        ? (Math.pow(portfolioValue / totalContributions, 1 / years) - 1) * 100 
+        : 0;
 
       return {
         period: years === 1 ? '1 Year' : `${years} Years`,
         years,
         projectedValue: portfolioValue,
-        totalGrowth: portfolioValue - totalContributions,
+        totalGrowth,
         growthPercentage,
-        projectedPL: totalGrowth,
+        projectedPL: totalGrowth, // This is the same as totalGrowth
         monthlyContribution: monthlyContributionNum,
+        totalContributions,
+        cagr,
       };
     });
   }, [performanceMetrics, getNumericInitialCapital, getNumericMonthlyContribution, conservativeMode]);
 
-  // Mobile-responsive input component - FIXED to handle string values
+  // Mobile-responsive input component
   const renderInput = (
     label: string,
     value: string | number,
@@ -378,7 +392,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* Mobile-responsive header */}
+      {/* Header */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 gap-4">
           <div>
@@ -396,7 +410,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           </div>
         </div>
 
-        {/* Mobile-responsive tab navigation */}
+        {/* Tab navigation */}
         <div className="flex flex-wrap items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
           <button
             onClick={() => setActiveTab('projections')}
@@ -437,7 +451,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
         </div>
       </div>
 
-      {/* Performance Metrics - Mobile responsive */}
+      {/* Performance Metrics */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
         <div className="flex items-center space-x-3 mb-4 sm:mb-6">
           <div className="p-2 bg-blue-500 rounded-lg">
@@ -461,6 +475,17 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           </div>
 
           <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Annual Return</p>
+            <p
+              className={`text-base sm:text-xl font-bold ${
+                performanceMetrics.annualReturnRate >= 0 ? 'text-green-600' : 'text-red-600'
+              }`}
+            >
+              {performanceMetrics.annualReturnRate.toFixed(1)}%
+            </p>
+          </div>
+
+          <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
             <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Win Rate</p>
             <p
               className={`text-base sm:text-xl font-bold ${
@@ -468,17 +493,6 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
               }`}
             >
               {performanceMetrics.winRate.toFixed(1)}%
-            </p>
-          </div>
-
-          <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Avg Annual P&L</p>
-            <p
-              className={`text-base sm:text-xl font-bold ${
-                performanceMetrics.avgAnnualPL >= 0 ? 'text-green-600' : 'text-red-600'
-              }`}
-            >
-              {formatCurrency(performanceMetrics.avgAnnualPL)}
             </p>
           </div>
 
@@ -494,7 +508,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
       {/* Tab Content */}
       {activeTab === 'projections' && (
         <div className="space-y-4 sm:space-y-6">
-          {/* Mobile-responsive input controls */}
+          {/* Input controls */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
             <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">
               Projection Settings
@@ -525,6 +539,23 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
                 </span>
               </label>
             </div>
+
+            {/* FIXED: Show current return rate information */}
+            <div className="mt-4 sm:mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-start">
+                <Info className="h-5 w-5 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h4 className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                    Projection Basis
+                  </h4>
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                    Projections are based on your historical annual return rate of{' '}
+                    <strong>{performanceMetrics.annualReturnRate.toFixed(1)}%</strong> applied to your growing capital.
+                    {conservativeMode && ' Conservative mode applies a 40% discount to this rate.'}
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Warning for insufficient data */}
@@ -545,14 +576,15 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
             </div>
           )}
 
-          {/* Mobile-responsive projections table */}
+          {/* Projections table */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
               <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
                 Portfolio Projections {conservativeMode && '(Conservative)'}
               </h3>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Based on {formatCurrency(performanceMetrics.avgAnnualPL)} average annual return
+                Based on {performanceMetrics.annualReturnRate.toFixed(1)}% annual return rate
+                {conservativeMode && ' (discounted to ' + (performanceMetrics.annualReturnRate * 0.6).toFixed(1) + '%)'}
               </p>
             </div>
 
@@ -576,86 +608,73 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                  {projections.map((projection) => {
-                    const cagr =
-                      projection.years > 0
-                        ? (Math.pow(projection.projectedValue / getNumericInitialCapital(), 1 / projection.years) - 1) *
-                          100
-                        : 0;
-                    return (
-                      <tr key={projection.period} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                          {projection.period}
-                        </td>
-                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white text-right">
-                          <span className="font-semibold">{formatCurrency(projection.projectedValue)}</span>
-                        </td>
-                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-right">
-                          <span
-                            className={`font-semibold ${
-                              projection.totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'
-                            }`}
-                          >
-                            {formatCurrency(projection.totalGrowth)}
-                          </span>
-                        </td>
-                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-right">
-                          <span className={`font-semibold ${cagr >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {cagr.toFixed(1)}%
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {projections.map((projection) => (
+                    <tr key={projection.period} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                        {projection.period}
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white text-right">
+                        <span className="font-semibold">{formatCurrency(projection.projectedValue)}</span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-right">
+                        <span
+                          className={`font-semibold ${
+                            projection.totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'
+                          }`}
+                        >
+                          {formatCurrency(projection.totalGrowth)}
+                        </span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-right">
+                        <span className={`font-semibold ${projection.cagr >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {projection.cagr.toFixed(1)}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
 
             {/* Mobile card view */}
             <div className="sm:hidden divide-y divide-gray-200 dark:divide-gray-700">
-              {projections.map((projection) => {
-                const cagr =
-                  projection.years > 0
-                    ? (Math.pow(projection.projectedValue / getNumericInitialCapital(), 1 / projection.years) - 1) * 100
-                    : 0;
-                return (
-                  <div key={projection.period} className="p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-semibold text-gray-900 dark:text-white">{projection.period}</h4>
-                      <span
-                        className={`text-sm px-2 py-1 rounded ${
-                          cagr >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+              {projections.map((projection) => (
+                <div key={projection.period} className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-semibold text-gray-900 dark:text-white">{projection.period}</h4>
+                    <span
+                      className={`text-sm px-2 py-1 rounded ${
+                        projection.cagr >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}
+                    >
+                      {projection.cagr.toFixed(1)}% CAGR
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Portfolio Value:</span>
+                      <div className="font-semibold text-gray-900 dark:text-white">
+                        {formatCurrency(projection.projectedValue)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Total Growth:</span>
+                      <div
+                        className={`font-semibold ${
+                          projection.totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'
                         }`}
                       >
-                        {cagr.toFixed(1)}% CAGR
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-500 dark:text-gray-400">Portfolio Value:</span>
-                        <div className="font-semibold text-gray-900 dark:text-white">
-                          {formatCurrency(projection.projectedValue)}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-gray-500 dark:text-gray-400">Total Growth:</span>
-                        <div
-                          className={`font-semibold ${
-                            projection.totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'
-                          }`}
-                        >
-                          {formatCurrency(projection.totalGrowth)}
-                        </div>
+                        {formatCurrency(projection.totalGrowth)}
                       </div>
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Key Insights - Mobile responsive */}
+          {/* Key Insights */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
             <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4 sm:p-6">
               <div className="flex items-center space-x-3 mb-4">
@@ -756,7 +775,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
             </div>
           </div>
 
-          {/* Dividend insights cards - Mobile responsive */}
+          {/* Dividend insights cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
             <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4 sm:p-6">
               <div className="flex items-center space-x-3 mb-4">
