@@ -749,25 +749,25 @@ export const Calendar: React.FC<CalendarProps> = ({
           </div>
           
           {/* Year view legend */}
-          <div className="flex items-center justify-center gap-6 mt-6 text-sm">
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-green-500 rounded-sm"></div>
+          <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 mt-6 text-xs sm:text-sm">
+            <div className="flex items-center space-x-1 sm:space-x-2">
+              <div className="w-3 h-3 sm:w-4 sm:h-4 bg-green-500 rounded-sm"></div>
               <span className="text-slate-600 dark:text-slate-400">Profit</span>
             </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-red-500 rounded-sm"></div>
+            <div className="flex items-center space-x-1 sm:space-x-2">
+              <div className="w-3 h-3 sm:w-4 sm:h-4 bg-red-500 rounded-sm"></div>
               <span className="text-slate-600 dark:text-slate-400">Loss</span>
             </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-gray-400 rounded-sm"></div>
+            <div className="flex items-center space-x-1 sm:space-x-2">
+              <div className="w-3 h-3 sm:w-4 sm:h-4 bg-gray-400 rounded-sm"></div>
               <span className="text-slate-600 dark:text-slate-400">Breakeven</span>
             </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-slate-200 dark:bg-slate-700 rounded-sm border border-slate-300 dark:border-slate-600"></div>
+            <div className="flex items-center space-x-1 sm:space-x-2">
+              <div className="w-3 h-3 sm:w-4 sm:h-4 bg-slate-200 dark:bg-slate-700 rounded-sm border border-slate-300 dark:border-slate-600"></div>
               <span className="text-slate-600 dark:text-slate-400">No Trades</span>
             </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-slate-400 rounded-sm ring-2 ring-blue-400"></div>
+            <div className="flex items-center space-x-1 sm:space-x-2">
+              <div className="w-3 h-3 sm:w-4 sm:h-4 bg-slate-400 rounded-sm ring-2 ring-blue-400"></div>
               <span className="text-slate-600 dark:text-slate-400">Today</span>
             </div>
           </div>
@@ -852,21 +852,21 @@ export const Calendar: React.FC<CalendarProps> = ({
       )}
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 mt-6 text-sm">
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded border border-emerald-200 dark:border-emerald-800"></div>
-          <span className="text-slate-600 dark:text-slate-400">Profitable</span>
+      <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4 md:gap-6 mt-6 text-xs sm:text-sm">
+        <div className="flex items-center space-x-1 sm:space-x-2">
+          <div className="w-3 h-3 sm:w-4 sm:h-4 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded border border-emerald-200 dark:border-emerald-800"></div>
+          <span className="text-slate-600 dark:text-slate-400 whitespace-nowrap">Profitable</span>
         </div>
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 bg-gradient-to-br from-rose-50 to-red-50 dark:from-rose-900/20 dark:to-red-900/20 rounded border border-rose-200 dark:border-rose-800"></div>
-          <span className="text-slate-600 dark:text-slate-400">Loss Days</span>
+        <div className="flex items-center space-x-1 sm:space-x-2">
+          <div className="w-3 h-3 sm:w-4 sm:h-4 bg-gradient-to-br from-rose-50 to-red-50 dark:from-rose-900/20 dark:to-red-900/20 rounded border border-rose-200 dark:border-rose-800"></div>
+          <span className="text-slate-600 dark:text-slate-400 whitespace-nowrap">Loss Days</span>
         </div>
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 bg-gradient-to-br from-amber-500 to-orange-600 rounded border border-amber-200"></div>
+        <div className="flex items-center space-x-1 sm:space-x-2">
+          <div className="w-3 h-3 sm:w-4 sm:h-4 bg-gradient-to-br from-amber-500 to-orange-600 rounded border border-amber-200"></div>
           <span className="text-slate-600 dark:text-slate-400">Selected</span>
         </div>
-        <div className="flex items-center space-x-2">
-          <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
+        <div className="flex items-center space-x-1 sm:space-x-2">
+          <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-amber-500 rounded-full"></div>
           <span className="text-slate-600 dark:text-slate-400">Today</span>
         </div>
       </div>
