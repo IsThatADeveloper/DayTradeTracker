@@ -107,7 +107,7 @@ export const PLChart: React.FC<PLChartProps> = ({
     setIsMounted(true);
   }, []);
 
-  // Improved dimension calculation with error handling
+  // FIXED: Improved dimension calculation with better mobile spacing for labels
   useEffect(() => {
     if (!isMounted) return;
 
@@ -116,7 +116,8 @@ export const PLChart: React.FC<PLChartProps> = ({
         try {
           const rect = containerRef.current.getBoundingClientRect();
           const newWidth = Math.max(320, rect.width - 48);
-          const newHeight = typeof window !== 'undefined' && window.innerWidth < 768 ? 250 : 400;
+          // FIXED: Increase mobile height to accommodate x-axis labels
+          const newHeight = typeof window !== 'undefined' && window.innerWidth < 768 ? 300 : 400;
           
           setDimensions(prev => {
             if (prev.width !== newWidth || prev.height !== newHeight) {
@@ -392,12 +393,12 @@ export const PLChart: React.FC<PLChartProps> = ({
     );
   }
 
-  // Safer chart dimensions with better fallbacks
+  // FIXED: Better chart dimensions with increased bottom padding for labels
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
   const chartPadding = { 
     top: 20, 
     right: isMobile ? 20 : 60, 
-    bottom: isMobile ? 30 : 50, 
+    bottom: isMobile ? 45 : 60, // FIXED: Increased bottom padding for labels
     left: isMobile ? 50 : 80 
   };
   const chartWidth = Math.max(200, dimensions.width - chartPadding.left - chartPadding.right);
@@ -582,7 +583,7 @@ export const PLChart: React.FC<PLChartProps> = ({
       <div className="p-6" ref={containerRef}>
         <div 
           ref={chartRef}
-          className="relative rounded-xl bg-gradient-to-br from-gray-50/50 to-white dark:from-gray-800/50 dark:to-gray-900 border border-gray-100 dark:border-gray-700 overflow-hidden"
+          className="relative rounded-xl bg-gradient-to-br from-gray-50/50 to-white dark:from-gray-800/50 dark:to-gray-900 border border-gray-100 dark:border-gray-700"
           onMouseMove={handleMouseMove}
           onMouseEnter={() => setIsMouseOver(true)}
           onMouseLeave={() => {
@@ -737,39 +738,6 @@ export const PLChart: React.FC<PLChartProps> = ({
                 );
               })}
 
-              {/* Enhanced tooltip */}
-              {isMouseOver && hoveredPoint !== null && hoveredPoint < plChartData.length && (
-                <g>
-                  <foreignObject 
-                    x={Math.max(10, Math.min(chartWidth - 180, xAt(hoveredPoint) - 90))} 
-                    y={Math.max(10, yAt(plChartData[hoveredPoint].value) - 100)} 
-                    width={180} 
-                    height={90}
-                  >
-                    <div className="bg-white dark:bg-gray-800 border-2 border-blue-200 dark:border-blue-600 rounded-lg shadow-xl p-3 text-sm font-medium">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-gray-600 dark:text-gray-400">Portfolio Value</span>
-                        <span className="font-bold text-gray-900 dark:text-white">
-                          {formatCurrency(plChartData[hoveredPoint].portfolioValue)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-gray-600 dark:text-gray-400">P&L Change</span>
-                        <span className={`font-bold ${currentPLStats.isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                          {formatCurrency(plChartData[hoveredPoint].value)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-600 dark:text-gray-400">Date</span>
-                        <span className="text-gray-900 dark:text-white font-medium">
-                          {format(plChartData[hoveredPoint].date, currentTimeRange === 'today' ? 'HH:mm' : 'MMM d, yyyy')}
-                        </span>
-                      </div>
-                    </div>
-                  </foreignObject>
-                </g>
-              )}
-
               {/* X-axis labels with mobile optimization */}
               {plChartData.length > 1 && (
                 <g transform={`translate(0, ${chartHeight + 20})`}>
@@ -799,6 +767,74 @@ export const PLChart: React.FC<PLChartProps> = ({
               )}
             </g>
           </svg>
+
+          {/* FIXED: Tooltip positioned absolutely outside SVG to prevent clipping */}
+          {isMouseOver && hoveredPoint !== null && hoveredPoint < plChartData.length && (
+            (() => {
+              // Calculate tooltip position relative to the chart container
+              const pointX = chartPadding.left + xAt(hoveredPoint);
+              const pointY = chartPadding.top + yAt(plChartData[hoveredPoint].value);
+              
+              // Tooltip dimensions
+              const tooltipWidth = 180;
+              const tooltipHeight = 90;
+              const margin = 15;
+              
+              // Calculate position relative to chart container
+              let tooltipX = pointX - tooltipWidth / 2;
+              let tooltipY = pointY - tooltipHeight - margin;
+              
+              // Adjust horizontal position to stay within chart bounds
+              if (tooltipX < margin) {
+                tooltipX = margin;
+              } else if (tooltipX + tooltipWidth > dimensions.width - margin) {
+                tooltipX = dimensions.width - tooltipWidth - margin;
+              }
+              
+              // Adjust vertical position - prefer above, but go below if needed
+              if (tooltipY < margin) {
+                tooltipY = pointY + margin; // Position below
+              }
+              
+              // If still clipping below, position above with adjustment
+              if (tooltipY + tooltipHeight > dimensions.height - margin) {
+                tooltipY = Math.max(margin, pointY - tooltipHeight - margin);
+              }
+              
+              return (
+                <div 
+                  className="absolute z-50 pointer-events-none"
+                  style={{
+                    left: `${tooltipX}px`,
+                    top: `${tooltipY}px`,
+                    width: `${tooltipWidth}px`,
+                    height: `${tooltipHeight}px`
+                  }}
+                >
+                  <div className="bg-white dark:bg-gray-800 border-2 border-blue-200 dark:border-blue-600 rounded-lg shadow-xl p-3 text-sm font-medium w-full h-full">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-gray-600 dark:text-gray-400">Portfolio Value</span>
+                      <span className="font-bold text-gray-900 dark:text-white text-xs">
+                        {formatCurrency(plChartData[hoveredPoint].portfolioValue)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-gray-600 dark:text-gray-400">P&L Change</span>
+                      <span className={`font-bold text-xs ${currentPLStats.isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {formatCurrency(plChartData[hoveredPoint].value)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Date</span>
+                      <span className="text-gray-900 dark:text-white font-medium text-xs">
+                        {format(plChartData[hoveredPoint].date, currentTimeRange === 'today' ? 'HH:mm' : 'MMM d, yyyy')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()
+          )}
         </div>
       </div>
     </div>

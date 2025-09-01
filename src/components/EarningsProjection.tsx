@@ -129,11 +129,11 @@ const DEFAULT_TARGETS: Record<Period, number> = {
 // Helper function to safely convert timestamp to Date
 const getValidDate = (timestamp: any): Date | null => {
   if (!timestamp) return null;
-  
+
   if (timestamp instanceof Date) {
     return isNaN(timestamp.getTime()) ? null : timestamp;
   }
-  
+
   try {
     const date = new Date(timestamp);
     return isNaN(date.getTime()) ? null : date;
@@ -188,7 +188,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
       setInitialCapital('');
       return;
     }
-    
+
     if (/^\d*\.?\d*$/.test(value)) {
       const numValue = parseFloat(value);
       if (!isNaN(numValue) && numValue <= MAX_CAPITAL) {
@@ -202,7 +202,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
       setMonthlyContribution('');
       return;
     }
-    
+
     if (/^\d*\.?\d*$/.test(value)) {
       const numValue = parseFloat(value);
       if (!isNaN(numValue) && numValue <= MAX_CAPITAL / 12) {
@@ -233,7 +233,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     }
 
     const validTrades = trades.filter(trade => getValidDate(trade.timestamp) !== null);
-    
+
     if (validTrades.length === 0) {
       return {
         totalPL: 0,
@@ -372,22 +372,22 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     (['daily', 'weekly', 'monthly', 'yearly'] as Period[]).forEach(period => {
       const bounds = getPeriodBounds(period, selectedDate);
       const target = targets[period];
-      
+
       // Calculate actual earnings for this period
       const periodTrades = trades.filter(trade => {
         const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
         return isWithinInterval(tradeDate, bounds);
       });
-      
+
       const actual = periodTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
       const progress = target.amount > 0 ? (actual / target.amount) * 100 : 0;
       const remaining = target.amount - actual;
-      
+
       // Calculate time metrics
       let totalDays: number;
       let daysElapsed: number;
       let daysLeft: number;
-      
+
       switch (period) {
         case 'daily':
           totalDays = 1;
@@ -395,12 +395,12 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           const currentHour = now.getHours();
           const currentMinute = now.getMinutes();
           const currentTime = currentHour + currentMinute / 60;
-          
+
           // Market hours: 9:30 AM to 4:00 PM (6.5 hours total)
           const marketOpen = 9.5; // 9:30 AM
           const marketClose = 16; // 4:00 PM
           const totalMarketHours = marketClose - marketOpen; // 6.5 hours
-          
+
           if (currentTime < marketOpen) {
             // Before market opens
             daysElapsed = 0;
@@ -434,13 +434,13 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           daysLeft = Math.max(0, differenceInDays(yearEnd, now > yearEnd ? yearEnd : now));
           break;
       }
-      
+
       const timeElapsed = totalDays > 0 ? (daysElapsed / totalDays) * 100 : 0;
       const dailyRequired = daysLeft > 0 ? remaining / daysLeft : 0;
       const averageDaily = daysElapsed > 0 ? actual / daysElapsed : 0;
       const projectedEnd = totalDays > 0 ? averageDaily * totalDays : actual;
       const onTrack = progress >= timeElapsed || actual >= target.amount;
-      
+
       stats[period] = {
         period,
         label: PERIOD_CONFIG[period].label,
@@ -501,7 +501,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
   const projections = useMemo((): ProjectionPeriod[] => {
     const initialCapitalNum = getNumericInitialCapital();
     const monthlyContributionNum = getNumericMonthlyContribution();
-    
+
     // Use the annual return rate (percentage of capital) rather than absolute dollars
     const baseAnnualReturnRate = performanceMetrics.annualReturnRate / 100; // Convert percentage to decimal
     const conservativeFactor = conservativeMode ? 0.6 : 1.0;
@@ -518,20 +518,20 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
         // Add monthly contribution
         portfolioValue += monthlyContributionNum;
         totalContributions += monthlyContributionNum;
-        
+
         // Apply monthly growth (annual rate divided by 12)
         const monthlyReturnRate = adjustedAnnualReturnRate / 12;
         portfolioValue *= (1 + monthlyReturnRate);
       }
 
       const totalGrowth = portfolioValue - totalContributions;
-      
+
       // FIXED: Calculate growth percentage based on total contributions
       const growthPercentage = totalContributions > 0 ? (totalGrowth / totalContributions) * 100 : 0;
-      
+
       // FIXED: Calculate CAGR properly
-      const cagr = totalContributions > 0 && years > 0 
-        ? (Math.pow(portfolioValue / totalContributions, 1 / years) - 1) * 100 
+      const cagr = totalContributions > 0 && years > 0
+        ? (Math.pow(portfolioValue / totalContributions, 1 / years) - 1) * 100
         : 0;
 
       return {
@@ -624,10 +624,10 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     const activePeriods = Object.values(earningsStats).filter(
       s => targets[s.period].isActive
     );
-    
+
     const onTrackCount = activePeriods.filter(s => s.onTrack).length;
     const achievedCount = activePeriods.filter(s => s.progress >= 100).length;
-    
+
     return {
       totalActive: activePeriods.length,
       onTrack: onTrackCount,
@@ -647,9 +647,8 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     return (
       <div
         key={stats.period}
-        className={`${colors.bg} ${colors.border} border rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-200 ${
-          selectedPeriod === stats.period ? `ring-2 ${colors.ring}` : ''
-        }`}
+        className={`${colors.bg} ${colors.border} border rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-200 ${selectedPeriod === stats.period ? `ring-2 ${colors.ring}` : ''
+          }`}
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
@@ -661,24 +660,22 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
               {stats.label}
             </h3>
           </div>
-          
+
           <div className="flex items-center space-x-2">
             {/* Toggle Active */}
             <button
               onClick={() => toggleTarget(stats.period)}
-              className={`w-10 h-6 rounded-full transition-colors duration-200 ${
-                targets[stats.period].isActive
+              className={`w-10 h-6 rounded-full transition-colors duration-200 ${targets[stats.period].isActive
                   ? `${colors.progress}`
                   : 'bg-gray-300 dark:bg-gray-600'
-              }`}
+                }`}
             >
               <div
-                className={`w-4 h-4 bg-white rounded-full shadow-md transition-transform duration-200 ${
-                  targets[stats.period].isActive ? 'translate-x-5' : 'translate-x-1'
-                }`}
+                className={`w-4 h-4 bg-white rounded-full shadow-md transition-transform duration-200 ${targets[stats.period].isActive ? 'translate-x-5' : 'translate-x-1'
+                  }`}
               />
             </button>
-            
+
             {/* Edit Target */}
             {!isEditing ? (
               <button
@@ -738,18 +735,16 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
         <div className="space-y-3 mb-4">
           <div className="flex justify-between items-center">
             <span className={`text-sm ${colors.text}`}>Actual:</span>
-            <span className={`font-bold text-lg ${
-              stats.actual >= 0 ? 'text-green-600' : 'text-red-600'
-            }`}>
+            <span className={`font-bold text-lg ${stats.actual >= 0 ? 'text-green-600' : 'text-red-600'
+              }`}>
               {formatCurrency(stats.actual)}
             </span>
           </div>
-          
+
           <div className="flex justify-between items-center">
             <span className={`text-sm ${colors.text}`}>Remaining:</span>
-            <span className={`font-semibold ${
-              stats.remaining <= 0 ? 'text-green-600' : colors.accent
-            }`}>
+            <span className={`font-semibold ${stats.remaining <= 0 ? 'text-green-600' : colors.accent
+              }`}>
               {stats.remaining <= 0 ? 'Target Exceeded!' : formatCurrency(stats.remaining)}
             </span>
           </div>
@@ -784,23 +779,21 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
             {stats.daysLeft > 0 && (
               <div className="flex justify-between">
                 <span className={`${colors.text}`}>Daily needed:</span>
-                <span className={`font-semibold ${
-                  stats.dailyRequired <= 0 ? 'text-green-600' : colors.accent
-                }`}>
+                <span className={`font-semibold ${stats.dailyRequired <= 0 ? 'text-green-600' : colors.accent
+                  }`}>
                   {stats.dailyRequired <= 0 ? 'Target met!' : formatCurrency(stats.dailyRequired)}
                 </span>
               </div>
             )}
-            
+
             <div className="flex justify-between">
               <span className={`${colors.text}`}>Projected end:</span>
-              <span className={`font-semibold ${
-                stats.projectedEnd >= stats.target ? 'text-green-600' : 'text-red-600'
-              }`}>
+              <span className={`font-semibold ${stats.projectedEnd >= stats.target ? 'text-green-600' : 'text-red-600'
+                }`}>
                 {formatCurrency(stats.projectedEnd)}
               </span>
             </div>
-            
+
             {stats.daysLeft > 0 && (
               <div className="flex justify-between">
                 <span className={`${colors.text}`}>Days left:</span>
@@ -862,12 +855,11 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
             label.toLowerCase().includes('capital')
               ? MAX_CAPITAL
               : label.toLowerCase().includes('contribution')
-              ? MAX_CAPITAL / 12
-              : undefined
+                ? MAX_CAPITAL / 12
+                : undefined
           }
-          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base ${
-            prefix ? 'pl-8' : ''
-          } ${suffix ? 'pr-12' : ''}`}
+          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base ${prefix ? 'pl-8' : ''
+            } ${suffix ? 'pr-12' : ''}`}
           placeholder="0"
         />
         {suffix && (
@@ -919,11 +911,10 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
         <div className="flex flex-wrap items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
           <button
             onClick={() => setActiveTab('projections')}
-            className={`flex items-center px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${
-              activeTab === 'projections'
+            className={`flex items-center px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${activeTab === 'projections'
                 ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
+              }`}
           >
             <Calculator className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
             <span className="hidden sm:inline">Projections</span>
@@ -931,11 +922,10 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           </button>
           <button
             onClick={() => setActiveTab('goals')}
-            className={`flex items-center px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${
-              activeTab === 'goals'
+            className={`flex items-center px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${activeTab === 'goals'
                 ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
+              }`}
           >
             <Target className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
             <span className="hidden sm:inline">Goals</span>
@@ -943,11 +933,10 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           </button>
           <button
             onClick={() => setActiveTab('plchart')}
-            className={`flex items-center px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${
-              activeTab === 'plchart'
+            className={`flex items-center px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${activeTab === 'plchart'
                 ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
+              }`}
           >
             <LineChart className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
             <span className="hidden sm:inline">Trading P&L</span>
@@ -955,11 +944,10 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           </button>
           <button
             onClick={() => setActiveTab('dividends')}
-            className={`flex items-center px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${
-              activeTab === 'dividends'
+            className={`flex items-center px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${activeTab === 'dividends'
                 ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
+              }`}
           >
             <PieChart className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
             <span className="hidden sm:inline">Dividends</span>
@@ -983,9 +971,8 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
             <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Total P&L</p>
             <p
-              className={`text-base sm:text-xl font-bold ${
-                performanceMetrics.totalPL >= 0 ? 'text-green-600' : 'text-red-600'
-              }`}
+              className={`text-base sm:text-xl font-bold ${performanceMetrics.totalPL >= 0 ? 'text-green-600' : 'text-red-600'
+                }`}
             >
               {formatCurrency(performanceMetrics.totalPL)}
             </p>
@@ -994,9 +981,8 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
             <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Annual Return</p>
             <p
-              className={`text-base sm:text-xl font-bold ${
-                performanceMetrics.annualReturnRate >= 0 ? 'text-green-600' : 'text-red-600'
-              }`}
+              className={`text-base sm:text-xl font-bold ${performanceMetrics.annualReturnRate >= 0 ? 'text-green-600' : 'text-red-600'
+                }`}
             >
               {performanceMetrics.annualReturnRate.toFixed(1)}%
             </p>
@@ -1005,9 +991,8 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
             <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Win Rate</p>
             <p
-              className={`text-base sm:text-xl font-bold ${
-                performanceMetrics.winRate >= 50 ? 'text-green-600' : 'text-red-600'
-              }`}
+              className={`text-base sm:text-xl font-bold ${performanceMetrics.winRate >= 50 ? 'text-green-600' : 'text-red-600'
+                }`}
             >
               {performanceMetrics.winRate.toFixed(1)}%
             </p>
@@ -1022,465 +1007,462 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
         </div>
       </div>
 
-{/* Tab Content */}
-     {activeTab === 'projections' && (
-       <div className="space-y-4 sm:space-y-6">
-         {/* Input controls */}
-         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
-           <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">
-             Projection Settings
-           </h3>
+      {/* Tab Content */}
+      {activeTab === 'projections' && (
+        <div className="space-y-4 sm:space-y-6">
+          {/* Input controls */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Projection Settings
+            </h3>
 
-           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-             {renderInput('Initial Capital', initialCapital, handleCapitalChange, '$', '', 1000)}
-             {renderInput(
-               'Monthly Contribution',
-               monthlyContribution,
-               handleContributionChange,
-               '$',
-               '',
-               100
-             )}
-           </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+              {renderInput('Initial Capital', initialCapital, handleCapitalChange, '$', '', 1000)}
+              {renderInput(
+                'Monthly Contribution',
+                monthlyContribution,
+                handleContributionChange,
+                '$',
+                '',
+                100
+              )}
+            </div>
 
-           <div className="mt-4 sm:mt-6">
-             <label className="flex items-center space-x-3 cursor-pointer">
-               <input
-                 type="checkbox"
-                 checked={conservativeMode}
-                 onChange={(e) => setConservativeMode(e.target.checked)}
-                 className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-               />
-               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                 Conservative Mode (40% discount on projections)
-               </span>
-             </label>
-           </div>
+            <div className="mt-4 sm:mt-6">
+              <label className="flex items-center space-x-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={conservativeMode}
+                  onChange={(e) => setConservativeMode(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Conservative Mode (40% discount on projections)
+                </span>
+              </label>
+            </div>
 
-           {/* FIXED: Show current return rate information */}
-           <div className="mt-4 sm:mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-             <div className="flex items-start">
-               <Info className="h-5 w-5 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
-               <div>
-                 <h4 className="text-sm font-medium text-blue-800 dark:text-blue-200">
-                   Projection Basis
-                 </h4>
-                 <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                   Projections are based on your historical annual return rate of{' '}
-                   <strong>{performanceMetrics.annualReturnRate.toFixed(1)}%</strong> applied to your growing capital.
-                   {conservativeMode && ' Conservative mode applies a 40% discount to this rate.'}
-                 </p>
-               </div>
-             </div>
-           </div>
-         </div>
+            {/* FIXED: Show current return rate information */}
+            <div className="mt-4 sm:mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-start">
+                <Info className="h-5 w-5 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h4 className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                    Projection Basis
+                  </h4>
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                    Projections are based on your historical annual return rate of{' '}
+                    <strong>{performanceMetrics.annualReturnRate.toFixed(1)}%</strong> applied to your growing capital.
+                    {conservativeMode && ' Conservative mode applies a 40% discount to this rate.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
 
-         {/* Warning for insufficient data */}
-         {performanceMetrics.tradingDays < 30 && (
-           <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-             <div className="flex items-start">
-               <AlertTriangle className="h-5 w-5 text-yellow-600 mr-2 mt-0.5 flex-shrink-0" />
-               <div>
-                 <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-                   Limited Data Warning
-                 </h4>
-                 <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-                   Projections are based on {performanceMetrics.tradingDays} trading days. For more accurate
-                   projections, consider trading for at least 30–90 days.
-                 </p>
-               </div>
-             </div>
-           </div>
-         )}
+          {/* Warning for insufficient data */}
+          {performanceMetrics.tradingDays < 30 && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+              <div className="flex items-start">
+                <AlertTriangle className="h-5 w-5 text-yellow-600 mr-2 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                    Limited Data Warning
+                  </h4>
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                    Projections are based on {performanceMetrics.tradingDays} trading days. For more accurate
+                    projections, consider trading for at least 30–90 days.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
-         {/* Projections table */}
-         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-           <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
-             <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
-               Portfolio Projections {conservativeMode && '(Conservative)'}
-             </h3>
-             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-               Based on {performanceMetrics.annualReturnRate.toFixed(1)}% annual return rate
-               {conservativeMode && ' (discounted to ' + (performanceMetrics.annualReturnRate * 0.6).toFixed(1) + '%)'}
-             </p>
-           </div>
+          {/* Projections table */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
+                Portfolio Projections {conservativeMode && '(Conservative)'}
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                Based on {performanceMetrics.annualReturnRate.toFixed(1)}% annual return rate
+                {conservativeMode && ' (discounted to ' + (performanceMetrics.annualReturnRate * 0.6).toFixed(1) + '%)'}
+              </p>
+            </div>
 
-           {/* Desktop table view */}
-           <div className="hidden sm:block overflow-x-auto">
-             <table className="w-full">
-               <thead className="bg-gray-50 dark:bg-gray-700">
-                 <tr>
-                   <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                     Time Period
-                   </th>
-                   <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                     Portfolio Value
-                   </th>
-                   <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                     Total Growth
-                   </th>
-                   <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                     CAGR
-                   </th>
-                 </tr>
-               </thead>
-               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                 {projections.map((projection) => (
-                   <tr key={projection.period} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                     <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                       {projection.period}
-                     </td>
-                     <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white text-right">
-                       <span className="font-semibold">{formatCurrency(projection.projectedValue)}</span>
-                     </td>
-                     <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-right">
-                       <span
-                         className={`font-semibold ${
-                           projection.totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'
-                         }`}
-                       >
-                         {formatCurrency(projection.totalGrowth)}
-                       </span>
-                     </td>
-                     <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-right">
-                       <span className={`font-semibold ${projection.cagr >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                         {projection.cagr.toFixed(1)}%
-                       </span>
-                     </td>
-                   </tr>
-                 ))}
-               </tbody>
-             </table>
-           </div>
+            {/* Desktop table view */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                  <tr>
+                    <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Time Period
+                    </th>
+                    <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Portfolio Value
+                    </th>
+                    <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Total Growth
+                    </th>
+                    <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      CAGR
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                  {projections.map((projection) => (
+                    <tr key={projection.period} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                        {projection.period}
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white text-right">
+                        <span className="font-semibold">{formatCurrency(projection.projectedValue)}</span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-right">
+                        <span
+                          className={`font-semibold ${projection.totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'
+                            }`}
+                        >
+                          {formatCurrency(projection.totalGrowth)}
+                        </span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-right">
+                        <span className={`font-semibold ${projection.cagr >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {projection.cagr.toFixed(1)}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-           {/* Mobile card view */}
-           <div className="sm:hidden divide-y divide-gray-200 dark:divide-gray-700">
-             {projections.map((projection) => (
-               <div key={projection.period} className="p-4 space-y-3">
-                 <div className="flex items-center justify-between">
-                   <h4 className="font-semibold text-gray-900 dark:text-white">{projection.period}</h4>
-                   <span
-                     className={`text-sm px-2 py-1 rounded ${
-                       projection.cagr >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                     }`}
-                   >
-                     {projection.cagr.toFixed(1)}% CAGR
-                   </span>
-                 </div>
+            {/* Mobile card view */}
+            <div className="sm:hidden divide-y divide-gray-200 dark:divide-gray-700">
+              {projections.map((projection) => (
+                <div key={projection.period} className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-semibold text-gray-900 dark:text-white">{projection.period}</h4>
+                    <span
+                      className={`text-sm px-2 py-1 rounded ${projection.cagr >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}
+                    >
+                      {projection.cagr.toFixed(1)}% CAGR
+                    </span>
+                  </div>
 
-                 <div className="grid grid-cols-2 gap-4 text-sm">
-                   <div>
-                     <span className="text-gray-500 dark:text-gray-400">Portfolio Value:</span>
-                     <div className="font-semibold text-gray-900 dark:text-white">
-                       {formatCurrency(projection.projectedValue)}
-                     </div>
-                   </div>
-                   <div>
-                     <span className="text-gray-500 dark:text-gray-400">Total Growth:</span>
-                     <div
-                       className={`font-semibold ${
-                         projection.totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'
-                       }`}
-                     >
-                       {formatCurrency(projection.totalGrowth)}
-                     </div>
-                   </div>
-                 </div>
-               </div>
-             ))}
-           </div>
-         </div>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Portfolio Value:</span>
+                      <div className="font-semibold text-gray-900 dark:text-white">
+                        {formatCurrency(projection.projectedValue)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Total Growth:</span>
+                      <div
+                        className={`font-semibold ${projection.totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'
+                          }`}
+                      >
+                        {formatCurrency(projection.totalGrowth)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
 
-         {/* Key Insights */}
-         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-           <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4 sm:p-6">
-             <div className="flex items-center space-x-3 mb-4">
-               <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
-               <h4 className="text-sm sm:text-base font-semibold text-green-800 dark:text-green-200">
-                 5-Year Growth
-               </h4>
-             </div>
-             <p className="text-xl sm:text-2xl font-bold text-green-600 mb-2">
-               {projections[2] ? formatCurrency(projections[2].projectedValue) : formatCurrency(0)}
-             </p>
-             <p className="text-xs sm:text-sm text-green-700 dark:text-green-300">Projected portfolio value</p>
-           </div>
+          {/* Key Insights */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4 sm:p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
+                <h4 className="text-sm sm:text-base font-semibold text-green-800 dark:text-green-200">
+                  5-Year Growth
+                </h4>
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-green-600 mb-2">
+                {projections[2] ? formatCurrency(projections[2].projectedValue) : formatCurrency(0)}
+              </p>
+              <p className="text-xs sm:text-sm text-green-700 dark:text-green-300">Projected portfolio value</p>
+            </div>
 
-           <div className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4 sm:p-6">
-             <div className="flex items-center space-x-3 mb-4">
-               <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
-               <h4 className="text-sm sm:text-base font-semibold text-blue-800 dark:text-blue-200">
-                 Monthly Income
-               </h4>
-             </div>
-             <p className="text-xl sm:text-2xl font-bold text-blue-600 mb-2">
-               {formatCurrency(performanceMetrics.avgMonthlyPL)}
-             </p>
-             <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">
-               Average monthly trading profit
-             </p>
-           </div>
+            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4 sm:p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+                <h4 className="text-sm sm:text-base font-semibold text-blue-800 dark:text-blue-200">
+                  Monthly Income
+                </h4>
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-blue-600 mb-2">
+                {formatCurrency(performanceMetrics.avgMonthlyPL)}
+              </p>
+              <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">
+                Average monthly trading profit
+              </p>
+            </div>
 
-           <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200 dark:border-purple-800 p-4 sm:p-6">
-             <div className="flex items-center space-x-3 mb-4">
-               <Target className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
-               <h4 className="text-sm sm:text-base font-semibold text-purple-800 dark:text-purple-200">
-                 Sharpe Ratio
-               </h4>
-             </div>
-             <p className="text-xl sm:text-2xl font-bold text-purple-600 mb-2">
-               {performanceMetrics.sharpeRatio.toFixed(2)}
-             </p>
-             <p className="text-xs sm:text-sm text-purple-700 dark:text-purple-300">Risk-adjusted returns</p>
-           </div>
-         </div>
-       </div>
-     )}
+            <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200 dark:border-purple-800 p-4 sm:p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <Target className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
+                <h4 className="text-sm sm:text-base font-semibold text-purple-800 dark:text-purple-200">
+                  Sharpe Ratio
+                </h4>
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-purple-600 mb-2">
+                {performanceMetrics.sharpeRatio.toFixed(2)}
+              </p>
+              <p className="text-xs sm:text-sm text-purple-700 dark:text-purple-300">Risk-adjusted returns</p>
+            </div>
+          </div>
+        </div>
+      )}
 
-     {activeTab === 'goals' && (
-       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-6">
-         {/* Goals Header */}
-         <div className="flex items-center justify-between mb-8">
-           <div className="flex items-center space-x-4">
-             <div className="p-3 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg">
-               <Target className="h-6 w-6 text-white" />
-             </div>
-             <div>
-               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                 Earnings Tracker
-               </h2>
-               <p className="text-gray-600 dark:text-gray-400">
-                 Real performance vs projected targets
-               </p>
-             </div>
-           </div>
-           
-           {/* Overall Summary */}
-           <div className="hidden sm:flex items-center space-x-4 text-sm">
-             <div className="text-center">
-               <div className="text-2xl font-bold text-green-600">
-                 {overallStats.achieved}
-               </div>
-               <div className="text-gray-500 dark:text-gray-400">Achieved</div>
-             </div>
-             <div className="text-center">
-               <div className="text-2xl font-bold text-blue-600">
-                 {overallStats.onTrack}
-               </div>
-               <div className="text-gray-500 dark:text-gray-400">On Track</div>
-             </div>
-             <div className="text-center">
-               <div className="text-2xl font-bold text-gray-600 dark:text-gray-400">
-                 {overallStats.totalActive}
-               </div>
-               <div className="text-gray-500 dark:text-gray-400">Active</div>
-             </div>
-           </div>
-         </div>
+      {activeTab === 'goals' && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-6">
+          {/* Goals Header */}
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center space-x-4">
+              <div className="p-3 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg">
+                <Target className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  Earnings Tracker
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Real performance vs projected targets
+                </p>
+              </div>
+            </div>
 
-         {/* Period Selection Tabs */}
-         <div className="flex flex-wrap gap-2 mb-6">
-           {(['daily', 'weekly', 'monthly', 'yearly'] as Period[]).map(period => {
-             const config = PERIOD_CONFIG[period];
-             const isActive = selectedPeriod === period;
-             const stats = earningsStats[period];
-             
-             return (
-               <button
-                 key={period}
-                 onClick={() => setSelectedPeriod(period)}
-                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
-                   isActive
-                     ? 'bg-blue-600 text-white shadow-lg transform scale-105'
-                     : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                 }`}
-               >
-                 <config.icon className="h-4 w-4" />
-                 <span className="font-medium">{config.label}</span>
-                 {stats.progress >= 100 && (
-                   <CheckCircle2 className="h-4 w-4 text-green-400" />
-                 )}
-               </button>
-             );
-           })}
-         </div>
+            {/* Overall Summary */}
+            <div className="hidden sm:flex items-center space-x-4 text-sm">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {overallStats.achieved}
+                </div>
+                <div className="text-gray-500 dark:text-gray-400">Achieved</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">
+                  {overallStats.onTrack}
+                </div>
+                <div className="text-gray-500 dark:text-gray-400">On Track</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-600 dark:text-gray-400">
+                  {overallStats.totalActive}
+                </div>
+                <div className="text-gray-500 dark:text-gray-400">Active</div>
+              </div>
+            </div>
+          </div>
 
-         {/* Selected Period Detail */}
-         <div className="mb-8">
-           {renderPeriodCard(earningsStats[selectedPeriod])}
-         </div>
+          {/* Period Selection Tabs */}
+          <div className="flex flex-wrap gap-2 mb-6">
+            {(['daily', 'weekly', 'monthly', 'yearly'] as Period[]).map(period => {
+              const config = PERIOD_CONFIG[period];
+              const isActive = selectedPeriod === period;
+              const stats = earningsStats[period];
 
-         {/* All Periods Grid */}
-         <div>
-           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-             All Periods Overview
-           </h3>
-           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-             {(['daily', 'weekly', 'monthly', 'yearly'] as Period[]).map(period => 
-               renderPeriodCard(earningsStats[period])
-             )}
-           </div>
-         </div>
+              return (
+                <button
+                  key={period}
+                  onClick={() => setSelectedPeriod(period)}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${isActive
+                      ? 'bg-blue-600 text-white shadow-lg transform scale-105'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                >
+                  <config.icon className="h-4 w-4" />
+                  <span className="font-medium">{config.label}</span>
+                  {stats.progress >= 100 && (
+                    <CheckCircle2 className="h-4 w-4 text-green-400" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
 
-         {/* Quick Stats Summary */}
-         <div className="mt-8 p-6 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 rounded-xl">
-           <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-             Performance Summary
-           </h4>
-           
-           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-             <div className="text-center">
-               <div className="text-2xl font-bold text-green-600">
-                 {overallStats.achievedPercentage.toFixed(0)}%
-               </div>
-               <div className="text-sm text-gray-600 dark:text-gray-400">
-                 Targets Achieved
-               </div>
-             </div>
-             
-             <div className="text-center">
-               <div className="text-2xl font-bold text-blue-600">
-                 {overallStats.onTrackPercentage.toFixed(0)}%
-               </div>
-               <div className="text-sm text-gray-600 dark:text-gray-400">
-                 On Track
-               </div>
-             </div>
-             
-             <div className="text-center">
-               <div className="text-2xl font-bold text-purple-600">
-                 {formatCurrency(
-                   Object.values(earningsStats)
-                     .filter(s => targets[s.period].isActive)
-                     .reduce((sum, s) => sum + s.actual, 0)
-                 )}
-               </div>
-               <div className="text-sm text-gray-600 dark:text-gray-400">
-                 Total Earned
-               </div>
-             </div>
-             
-             <div className="text-center">
-               <div className="text-2xl font-bold text-orange-600">
-                 {formatCurrency(
-                   Object.values(earningsStats)
-                     .filter(s => targets[s.period].isActive)
-                     .reduce((sum, s) => sum + s.target, 0)
-                 )}
-               </div>
-               <div className="text-sm text-gray-600 dark:text-gray-400">
-                 Total Targets
-               </div>
-             </div>
-           </div>
-         </div>
-       </div>
-     )}
+          {/* Selected Period Detail */}
+          <div className="mb-8">
+            {renderPeriodCard(earningsStats[selectedPeriod])}
+          </div>
 
-     {activeTab === 'plchart' && (
-       <PLChart 
-         trades={trades}
-         selectedDate={selectedDate}
-         plTimeRange={plTimeRange}
-         setPLTimeRange={setPLTimeRange}
-         title="Trading P&L Performance"
-         showTimeRangeSelector={true}
-       />
-     )}
+          {/* All Periods Grid */}
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              All Periods Overview
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+              {(['daily', 'weekly', 'monthly', 'yearly'] as Period[]).map(period =>
+                renderPeriodCard(earningsStats[period])
+              )}
+            </div>
+          </div>
 
-     {activeTab === 'dividends' && (
-       <div className="space-y-4 sm:space-y-6">
-         {/* Dividend Input Controls */}
-         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
-           <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">
-             Dividend Settings
-           </h3>
+          {/* Quick Stats Summary */}
+          <div className="mt-8 p-6 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 rounded-xl">
+            <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Performance Summary
+            </h4>
 
-           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-             {renderInput(
-               'Dividend Yield (%)',
-               dividendYield,
-               (value) => setDividendYield(parseFloat(value) || 0),
-               '',
-               '%',
-               0.1
-             )}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {overallStats.achievedPercentage.toFixed(0)}%
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  Targets Achieved
+                </div>
+              </div>
 
-             {renderInput(
-               'Dividend Growth Rate (%)',
-               dividendGrowthRate,
-               (value) => setDividendGrowthRate(parseFloat(value) || 0),
-               '',
-               '%',
-               0.1
-             )}
-           </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">
+                  {overallStats.onTrackPercentage.toFixed(0)}%
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  On Track
+                </div>
+              </div>
 
-           <div className="mt-4 sm:mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-             <div className="flex items-start">
-               <Info className="h-5 w-5 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
-               <div>
-                 <h4 className="text-sm font-medium text-blue-800 dark:text-blue-200">
-                   Dividend Calculator Info
-                 </h4>
-                 <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                   This calculator assumes your trading profits are invested in dividend-paying stocks with
-                   reinvested dividends.
-                 </p>
-               </div>
-             </div>
-           </div>
-         </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-purple-600">
+                  {formatCurrency(
+                    Object.values(earningsStats)
+                      .filter(s => targets[s.period].isActive)
+                      .reduce((sum, s) => sum + s.actual, 0)
+                  )}
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  Total Earned
+                </div>
+              </div>
 
-         {/* Dividend insights cards */}
-         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-           <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4 sm:p-6">
-             <div className="flex items-center space-x-3 mb-4">
-               <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
-               <h4 className="text-sm sm:text-base font-semibold text-green-800 dark:text-green-200">
-                 15-Year Dividend Income
-               </h4>
-             </div>
-             <p className="text-xl sm:text-2xl font-bold text-green-600 mb-2">
-               {formatCurrency(
-                 performanceMetrics.totalPL * (dividendYield / 100) * 15
-               )}
-             </p>
-             <p className="text-xs sm:text-sm text-green-700 dark:text-green-300">Based on current trading profits</p>
-           </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-orange-600">
+                  {formatCurrency(
+                    Object.values(earningsStats)
+                      .filter(s => targets[s.period].isActive)
+                      .reduce((sum, s) => sum + s.target, 0)
+                  )}
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  Total Targets
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-           <div className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4 sm:p-6">
-             <div className="flex items-center space-x-3 mb-4">
-               <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
-               <h4 className="text-sm sm:text-base font-semibold text-blue-800 dark:text-blue-200">
-                 Monthly Dividend (Current)
-               </h4>
-             </div>
-             <p className="text-xl sm:text-2xl font-bold text-blue-600 mb-2">
-               {formatCurrency(
-                 (performanceMetrics.totalPL * (dividendYield / 100)) / 12
-               )}
-             </p>
-             <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">Based on current trading profits</p>
-           </div>
+      {activeTab === 'plchart' && (
+        <PLChart
+          trades={trades}
+          selectedDate={selectedDate}
+          plTimeRange={plTimeRange}
+          setPLTimeRange={setPLTimeRange}
+          title="Trading P&L Performance"
+          showTimeRangeSelector={true}
+          initialCapital={getNumericInitialCapital()} // Add this line
+        />
+      )}
 
-           <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200 dark:border-purple-800 p-4 sm:p-6">
-             <div className="flex items-center space-x-3 mb-4">
-               <Percent className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
-               <h4 className="text-sm sm:text-base font-semibold text-purple-800 dark:text-purple-200">
-                 Future Yield on Cost
-               </h4>
-             </div>
-             <p className="text-xl sm:text-2xl font-bold text-purple-600 mb-2">
-               {(dividendYield * Math.pow(1 + dividendGrowthRate / 100, 10)).toFixed(1)}%
-             </p>
-             <p className="text-xs sm:text-sm text-purple-700 dark:text-purple-300">
-               Dividend yield in 10 years
-             </p>
-           </div>
-         </div>
-       </div>
-     )}
-   </div>
- );
+      {activeTab === 'dividends' && (
+        <div className="space-y-4 sm:space-y-6">
+          {/* Dividend Input Controls */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Dividend Settings
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+              {renderInput(
+                'Dividend Yield (%)',
+                dividendYield,
+                (value) => setDividendYield(parseFloat(value) || 0),
+                '',
+                '%',
+                0.1
+              )}
+
+              {renderInput(
+                'Dividend Growth Rate (%)',
+                dividendGrowthRate,
+                (value) => setDividendGrowthRate(parseFloat(value) || 0),
+                '',
+                '%',
+                0.1
+              )}
+            </div>
+
+            <div className="mt-4 sm:mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-start">
+                <Info className="h-5 w-5 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h4 className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                    Dividend Calculator Info
+                  </h4>
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                    This calculator assumes your trading profits are invested in dividend-paying stocks with
+                    reinvested dividends.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Dividend insights cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4 sm:p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
+                <h4 className="text-sm sm:text-base font-semibold text-green-800 dark:text-green-200">
+                  15-Year Dividend Income
+                </h4>
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-green-600 mb-2">
+                {formatCurrency(
+                  performanceMetrics.totalPL * (dividendYield / 100) * 15
+                )}
+              </p>
+              <p className="text-xs sm:text-sm text-green-700 dark:text-green-300">Based on current trading profits</p>
+            </div>
+
+            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4 sm:p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+                <h4 className="text-sm sm:text-base font-semibold text-blue-800 dark:text-blue-200">
+                  Monthly Dividend (Current)
+                </h4>
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-blue-600 mb-2">
+                {formatCurrency(
+                  (performanceMetrics.totalPL * (dividendYield / 100)) / 12
+                )}
+              </p>
+              <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">Based on current trading profits</p>
+            </div>
+
+            <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200 dark:border-purple-800 p-4 sm:p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <Percent className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
+                <h4 className="text-sm sm:text-base font-semibold text-purple-800 dark:text-purple-200">
+                  Future Yield on Cost
+                </h4>
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-purple-600 mb-2">
+                {(dividendYield * Math.pow(1 + dividendGrowthRate / 100, 10)).toFixed(1)}%
+              </p>
+              <p className="text-xs sm:text-sm text-purple-700 dark:text-purple-300">
+                Dividend yield in 10 years
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };    
