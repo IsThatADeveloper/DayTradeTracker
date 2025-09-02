@@ -1,4 +1,4 @@
-// src/components/Calendar.tsx - Enhanced Calendar with Dropdown Ranges and Chart Views
+// src/components/Calendar.tsx - Enhanced Calendar with Weekly P&L Display
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, TrendingUp, Clock, ChevronDown, BarChart3 } from 'lucide-react';
 import { 
@@ -26,8 +26,6 @@ import {
 import { Trade } from '../types/trade';
 import { formatCurrency } from '../utils/tradeUtils';
 
-// Note: Chart functionality integrated directly into Calendar component
-
 interface CalendarProps {
   trades: Trade[];
   selectedDate: Date;
@@ -36,6 +34,30 @@ interface CalendarProps {
   currentMonth: Date;
   onDateDoubleClick?: (date: Date) => void;
   onChartViewChange?: (view: string) => void;
+}
+
+// Additional type definitions for calendar data
+interface DayData {
+  date: Date;
+  totalPL: number;
+  tradeCount: number;
+  hasData: boolean;
+  isCurrentMonth: boolean;
+}
+
+interface WeekData {
+  weekStart: Date;
+  weekEnd: Date;
+  totalPL: number;
+  tradeCount: number;
+  hasData: boolean;
+  days: DayData[];
+}
+
+interface MonthData {
+  month: Date;
+  monthName: string;
+  days: DayData[];
 }
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -106,19 +128,19 @@ export const Calendar: React.FC<CalendarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Calendar data calculation - modified to handle different chart views
-  const calendarData = useMemo(() => {
+  // Calendar data calculation with weekly P&L
+  const calendarData = useMemo((): MonthData[] | DayData[] => {
     if (selectedChartView === '1y') {
       // For yearly view, we need all 12 months of the current year
       const currentYear = new Date().getFullYear();
-      const yearData = [];
+      const yearData: MonthData[] = [];
       
       for (let month = 0; month < 12; month++) {
         const monthStart = new Date(currentYear, month, 1);
         const daysInMonth = new Date(currentYear, month + 1, 0).getDate();
         const firstDayOfWeek = monthStart.getDay(); // 0 = Sunday, 1 = Monday, etc.
         
-        const monthCalendar = [];
+        const monthCalendar: DayData[] = [];
         
         // Create exactly 42 days (6 weeks × 7 days) for consistent layout
         for (let dayIndex = 0; dayIndex < 42; dayIndex++) {
@@ -170,7 +192,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       
       return yearData;
     } else {
-      // Regular monthly view
+      // Regular monthly view with weekly data
       const monthStart = startOfMonth(currentMonth);
       const monthEnd = endOfMonth(currentMonth);
       const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 });
@@ -197,6 +219,38 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   }, [trades, currentMonth, selectedChartView]);
 
+  // Calculate weekly P&L data
+  const weeklyData = useMemo((): WeekData[] => {
+    if (selectedChartView === '1y' || !Array.isArray(calendarData)) return [];
+    
+    const dailyData = calendarData as DayData[];
+    const weeks: WeekData[] = [];
+    
+    for (let i = 0; i < dailyData.length; i += 7) {
+      const weekDays = dailyData.slice(i, i + 7);
+      
+      // Calculate weekly totals
+      const weekTotalPL = weekDays.reduce((sum, day) => sum + day.totalPL, 0);
+      const weekTotalTrades = weekDays.reduce((sum, day) => sum + day.tradeCount, 0);
+      const weekHasData = weekDays.some(day => day.hasData);
+      
+      // Get week start (Sunday) and end (Saturday)
+      const weekStart = startOfWeek(weekDays[0].date, { weekStartsOn: 0 });
+      const weekEnd = endOfWeek(weekDays[0].date, { weekStartsOn: 0 });
+      
+      weeks.push({
+        weekStart,
+        weekEnd,
+        totalPL: weekTotalPL,
+        tradeCount: weekTotalTrades,
+        hasData: weekHasData,
+        days: weekDays
+      });
+    }
+    
+    return weeks;
+  }, [calendarData, selectedChartView]);
+
   // Format compact P&L
   const formatCompactPL = (amount: number): string => {
     if (Math.abs(amount) >= 1000) {
@@ -206,7 +260,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   // Handle preset range selection
-  const handlePresetRange = useCallback((preset: any) => {
+  const handlePresetRange = useCallback((preset: typeof RANGE_PRESETS[0]) => {
     if (preset.value === 'custom') {
       setShowCustomRange(true);
       setShowRangeDropdown(false);
@@ -248,7 +302,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   }, [onDateSelect]);
 
   // Handle chart view change
-  const handleChartViewChange = useCallback((view: any) => {
+  const handleChartViewChange = useCallback((view: typeof CHART_VIEWS[0]) => {
     setSelectedChartView(view.value);
     setShowChartDropdown(false);
     if (onChartViewChange) {
@@ -281,7 +335,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   }, [firstDate, secondDate]);
 
   // Get styling for each day
-  const getDayClasses = useCallback((day: any): string => {
+  const getDayClasses = useCallback((day: DayData): string => {
     const inRange = isInSelectedRange(day.date);
     const isTodayDate = isToday(day.date);
     const isSelectedDay = isSameDay(day.date, selectedDate);
@@ -336,7 +390,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   }, [selectedDate, isInSelectedRange, firstDate, secondDate]);
 
   // Get text color for content
-  const getTextColor = useCallback((day: any): string => {
+  const getTextColor = useCallback((day: DayData): string => {
     const isFirstDate = firstDate && isSameDay(day.date, firstDate);
     const isSecondDate = secondDate && isSameDay(day.date, secondDate);
     const inRange = isInSelectedRange(day.date);
@@ -402,12 +456,6 @@ export const Calendar: React.FC<CalendarProps> = ({
       winRate: rangeTrades.length > 0 ? (wins / rangeTrades.length) * 100 : 0
     };
   }, [firstDate, secondDate, trades]);
-
-  // Split calendar data into weeks
-  const weeks = [];
-  for (let i = 0; i < calendarData.length; i += 7) {
-    weeks.push(calendarData.slice(i, i + 7));
-  }
 
   return (
     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 p-3 sm:p-6">
@@ -683,7 +731,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           
           {/* Year grid - 4 months per row */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {calendarData.map((monthData: any) => {
+            {(calendarData as MonthData[]).map((monthData: MonthData) => {
               const weeks = [];
               for (let i = 0; i < monthData.days.length; i += 7) {
                 weeks.push(monthData.days.slice(i, i + 7));
@@ -706,9 +754,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                   </div>
                   
                   {/* Mini calendar days */}
-                  {weeks.map((week: any, weekIndex: number) => (
+                  {weeks.map((week: DayData[], weekIndex: number) => (
                     <div key={weekIndex} className="grid grid-cols-7 gap-1 mb-1">
-                      {week.map((day: any, dayIndex: number) => {
+                      {week.map((day: DayData, dayIndex: number) => {
                         const isTodayDate = isToday(day.date);
                         const isCurrentMonthDay = day.isCurrentMonth;
                         
@@ -773,10 +821,10 @@ export const Calendar: React.FC<CalendarProps> = ({
           </div>
         </div>
       ) : (
-        /* Regular Monthly View */
+        /* Regular Monthly View with Weekly P&L */
         <div className="space-y-1 sm:space-y-2">
-          {/* Day Headers */}
-          <div className="grid grid-cols-7 gap-1 sm:gap-2">
+          {/* Day Headers with Weekly P&L Header */}
+          <div className="grid grid-cols-8 gap-1 sm:gap-2">
             {(typeof window !== 'undefined' && window.innerWidth < 640 ? DAY_NAMES_MOBILE : DAY_NAMES).map((day, index) => (
               <div key={index} className="h-8 flex items-center justify-center">
                 <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">
@@ -784,70 +832,102 @@ export const Calendar: React.FC<CalendarProps> = ({
                 </span>
               </div>
             ))}
+            {/* Weekly P&L Header */}
+            <div className="h-8 flex items-center justify-center">
+              <span className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300">
+                Week P&L
+              </span>
+            </div>
           </div>
 
-          {/* Calendar Weeks */}
-          {(() => {
-            const weeks = [];
-            for (let i = 0; i < calendarData.length; i += 7) {
-              weeks.push(calendarData.slice(i, i + 7));
-            }
-            return weeks.map((week: any, weekIndex: number) => (
-              <div key={weekIndex} className="grid grid-cols-7 gap-1 sm:gap-2">
-                {week.map((day: any, dayIndex: number) => (
-                  <div
-                    key={dayIndex}
-                    className={`${getDayClasses(day)} calendar-day`}
-                    onClick={() => handleDayClick(day.date)}
-                    onDoubleClick={() => handleDoubleClick(day.date)}
-                    title={day.hasData ? `${formatCurrency(day.totalPL)} (${day.tradeCount} trades)` : format(day.date, 'MMM d')}
-                  >
-                    {/* Date Number */}
-                    <div className="absolute top-1 sm:top-2 left-1 sm:left-2">
-                      <span className={`text-xs sm:text-sm font-semibold ${getTextColor(day)}`}>
-                        {format(day.date, 'd')}
-                      </span>
-                    </div>
-                    
-                    {/* Selection Indicators for Range */}
-                    {firstDate && isSameDay(day.date, firstDate) && (
-                      <div className="absolute top-1 sm:top-2 right-1 sm:right-2">
-                        <div className="w-4 h-4 sm:w-5 sm:h-5 bg-white/20 rounded-full flex items-center justify-center">
-                          <span className="text-xs font-bold text-white">1</span>
-                        </div>
-                      </div>
-                    )}
-                    {secondDate && isSameDay(day.date, secondDate) && (
-                      <div className="absolute top-1 sm:top-2 right-1 sm:right-2">
-                        <div className="w-4 h-4 sm:w-5 sm:h-5 bg-white/20 rounded-full flex items-center justify-center">
-                          <span className="text-xs font-bold text-white">2</span>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Today Indicator */}
-                    {isToday(day.date) && !isInSelectedRange(day.date) && (
-                      <div className="absolute top-1 sm:top-2 right-1 sm:right-2">
-                        <div className="w-2 h-2 bg-amber-500 rounded-full shadow-sm"></div>
-                      </div>
-                    )}
-                    
-                    {/* Trading Data */}
-                    {day.hasData && day.isCurrentMonth && (
-                      <div className="absolute bottom-1 sm:bottom-2 left-1 sm:left-2 right-1 sm:right-2">
-                        <div className={`text-xs font-semibold truncate ${getTextColor(day)}`}>
-                          {formatCompactPL(day.totalPL)}
-                        </div>
-                        <div className={`text-xs truncate opacity-75 ${getTextColor(day)} hidden sm:block`}>
-                          {day.tradeCount} trade{day.tradeCount !== 1 ? 's' : ''}
-                        </div>
-                      </div>
-                    )}
+          {/* Calendar Weeks with Weekly P&L */}
+          {weeklyData.map((week: WeekData, weekIndex: number) => (
+            <div key={weekIndex} className="grid grid-cols-8 gap-1 sm:gap-2">
+              {/* Daily cells */}
+              {week.days.map((day: DayData, dayIndex: number) => (
+                <div
+                  key={dayIndex}
+                  className={`${getDayClasses(day)} calendar-day`}
+                  onClick={() => handleDayClick(day.date)}
+                  onDoubleClick={() => handleDoubleClick(day.date)}
+                  title={day.hasData ? `${formatCurrency(day.totalPL)} (${day.tradeCount} trades)` : format(day.date, 'MMM d')}
+                >
+                  {/* Date Number */}
+                  <div className="absolute top-1 sm:top-2 left-1 sm:left-2">
+                    <span className={`text-xs sm:text-sm font-semibold ${getTextColor(day)}`}>
+                      {format(day.date, 'd')}
+                    </span>
                   </div>
-                ))}
+                  
+                  {/* Selection Indicators for Range */}
+                  {firstDate && isSameDay(day.date, firstDate) && (
+                    <div className="absolute top-1 sm:top-2 right-1 sm:right-2">
+                      <div className="w-4 h-4 sm:w-5 sm:h-5 bg-white/20 rounded-full flex items-center justify-center">
+                        <span className="text-xs font-bold text-white">1</span>
+                      </div>
+                    </div>
+                  )}
+                  {secondDate && isSameDay(day.date, secondDate) && (
+                    <div className="absolute top-1 sm:top-2 right-1 sm:right-2">
+                      <div className="w-4 h-4 sm:w-5 sm:h-5 bg-white/20 rounded-full flex items-center justify-center">
+                        <span className="text-xs font-bold text-white">2</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Today Indicator */}
+                  {isToday(day.date) && !isInSelectedRange(day.date) && (
+                    <div className="absolute top-1 sm:top-2 right-1 sm:right-2">
+                      <div className="w-2 h-2 bg-amber-500 rounded-full shadow-sm"></div>
+                    </div>
+                  )}
+                  
+                  {/* Trading Data */}
+                  {day.hasData && day.isCurrentMonth && (
+                    <div className="absolute bottom-1 sm:bottom-2 left-1 sm:left-2 right-1 sm:right-2">
+                      <div className={`text-xs font-semibold truncate ${getTextColor(day)}`}>
+                        {formatCompactPL(day.totalPL)}
+                      </div>
+                      <div className={`text-xs truncate opacity-75 ${getTextColor(day)} hidden sm:block`}>
+                        {day.tradeCount} trade{day.tradeCount !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              
+              {/* Weekly P&L Cell */}
+              <div className={`relative h-14 sm:h-16 md:h-20 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center ${
+                week.hasData 
+                  ? week.totalPL >= 0 
+                    ? 'bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/30 dark:to-teal-900/30 border-emerald-300 dark:border-emerald-700'
+                    : 'bg-gradient-to-br from-rose-100 to-red-100 dark:from-rose-900/30 dark:to-red-900/30 border-rose-300 dark:border-rose-700'
+                  : 'bg-slate-50 dark:bg-slate-900'
+              }`}
+              title={week.hasData ? `Week of ${format(week.weekStart, 'MMM d')}: ${formatCurrency(week.totalPL)} (${week.tradeCount} trades)` : `Week of ${format(week.weekStart, 'MMM d')}: No trades`}
+              >
+                {week.hasData && (
+                  <>
+                    <div className={`text-xs sm:text-sm font-bold ${
+                      week.totalPL >= 0 
+                        ? 'text-emerald-700 dark:text-emerald-300' 
+                        : 'text-rose-700 dark:text-rose-300'
+                    }`}>
+                      {formatCompactPL(week.totalPL)}
+                    </div>
+                    <div className="text-xs text-slate-600 dark:text-slate-400 mt-1 hidden sm:block">
+                      {week.tradeCount} trade{week.tradeCount !== 1 ? 's' : ''}
+                    </div>
+                  </>
+                )}
+                {!week.hasData && (
+                  <div className="text-xs text-slate-400 dark:text-slate-500">
+                    No trades
+                  </div>
+                )}
               </div>
-            ));
-          })()}
+            </div>
+          ))}
         </div>
       )}
 
@@ -970,7 +1050,6 @@ export const Calendar: React.FC<CalendarProps> = ({
           </div>
         </div>
       )}
-
 
     </div>
   );
