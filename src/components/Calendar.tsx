@@ -58,6 +58,8 @@ interface MonthData {
   month: Date;
   monthName: string;
   days: DayData[];
+  monthlyPL: number;
+  monthlyTrades: number;
 }
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -79,7 +81,7 @@ const RANGE_PRESETS = [
 const CHART_VIEWS = [
   { label: '1 Month', value: '1m' },
   { label: '1 Year', value: '1y' },
-  { label: 'All Time', value: 'all' },
+  { label: 'YTD', value: 'all' },
 ];
 
 export const Calendar: React.FC<CalendarProps> = ({
@@ -128,6 +130,20 @@ export const Calendar: React.FC<CalendarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Get earliest and latest trade dates
+  const tradeDataRange = useMemo(() => {
+    if (trades.length === 0) return { earliest: new Date(), latest: new Date() };
+    
+    const dates = trades.map(trade => 
+      trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp)
+    );
+    
+    return {
+      earliest: new Date(Math.min(...dates.map(d => d.getTime()))),
+      latest: new Date(Math.max(...dates.map(d => d.getTime())))
+    };
+  }, [trades]);
+
   // Calendar data calculation with weekly P&L
   const calendarData = useMemo((): MonthData[] | DayData[] => {
     if (selectedChartView === '1y') {
@@ -137,10 +153,13 @@ export const Calendar: React.FC<CalendarProps> = ({
       
       for (let month = 0; month < 12; month++) {
         const monthStart = new Date(currentYear, month, 1);
-        const daysInMonth = new Date(currentYear, month + 1, 0).getDate();
+        const monthEnd = new Date(currentYear, month + 1, 0);
+        const daysInMonth = monthEnd.getDate();
         const firstDayOfWeek = monthStart.getDay(); // 0 = Sunday, 1 = Monday, etc.
         
         const monthCalendar: DayData[] = [];
+        let monthlyPL = 0;
+        let monthlyTrades = 0;
         
         // Create exactly 42 days (6 weeks × 7 days) for consistent layout
         for (let dayIndex = 0; dayIndex < 42; dayIndex++) {
@@ -174,6 +193,12 @@ export const Calendar: React.FC<CalendarProps> = ({
           
           const totalPL = dayTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
           
+          // Add to monthly totals if it's a current month day
+          if (isCurrentMonth && dayTrades.length > 0) {
+            monthlyPL += totalPL;
+            monthlyTrades += dayTrades.length;
+          }
+          
           monthCalendar.push({
             date: currentDate,
             totalPL,
@@ -186,11 +211,93 @@ export const Calendar: React.FC<CalendarProps> = ({
         yearData.push({
           month: monthStart,
           monthName: format(monthStart, 'MMM'),
-          days: monthCalendar
+          days: monthCalendar,
+          monthlyPL,
+          monthlyTrades
         });
       }
       
       return yearData;
+    } else if (selectedChartView === 'all') {
+      // For YTD view, show months from earliest to latest trade
+      const allTimeData: MonthData[] = [];
+      
+      if (trades.length === 0) return allTimeData;
+      
+      const startDate = startOfMonth(tradeDataRange.earliest);
+      const endDate = endOfMonth(tradeDataRange.latest);
+      
+      let currentDate = startDate;
+      
+      while (currentDate <= endDate) {
+        const monthStart = startOfMonth(currentDate);
+        const monthEnd = endOfMonth(currentDate);
+        const daysInMonth = monthEnd.getDate();
+        const firstDayOfWeek = monthStart.getDay();
+        
+        const monthCalendar: DayData[] = [];
+        let monthlyPL = 0;
+        let monthlyTrades = 0;
+        
+        // Create exactly 42 days (6 weeks × 7 days) for consistent layout
+        for (let dayIndex = 0; dayIndex < 42; dayIndex++) {
+          let dayDate: Date;
+          let isCurrentMonth = false;
+          
+          if (dayIndex < firstDayOfWeek) {
+            // Days from previous month
+            const prevMonth = currentDate.getMonth() === 0 ? 11 : currentDate.getMonth() - 1;
+            const prevYear = currentDate.getMonth() === 0 ? currentDate.getFullYear() - 1 : currentDate.getFullYear();
+            const prevMonthLastDay = new Date(prevYear, prevMonth + 1, 0).getDate();
+            const dayOfPrevMonth = prevMonthLastDay - (firstDayOfWeek - dayIndex - 1);
+            dayDate = new Date(prevYear, prevMonth, dayOfPrevMonth);
+          } else if (dayIndex - firstDayOfWeek + 1 <= daysInMonth) {
+            // Days from current month
+            const dayOfCurrentMonth = dayIndex - firstDayOfWeek + 1;
+            dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dayOfCurrentMonth);
+            isCurrentMonth = true;
+          } else {
+            // Days from next month
+            const nextMonth = currentDate.getMonth() === 11 ? 0 : currentDate.getMonth() + 1;
+            const nextYear = currentDate.getMonth() === 11 ? currentDate.getFullYear() + 1 : currentDate.getFullYear();
+            const dayOfNextMonth = dayIndex - firstDayOfWeek - daysInMonth + 1;
+            dayDate = new Date(nextYear, nextMonth, dayOfNextMonth);
+          }
+          
+          const dayTrades = trades.filter(trade => {
+            const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
+            return isSameDay(tradeDate, dayDate);
+          });
+          
+          const totalPL = dayTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
+          
+          // Add to monthly totals if it's a current month day
+          if (isCurrentMonth && dayTrades.length > 0) {
+            monthlyPL += totalPL;
+            monthlyTrades += dayTrades.length;
+          }
+          
+          monthCalendar.push({
+            date: dayDate,
+            totalPL,
+            tradeCount: dayTrades.length,
+            hasData: dayTrades.length > 0,
+            isCurrentMonth
+          });
+        }
+        
+        allTimeData.push({
+          month: currentDate,
+          monthName: format(currentDate, 'MMM yyyy'),
+          days: monthCalendar,
+          monthlyPL,
+          monthlyTrades
+        });
+        
+        currentDate = addMonths(currentDate, 1);
+      }
+      
+      return allTimeData;
     } else {
       // Regular monthly view with weekly data
       const monthStart = startOfMonth(currentMonth);
@@ -217,11 +324,11 @@ export const Calendar: React.FC<CalendarProps> = ({
         };
       });
     }
-  }, [trades, currentMonth, selectedChartView]);
+  }, [trades, currentMonth, selectedChartView, tradeDataRange]);
 
   // Calculate weekly P&L data
   const weeklyData = useMemo((): WeekData[] => {
-    if (selectedChartView === '1y' || !Array.isArray(calendarData)) return [];
+    if (selectedChartView === '1y' || selectedChartView === 'all' || !Array.isArray(calendarData)) return [];
     
     const dailyData = calendarData as DayData[];
     const weeks: WeekData[] = [];
@@ -251,11 +358,21 @@ export const Calendar: React.FC<CalendarProps> = ({
     return weeks;
   }, [calendarData, selectedChartView]);
 
-  // Format compact P&L
-  const formatCompactPL = (amount: number): string => {
-    if (Math.abs(amount) >= 1000) {
+  // Format compact P&L - improved for mobile
+  const formatCompactPL = (amount: number, isMobile: boolean = false): string => {
+    if (Math.abs(amount) >= 100000) {
+      return `${amount > 0 ? '+' : ''}${(amount / 1000).toFixed(0)}k`;
+    } else if (Math.abs(amount) >= 10000) {
+      return `${amount > 0 ? '+' : ''}${(amount / 1000).toFixed(1)}k`;
+    } else if (Math.abs(amount) >= 1000) {
       return `${amount > 0 ? '+' : ''}${(amount / 1000).toFixed(1)}k`;
     }
+    
+    // For mobile, be more aggressive with shortening
+    if (isMobile && Math.abs(amount) >= 100) {
+      return `${amount > 0 ? '+' : ''}${Math.round(amount)}`;
+    }
+    
     return `${amount > 0 ? '+' : ''}${Math.round(amount)}`;
   };
 
@@ -503,28 +620,30 @@ export const Calendar: React.FC<CalendarProps> = ({
             </div>
           )}
           
-          {/* Month Navigation */}
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => onMonthChange(subMonths(currentMonth, 1))}
-              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all duration-200 hover:scale-105"
-              title="Previous month"
-            >
-              <ChevronLeft className="h-5 w-5 text-slate-600 dark:text-slate-400" />
-            </button>
-            
-            <h4 className="text-lg font-semibold text-slate-900 dark:text-white min-w-[120px] sm:min-w-[140px] text-center">
-              {format(currentMonth, 'MMM yyyy')}
-            </h4>
-            
-            <button
-              onClick={() => onMonthChange(addMonths(currentMonth, 1))}
-              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all duration-200 hover:scale-105"
-              title="Next month"
-            >
-              <ChevronRight className="h-5 w-5 text-slate-600 dark:text-slate-400" />
-            </button>
-          </div>
+          {/* Month Navigation - Only show for monthly view */}
+          {selectedChartView === '1m' && (
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => onMonthChange(subMonths(currentMonth, 1))}
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all duration-200 hover:scale-105"
+                title="Previous month"
+              >
+                <ChevronLeft className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+              </button>
+              
+              <h4 className="text-lg font-semibold text-slate-900 dark:text-white min-w-[120px] sm:min-w-[140px] text-center">
+                {format(currentMonth, 'MMM yyyy')}
+              </h4>
+              
+              <button
+                onClick={() => onMonthChange(addMonths(currentMonth, 1))}
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all duration-200 hover:scale-105"
+                title="Next month"
+              >
+                <ChevronRight className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -720,12 +839,15 @@ export const Calendar: React.FC<CalendarProps> = ({
       </div>
 
       {/* Calendar Grid */}
-      {selectedChartView === '1y' ? (
-        /* Year View - TraderVue Style */
+      {selectedChartView === '1y' || selectedChartView === 'all' ? (
+        /* Year View & YTD View - TraderVue Style */
         <div className="space-y-6">
           <div className="text-center mb-4">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-              {new Date().getFullYear()} Trading Calendar
+              {selectedChartView === '1y' 
+                ? `${new Date().getFullYear()} Trading Calendar`
+                : `YTD Trading Calendar (${format(tradeDataRange.earliest, 'yyyy')} - ${format(tradeDataRange.latest, 'yyyy')})`
+              }
             </h3>
           </div>
           
@@ -739,10 +861,24 @@ export const Calendar: React.FC<CalendarProps> = ({
               
               return (
                 <div key={monthData.monthName} className="bg-slate-50 dark:bg-slate-900 rounded-lg p-3">
-                  {/* Month header */}
-                  <h4 className="text-sm font-semibold text-center text-slate-700 dark:text-slate-300 mb-3">
-                    {monthData.monthName} {new Date().getFullYear()}
-                  </h4>
+                  {/* Month header with P&L */}
+                  <div className="text-center mb-3">
+                    <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      {monthData.monthName}
+                    </h4>
+                    {monthData.monthlyTrades > 0 && (
+                      <div className="mt-1">
+                        <div className={`text-xs font-bold ${
+                          monthData.monthlyPL >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                        }`}>
+                          {formatCurrency(monthData.monthlyPL)}
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          {monthData.monthlyTrades} trades
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   
                   {/* Mini day headers */}
                   <div className="grid grid-cols-7 gap-1 mb-2">
@@ -882,11 +1018,11 @@ export const Calendar: React.FC<CalendarProps> = ({
                     </div>
                   )}
                   
-                  {/* Trading Data */}
+                  {/* Trading Data - Improved mobile formatting */}
                   {day.hasData && day.isCurrentMonth && (
                     <div className="absolute bottom-1 sm:bottom-2 left-1 sm:left-2 right-1 sm:right-2">
                       <div className={`text-xs font-semibold truncate ${getTextColor(day)}`}>
-                        {formatCompactPL(day.totalPL)}
+                        {formatCompactPL(day.totalPL, window.innerWidth < 640)}
                       </div>
                       <div className={`text-xs truncate opacity-75 ${getTextColor(day)} hidden sm:block`}>
                         {day.tradeCount} trade{day.tradeCount !== 1 ? 's' : ''}
@@ -913,7 +1049,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         ? 'text-emerald-700 dark:text-emerald-300' 
                         : 'text-rose-700 dark:text-rose-300'
                     }`}>
-                      {formatCompactPL(week.totalPL)}
+                      {formatCompactPL(week.totalPL, window.innerWidth < 640)}
                     </div>
                     <div className="text-xs text-slate-600 dark:text-slate-400 mt-1 hidden sm:block">
                       {week.tradeCount} trade{week.tradeCount !== 1 ? 's' : ''}
