@@ -1,4 +1,4 @@
-// src/components/BulkTradeImport.tsx - Improved version with better organization
+// src/components/BulkTradeImport.tsx - Updated version with selectedDate support
 import React, { useState } from 'react';
 import { 
   Upload, 
@@ -19,6 +19,7 @@ import { generateTradeId, formatCurrency } from '../utils/tradeUtils';
 interface BulkTradeImportProps {
   onTradesAdded: (trades: Trade[]) => void;
   lastTrade?: Trade;
+  selectedDate?: Date; // New prop for the currently selected date in daily view
 }
 
 type ImportMethod = 'csv' | 'duplicate' | 'bulk-manual';
@@ -29,11 +30,34 @@ const MAX_DUPLICATE_COUNT = 50;
 const DEFAULT_BULK_TRADE_COUNT = 3;
 
 /**
+ * Helper function to create timestamp based on selected date or current time
+ */
+const createTimestamp = (selectedDate?: Date, offsetSeconds: number = 0): Date => {
+  const baseDate = selectedDate || new Date();
+  const now = new Date();
+  
+  // If we have a selected date, use that date but with current time
+  // If no selected date, use current date and time
+  const targetDate = new Date(
+    baseDate.getFullYear(),
+    baseDate.getMonth(),
+    baseDate.getDate(),
+    now.getHours(),
+    now.getMinutes(),
+    now.getSeconds() + offsetSeconds
+  );
+  
+  return targetDate;
+};
+
+/**
  * Bulk trade import component supporting CSV, duplication, and manual entry methods
+ * Now automatically uses the selected date from daily view when available
  */
 export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({ 
   onTradesAdded, 
-  lastTrade 
+  lastTrade,
+  selectedDate 
 }) => {
   // Component state
   const [isOpen, setIsOpen] = useState(false);
@@ -56,7 +80,7 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
         entryPrice: undefined,
         exitPrice: undefined,
         quantity: lastTrade?.quantity || undefined,
-        timestamp: new Date(),
+        timestamp: createTimestamp(selectedDate, i),
         notes: '',
       });
     }
@@ -91,7 +115,7 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
         }
 
         try {
-          const parsedTrade = parseCSVLine(parts, i + 1);
+          const parsedTrade = parseCSVLine(parts, i + 1, i);
           if (parsedTrade.error) {
             newErrors.push(parsedTrade.error);
             continue;
@@ -122,7 +146,7 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
   /**
    * Parse a single CSV line into a Trade object
    */
-  const parseCSVLine = (parts: string[], lineNumber: number): { trade?: Trade; error?: string } => {
+  const parseCSVLine = (parts: string[], lineNumber: number, index: number): { trade?: Trade; error?: string } => {
     try {
       // Expected format: Ticker, Direction, Quantity, Entry Price, Exit Price, Time (optional), Notes (optional)
       const ticker = parts[0]?.trim().toUpperCase();
@@ -139,12 +163,24 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
         return { error: `Line ${lineNumber}: Invalid data format` };
       }
 
-      // Parse timestamp
-      let timestamp = new Date();
+      // Parse timestamp - use selected date if no time specified
+      let timestamp = createTimestamp(selectedDate, index);
       if (timeStr) {
         const parsed = new Date(timeStr);
         if (!isNaN(parsed.getTime())) {
-          timestamp = parsed;
+          // If selected date is specified and parsed time doesn't have date, combine them
+          if (selectedDate && timeStr.includes(':') && !timeStr.includes('-') && !timeStr.includes('/')) {
+            timestamp = new Date(
+              selectedDate.getFullYear(),
+              selectedDate.getMonth(),
+              selectedDate.getDate(),
+              parsed.getHours(),
+              parsed.getMinutes(),
+              parsed.getSeconds()
+            );
+          } else {
+            timestamp = parsed;
+          }
         }
       }
 
@@ -184,7 +220,7 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
       trades.push({
         ...lastTrade,
         id: generateTradeId(),
-        timestamp: new Date(Date.now() + i * 1000), // Spread timestamps by 1 second
+        timestamp: createTimestamp(selectedDate, i), // Use selected date with offset
         notes: `${lastTrade.notes || ''} (Copy ${i + 1})`.trim(),
       });
     }
@@ -285,7 +321,7 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
       entryPrice: undefined,
       exitPrice: undefined,
       quantity: lastTrade?.quantity || undefined,
-      timestamp: new Date(),
+      timestamp: createTimestamp(selectedDate, prev.length),
       notes: '',
     }]);
   };
@@ -397,6 +433,12 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
             </span>
           </div>
         </div>
+        {/* Date indicator when selectedDate is different from today */}
+        {selectedDate && (
+          <div className="mt-3 text-xs text-blue-600 dark:text-blue-400">
+            Trades will be dated: {selectedDate.toLocaleDateString()}
+          </div>
+        )}
       </div>
     );
   };
@@ -553,6 +595,11 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
         >
           <Upload className="h-5 w-5 mr-2" />
           Bulk Import Trades
+          {selectedDate && (
+            <span className="ml-2 text-xs bg-green-500 px-2 py-1 rounded">
+              {selectedDate.toLocaleDateString()}
+            </span>
+          )}
         </button>
       </div>
     );
@@ -563,9 +610,16 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-          Bulk Import Trades
-        </h3>
+        <div>
+          <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+            Bulk Import Trades
+          </h3>
+          {selectedDate && (
+            <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
+              Date: {selectedDate.toLocaleDateString()}
+            </p>
+          )}
+        </div>
         <button
           onClick={() => setIsOpen(false)}
           className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -640,6 +694,11 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
             />
             <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
               <strong>Format:</strong> Ticker, Direction (long/short), Quantity, Entry Price, Exit Price, Time (optional), Notes (optional)
+              {selectedDate && (
+                <span className="block mt-1 text-blue-600 dark:text-blue-400">
+                  <strong>Note:</strong> Times without dates will use {selectedDate.toLocaleDateString()}
+                </span>
+              )}
             </p>
           </div>
           
@@ -692,6 +751,11 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
                     }`}>
                       {formatCurrency(bulkTrades.reduce((sum, t) => sum + calculatePL(t), 0))}
                     </span>
+                  </div>
+                )}
+                {selectedDate && (
+                  <div className="mt-1 text-xs">
+                    All trades will be dated: {selectedDate.toLocaleDateString()}
                   </div>
                 )}
               </div>

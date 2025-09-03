@@ -1,4 +1,4 @@
-// src/components/ManualTradeEntry.tsx - Improved version with better organization
+// src/components/ManualTradeEntry.tsx - Updated with selectedDate support
 import React, { useState, useCallback, useMemo } from 'react';
 import { Plus, X, DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
 
@@ -8,6 +8,7 @@ import { generateTradeId } from '../utils/tradeUtils';
 
 interface ManualTradeEntryProps {
   onTradeAdded: (trade: Trade) => void;
+  selectedDate?: Date; // New prop for the currently selected date in daily view
 }
 
 interface TradeFormData {
@@ -20,25 +21,47 @@ interface TradeFormData {
   notes: string;
 }
 
-// Constants
-const INITIAL_FORM_DATA: TradeFormData = {
-  ticker: '',
-  entryPrice: '',
-  exitPrice: '',
-  quantity: '',
-  direction: 'long',
-  timestamp: new Date().toISOString().slice(0, 16),
-  notes: '',
+/**
+ * Helper function to create initial timestamp based on selected date or current time
+ */
+const createInitialTimestamp = (selectedDate?: Date): string => {
+  const baseDate = selectedDate || new Date();
+  // If we have a selected date, use that date but with current time
+  // If no selected date, use current date and time
+  const now = new Date();
+  const targetDate = new Date(
+    baseDate.getFullYear(),
+    baseDate.getMonth(),
+    baseDate.getDate(),
+    now.getHours(),
+    now.getMinutes()
+  );
+  return targetDate.toISOString().slice(0, 16);
 };
 
 /**
  * Manual trade entry form component for adding individual trades
  * Supports both long and short positions with real-time P&L calculation
+ * Automatically uses the selected date from daily view when available
  */
-export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded }) => {
+export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ 
+  onTradeAdded,
+  selectedDate 
+}) => {
+  // Create initial form data with proper timestamp
+  const createInitialFormData = useCallback((): TradeFormData => ({
+    ticker: '',
+    entryPrice: '',
+    exitPrice: '',
+    quantity: '',
+    direction: 'long',
+    timestamp: createInitialTimestamp(selectedDate),
+    notes: '',
+  }), [selectedDate]);
+
   // Component state
   const [isOpen, setIsOpen] = useState(false);
-  const [formData, setFormData] = useState<TradeFormData>(INITIAL_FORM_DATA);
+  const [formData, setFormData] = useState<TradeFormData>(createInitialFormData());
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   /**
@@ -51,14 +74,23 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
   }, []);
 
   /**
-   * Reset form to initial state
+   * Reset form to initial state with proper timestamp
    */
   const resetForm = useCallback((): void => {
-    setFormData({
-      ...INITIAL_FORM_DATA,
-      timestamp: new Date().toISOString().slice(0, 16), // Always use current time
-    });
-  }, []);
+    setFormData(createInitialFormData());
+  }, [createInitialFormData]);
+
+  /**
+   * Update form when selectedDate changes
+   */
+  React.useEffect(() => {
+    if (isOpen) {
+      setFormData(prev => ({
+        ...prev,
+        timestamp: createInitialTimestamp(selectedDate)
+      }));
+    }
+  }, [selectedDate, isOpen]);
 
   /**
    * Validate form data before submission
@@ -149,6 +181,14 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
   };
 
   /**
+   * Handle opening the form
+   */
+  const handleOpen = useCallback((): void => {
+    setFormData(createInitialFormData());
+    setIsOpen(true);
+  }, [createInitialFormData]);
+
+  /**
    * Handle closing the form
    */
   const handleClose = useCallback((): void => {
@@ -218,6 +258,11 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
             }).format(calculatedPL)}
           </span>
         </div>
+        {selectedDate && (
+          <div className="mt-2 text-xs text-blue-600 dark:text-blue-400">
+            Trade date set to: {selectedDate.toLocaleDateString()}
+          </div>
+        )}
       </div>
     );
   };
@@ -227,11 +272,16 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
     return (
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-3 sm:p-4">
         <button
-          onClick={() => setIsOpen(true)}
+          onClick={handleOpen}
           className="w-full flex items-center justify-center px-4 sm:px-6 py-3 sm:py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-base sm:text-lg"
         >
           <Plus className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
           Add New Trade
+          {selectedDate && (
+            <span className="ml-2 text-xs bg-blue-500 px-2 py-1 rounded">
+              {selectedDate.toLocaleDateString()}
+            </span>
+          )}
         </button>
       </div>
     );
@@ -242,9 +292,16 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ onTradeAdded
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-4 sm:mb-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-          Add New Trade
-        </h3>
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Add New Trade
+          </h3>
+          {selectedDate && (
+            <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
+              Date: {selectedDate.toLocaleDateString()}
+            </p>
+          )}
+        </div>
         <button
           onClick={handleClose}
           disabled={isSubmitting}

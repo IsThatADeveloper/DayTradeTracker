@@ -539,10 +539,17 @@ function AppContent() {
       // Daily view (default)
       return (
         <div className="space-y-6 sm:space-y-8">
-          {/* Trade entry forms */}
+          {/* Trade entry forms - NOW WITH SELECTED DATE */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <ManualTradeEntry onTradeAdded={handleTradeAdded} />
-            <BulkTradeImport onTradesAdded={handleTradesAdded} lastTrade={lastTrade} />
+            <ManualTradeEntry 
+              onTradeAdded={handleTradeAdded} 
+              selectedDate={selectedDate} 
+            />
+            <BulkTradeImport 
+              onTradesAdded={handleTradesAdded} 
+              lastTrade={lastTrade} 
+              selectedDate={selectedDate}
+            />
           </div>
           
           {/* Broker notification */}
