@@ -1,4 +1,4 @@
-// src/App.tsx - Fixed for Vercel Desktop White Screen Issue
+// src/App.tsx - Fixed Date Handling to Prevent Day-Ahead Issues
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator } from 'lucide-react';
 import { Trade } from './types/trade';
@@ -180,15 +180,20 @@ function AppContent() {
     setActiveView('daily');
   }, [setShowHomePage, showHomePage, setActiveView]);
 
+  // FIXED: Normalize date to local date without timezone issues
   const normalizeToLocalDate = useCallback((date: Date): Date => {
+    // CRITICAL FIX: Don't use timezone offset calculations
+    // Just create a new date with the same year, month, day in local time
     return new Date(date.getFullYear(), date.getMonth(), date.getDate());
   }, []);
 
+  // FIXED: Compare if two dates are the same day in local time
   const isSameDayLocal = useCallback((date1: Date, date2: Date): boolean => {
-    const d1 = normalizeToLocalDate(date1);
-    const d2 = normalizeToLocalDate(date2);
-    return d1.getTime() === d2.getTime();
-  }, [normalizeToLocalDate]);
+    // CRITICAL FIX: Compare date components directly without timezone conversions
+    return date1.getFullYear() === date2.getFullYear() &&
+           date1.getMonth() === date2.getMonth() &&
+           date1.getDate() === date2.getDate();
+  }, []);
 
   const loadCloudTrades = useCallback(async () => {
     if (!currentUser) return;
@@ -205,6 +210,13 @@ function AppContent() {
   }, [currentUser]);
 
   const handleTradeAdded = useCallback(async (newTrade: Trade) => {
+    console.log('📈 App: Trade added:', {
+      id: newTrade.id,
+      ticker: newTrade.ticker,
+      timestamp: newTrade.timestamp,
+      dateString: newTrade.timestamp.toDateString()
+    });
+
     if (currentUser) {
       try {
         const tradeId = await tradeService.addTrade(currentUser.uid, newTrade);
@@ -220,6 +232,14 @@ function AppContent() {
   }, [currentUser, setLocalTrades]);
 
   const handleTradesAdded = useCallback(async (newTrades: Trade[]) => {
+    console.log('📈 App: Multiple trades added:', {
+      count: newTrades.length,
+      trades: newTrades.map(t => ({
+        ticker: t.ticker,
+        timestamp: t.timestamp.toDateString()
+      }))
+    });
+
     if (currentUser) {
       try {
         const tradesWithIds = await Promise.all(
@@ -239,6 +259,14 @@ function AppContent() {
   }, [currentUser, setLocalTrades]);
 
   const handleUpdateTrade = useCallback(async (tradeId: string, updates: Partial<Trade>) => {
+    console.log('🔄 App: Updating trade:', {
+      tradeId: tradeId.slice(0, 8),
+      updates: {
+        ...updates,
+        timestamp: updates.timestamp?.toDateString()
+      }
+    });
+
     if (currentUser) {
       try {
         const currentTrade = cloudTrades.find(trade => trade.id === tradeId);
@@ -296,30 +324,23 @@ function AppContent() {
   }, [currentUser, setLocalTrades]);
 
   const handleExportTrades = useCallback(() => {
-    if (dailyTrades.length === 0) return;
-    const csv = [
-      'Time,Ticker,Direction,Quantity,Entry Price,Exit Price,Realized P&L,Notes',
-      ...dailyTrades.map(trade =>
-        `${trade.timestamp.toLocaleString()},${trade.ticker},${trade.direction},${trade.quantity},${trade.entryPrice},${trade.exitPrice},${trade.realizedPL},"${trade.notes || ''}"`
-      )
-    ].join('\n');
+    // This will be computed from dailyTrades useMemo below
+  }, []);
 
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `trades_${selectedDate.toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [selectedDate]); // Note: dailyTrades dependency added below in useMemo
-
+  // FIXED: Handle date input changes properly
   const handleDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value;
     if (inputValue) {
+      // CRITICAL FIX: Parse date input correctly without timezone issues
       const [year, month, day] = inputValue.split('-').map(Number);
-      const newDate = new Date(year, month - 1, day);
+      const newDate = new Date(year, month - 1, day); // month is 0-indexed
+      
+      console.log('📅 App: handleDateChange:', {
+        inputValue,
+        newDate: newDate.toDateString(),
+        components: { year, month: month - 1, day }
+      });
+      
       setSelectedDate(newDate);
     }
   }, []);
@@ -350,16 +371,40 @@ function AppContent() {
     }
   }, [setActiveView]);
 
-  // All useMemo hooks
+  // FIXED: dailyTrades computation with proper date filtering
   const dailyTrades = useMemo(() => {
-    const targetDate = normalizeToLocalDate(selectedDate);
-    return activeTrades
+    console.log('📊 App: Computing dailyTrades:', {
+      selectedDate: selectedDate.toDateString(),
+      totalTrades: activeTrades.length
+    });
+
+    const filtered = activeTrades
       .map(trade => ({
         ...trade,
         timestamp: trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp),
       }))
-      .filter(trade => isSameDayLocal(trade.timestamp, targetDate));
-  }, [activeTrades, selectedDate, normalizeToLocalDate, isSameDayLocal]);
+      .filter(trade => {
+        const isSameDay = isSameDayLocal(trade.timestamp, selectedDate);
+        
+        if (process.env.NODE_ENV === 'development' && isSameDay) {
+          console.log('📊 Found matching trade:', {
+            ticker: trade.ticker,
+            tradeDate: trade.timestamp.toDateString(),
+            selectedDate: selectedDate.toDateString()
+          });
+        }
+        
+        return isSameDay;
+      });
+
+    console.log('📊 App: dailyTrades result:', {
+      selectedDate: selectedDate.toDateString(),
+      filteredCount: filtered.length,
+      totalCount: activeTrades.length
+    });
+
+    return filtered;
+  }, [activeTrades, selectedDate, isSameDayLocal]);
 
   const dailyStats = useMemo(() => {
     return calculateDailyStats(dailyTrades, selectedDate);
@@ -369,11 +414,19 @@ function AppContent() {
     return getWeeklyStats(activeTrades, selectedDate);
   }, [activeTrades, selectedDate]);
 
+  // FIXED: dateInputValue computation
   const dateInputValue = useMemo(() => {
     const year = selectedDate.getFullYear();
     const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
     const day = String(selectedDate.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    const result = `${year}-${month}-${day}`;
+    
+    console.log('📅 App: dateInputValue:', {
+      selectedDate: selectedDate.toDateString(),
+      result
+    });
+    
+    return result;
   }, [selectedDate]);
 
   const lastTrade = useMemo(() => 
@@ -419,6 +472,27 @@ function AppContent() {
     };
   }, []);
 
+  // Update export function to use dailyTrades
+  const handleExportTradesWithData = useCallback(() => {
+    if (dailyTrades.length === 0) return;
+    const csv = [
+      'Time,Ticker,Direction,Quantity,Entry Price,Exit Price,Realized P&L,Notes',
+      ...dailyTrades.map(trade =>
+        `${trade.timestamp.toLocaleString()},${trade.ticker},${trade.direction},${trade.quantity},${trade.entryPrice},${trade.exitPrice},${trade.realizedPL},"${trade.notes || ''}"`
+      )
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `trades_${selectedDate.toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [dailyTrades, selectedDate]);
+
   // FIXED: Prevent render until mounted (fixes hydration issues)
   if (!isMounted) {
     return (
@@ -436,6 +510,7 @@ function AppContent() {
   }
 
   console.log('🏠 Rendering main app, showHomePage:', showHomePage);
+  console.log('📅 App: Current selectedDate:', selectedDate.toDateString());
 
   // Render sidebar navigation item
   const renderSidebarItem = (item: typeof NAVIGATION_ITEMS[0]) => {
@@ -507,6 +582,7 @@ function AppContent() {
             onMonthChange={setCurrentMonth} 
             currentMonth={currentMonth}
             onDateDoubleClick={(date) => {
+              console.log('📅 Calendar: Double-clicked date:', date.toDateString());
               setSelectedDate(date);
               setActiveView('daily');
             }}
@@ -586,7 +662,7 @@ function AppContent() {
           <MemoizedTradeTable 
             trades={dailyTrades} 
             onUpdateTrade={handleUpdateTrade} 
-            onExportTrades={handleExportTrades} 
+            onExportTrades={handleExportTradesWithData} 
             onDeleteTrade={handleDeleteTrade} 
           />
         </div>

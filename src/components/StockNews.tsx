@@ -25,7 +25,7 @@ export const StockNews: React.FC<StockNewsProps> = ({ trades = [] }) => {
   const [isLoadingShortability, setIsLoadingShortability] = useState(false);
 
   // Your Finnhub API key
-  const FINNHUB_API_KEY = "";
+  const FINNHUB_API_KEY = "ctb750pr01qgsps8iqk0ctb750pr01qgsps8iqkg";
   const FINNHUB_BASE_URL = "https://finnhub.io/api/v1";
 
   const fetchShortabilityData = async (symbol: string): Promise<ShortabilityData> => {

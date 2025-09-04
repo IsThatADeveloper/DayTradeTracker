@@ -1,4 +1,4 @@
-// src/components/ManualTradeEntry.tsx - Updated with selectedDate support
+// src/components/ManualTradeEntry.tsx - FIXED Date Handling
 import React, { useState, useCallback, useMemo } from 'react';
 import { Plus, X, DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
 
@@ -8,7 +8,7 @@ import { generateTradeId } from '../utils/tradeUtils';
 
 interface ManualTradeEntryProps {
   onTradeAdded: (trade: Trade) => void;
-  selectedDate?: Date; // New prop for the currently selected date in daily view
+  selectedDate?: Date; // The currently selected date in daily view
 }
 
 interface TradeFormData {
@@ -22,12 +22,25 @@ interface TradeFormData {
 }
 
 /**
- * Helper function to create initial timestamp based on selected date or current time
+ * FIXED: Helper function to create initial timestamp based on selected date or current time
+ * This preserves the selected date without timezone issues
  */
 const createInitialTimestamp = (selectedDate?: Date): string => {
-  const baseDate = selectedDate || new Date();
-  // If we have a selected date, use that date but with current time
-  // If no selected date, use current date and time
+  let baseDate: Date;
+  
+  if (selectedDate) {
+    // CRITICAL FIX: Create a new date using the selected date's local date components
+    // This avoids timezone offset issues when the selectedDate was created from user input
+    baseDate = new Date(
+      selectedDate.getFullYear(),
+      selectedDate.getMonth(), 
+      selectedDate.getDate()
+    );
+  } else {
+    baseDate = new Date();
+  }
+  
+  // Use current time but with the selected date
   const now = new Date();
   const targetDate = new Date(
     baseDate.getFullYear(),
@@ -36,13 +49,29 @@ const createInitialTimestamp = (selectedDate?: Date): string => {
     now.getHours(),
     now.getMinutes()
   );
-  return targetDate.toISOString().slice(0, 16);
+  
+  // FIXED: Use proper local datetime string without timezone conversion issues
+  const year = targetDate.getFullYear();
+  const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const day = String(targetDate.getDate()).padStart(2, '0');
+  const hours = String(targetDate.getHours()).padStart(2, '0');
+  const minutes = String(targetDate.getMinutes()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
+
+/**
+ * FIXED: Convert datetime-local string to Date object preserving local time
+ */
+const localDateTimeToDate = (dateTimeLocal: string): Date => {
+  // datetime-local gives us "YYYY-MM-DDTHH:MM" format
+  // We want to interpret this as local time, not UTC
+  return new Date(dateTimeLocal);
 };
 
 /**
  * Manual trade entry form component for adding individual trades
- * Supports both long and short positions with real-time P&L calculation
- * Automatically uses the selected date from daily view when available
+ * FIXED: Proper date handling to prevent day-ahead issues
  */
 export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ 
   onTradeAdded,
@@ -66,8 +95,6 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
 
   /**
    * Update form field with validation
-   * @param field - The field name to update
-   * @param value - The new value
    */
   const handleInputChange = useCallback((field: keyof TradeFormData, value: string): void => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -81,20 +108,29 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
   }, [createInitialFormData]);
 
   /**
-   * Update form when selectedDate changes
+   * FIXED: Update form when selectedDate changes - preserve the selected date
    */
   React.useEffect(() => {
-    if (isOpen) {
+    if (isOpen && selectedDate) {
+      console.log('🗓️ ManualTradeEntry: selectedDate changed:', selectedDate);
+      console.log('🗓️ ManualTradeEntry: selectedDate details:', {
+        date: selectedDate.toDateString(),
+        iso: selectedDate.toISOString(),
+        local: selectedDate.toLocaleString()
+      });
+      
+      const newTimestamp = createInitialTimestamp(selectedDate);
+      console.log('🗓️ ManualTradeEntry: new timestamp:', newTimestamp);
+      
       setFormData(prev => ({
         ...prev,
-        timestamp: createInitialTimestamp(selectedDate)
+        timestamp: newTimestamp
       }));
     }
   }, [selectedDate, isOpen]);
 
   /**
    * Validate form data before submission
-   * @returns Validation result with error message if invalid
    */
   const validateForm = useCallback((): { isValid: boolean; error?: string } => {
     const { ticker, entryPrice, exitPrice, quantity } = formData;
@@ -143,7 +179,7 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
   }, [formData.entryPrice, formData.exitPrice, formData.quantity, formData.direction]);
 
   /**
-   * Handle form submission with validation
+   * FIXED: Handle form submission with proper date handling
    */
   const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -157,6 +193,20 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
     setIsSubmitting(true);
     
     try {
+      console.log('📝 ManualTradeEntry: Form submission started');
+      console.log('📝 ManualTradeEntry: Form timestamp string:', formData.timestamp);
+      
+      // FIXED: Proper date conversion without timezone issues
+      const tradeDate = localDateTimeToDate(formData.timestamp);
+      
+      console.log('📝 ManualTradeEntry: Converted trade date:', {
+        original: formData.timestamp,
+        converted: tradeDate,
+        dateString: tradeDate.toDateString(),
+        iso: tradeDate.toISOString(),
+        local: tradeDate.toLocaleString()
+      });
+
       const trade: Trade = {
         id: generateTradeId(),
         ticker: formData.ticker.toUpperCase().trim(),
@@ -164,16 +214,23 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
         exitPrice: parseFloat(formData.exitPrice),
         quantity: parseInt(formData.quantity),
         direction: formData.direction,
-        timestamp: new Date(formData.timestamp),
+        timestamp: tradeDate, // This should now preserve the correct date
         realizedPL: calculatedPL,
         notes: formData.notes.trim() || undefined,
       };
+
+      console.log('📝 ManualTradeEntry: Final trade object:', {
+        id: trade.id,
+        ticker: trade.ticker,
+        timestamp: trade.timestamp,
+        timestampString: trade.timestamp.toDateString()
+      });
 
       await onTradeAdded(trade);
       resetForm();
       setIsOpen(false);
     } catch (error) {
-      console.error('Error adding trade:', error);
+      console.error('❌ ManualTradeEntry: Error adding trade:', error);
       alert('Failed to add trade. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -184,9 +241,10 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
    * Handle opening the form
    */
   const handleOpen = useCallback((): void => {
+    console.log('🔓 ManualTradeEntry: Opening form with selectedDate:', selectedDate);
     setFormData(createInitialFormData());
     setIsOpen(true);
-  }, [createInitialFormData]);
+  }, [createInitialFormData, selectedDate]);
 
   /**
    * Handle closing the form
@@ -260,7 +318,7 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
         </div>
         {selectedDate && (
           <div className="mt-2 text-xs text-blue-600 dark:text-blue-400">
-            Trade date set to: {selectedDate.toLocaleDateString()}
+            Trade will be dated: {selectedDate.toLocaleDateString()}
           </div>
         )}
       </div>
@@ -410,6 +468,12 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
             disabled={isSubmitting}
             required
           />
+          {/* Debug info in development */}
+          {process.env.NODE_ENV === 'development' && formData.timestamp && (
+            <p className="text-xs text-gray-500 mt-1">
+              Debug: {formData.timestamp} → {localDateTimeToDate(formData.timestamp).toLocaleDateString()}
+            </p>
+          )}
         </div>
 
         {/* Notes */}
