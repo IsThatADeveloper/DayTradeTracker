@@ -1,6 +1,6 @@
-// src/App.tsx - Fixed Date Handling to Prevent Day-Ahead Issues
+// src/App.tsx - Updated with Daily Review Feature
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator } from 'lucide-react';
+import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator, BookOpen } from 'lucide-react';
 import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useBrokerIntegration } from './hooks/useBrokerIntegration';
@@ -20,6 +20,7 @@ import { AIInsights } from './components/AIInsights';
 import { StockSearch } from './components/StockSearch';
 import { StockNews } from './components/StockNews';
 import { EarningsProjection } from './components/EarningsProjection';
+import { DailyReview } from './components/DailyReview';
 import { HomePage } from './components/HomePage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
@@ -34,6 +35,7 @@ const MemoizedCalendar = React.memo(Calendar);
 const MemoizedStockSearch = React.memo(StockSearch);
 const MemoizedStockNews = React.memo(StockNews);
 const MemoizedEarningsProjection = React.memo(EarningsProjection);
+const MemoizedDailyReview = React.memo(DailyReview);
 
 // Navigation items configuration
 const NAVIGATION_ITEMS = [
@@ -42,6 +44,12 @@ const NAVIGATION_ITEMS = [
     label: 'Daily View',
     icon: Home,
     description: 'Today\'s trading overview'
+  },
+  {
+    id: 'review',
+    label: 'Daily Review',
+    icon: BookOpen,
+    description: 'Daily report card and performance rating'
   },
   {
     id: 'calendar',
@@ -75,7 +83,7 @@ const NAVIGATION_ITEMS = [
   }
 ];
 
-type ActiveViewType = 'calendar' | 'daily' | 'search' | 'brokers' | 'news' | 'projections';
+type ActiveViewType = 'calendar' | 'daily' | 'review' | 'search' | 'brokers' | 'news' | 'projections';
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component<
@@ -365,7 +373,7 @@ function AppContent() {
 
   // FIXED: Add handler for navigation with proper type checking
   const handleNavigation = useCallback((viewId: string) => {
-    if (['daily', 'calendar', 'search', 'brokers', 'news', 'projections'].includes(viewId)) {
+    if (['daily', 'review', 'calendar', 'search', 'brokers', 'news', 'projections'].includes(viewId)) {
       setActiveView(viewId as ActiveViewType);
       setMobileMenuOpen(false);
     }
@@ -586,6 +594,16 @@ function AppContent() {
               setSelectedDate(date);
               setActiveView('daily');
             }}
+          />
+        );
+      }
+      
+      if (activeView === 'review') {
+        return (
+          <MemoizedDailyReview
+            trades={activeTrades}
+            selectedDate={selectedDate}
+            onDateSelect={setSelectedDate}
           />
         );
       }
