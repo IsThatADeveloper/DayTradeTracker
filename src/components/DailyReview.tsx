@@ -301,11 +301,11 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
 
   // Responsive star rating with larger touch targets on mobile
   const renderStarRating = (value: number, onChange: (value: number) => void, size: 'sm' | 'lg' = 'sm') => {
-    const starSize = size === 'lg' ? 'h-6 w-6 sm:h-7 sm:w-7 md:h-8 md:w-8' : 'h-4 w-4 sm:h-5 sm:w-5';
-    const spacing = size === 'lg' ? 'space-x-1 sm:space-x-1.5' : 'space-x-0.5 sm:space-x-1';
+    const starSize = size === 'lg' ? 'h-4 w-4 sm:h-6 sm:w-6 md:h-7 md:w-7' : 'h-3 w-3 sm:h-4 sm:w-4';
+    const spacing = size === 'lg' ? 'space-x-0.5 sm:space-x-1 md:space-x-1.5' : 'space-x-0.5 sm:space-x-1';
     
     return (
-      <div className={`flex ${spacing} flex-wrap`}>
+      <div className={`flex ${spacing} flex-wrap justify-center sm:justify-start`}>
         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((star) => (
           <button
             key={star}
@@ -389,11 +389,18 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
               <Target className="h-4 w-4 mr-2 text-blue-600" />
               Overall Self-Rating
             </h4>
-            {renderStarRating(
-              dailyReview.overallRating,
-              (value) => updateReview('overallRating', value),
-              'lg'
-            )}
+            <div className="flex flex-col items-center">
+              {renderStarRating(
+                dailyReview.overallRating,
+                (value) => updateReview('overallRating', value),
+                'lg'
+              )}
+              {/* Mobile helper text */}
+              <div className="text-xs text-gray-400 dark:text-gray-500 mt-2 sm:hidden text-center">
+                <span className="inline-block mr-3">1-5: Poor Day</span>
+                <span className="inline-block">6-10: Great Day</span>
+              </div>
+            </div>
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
