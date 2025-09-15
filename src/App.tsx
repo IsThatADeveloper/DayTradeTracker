@@ -1,4 +1,4 @@
-// src/App.tsx - Updated with Daily Review Feature
+// src/App.tsx - Updated with Tutorial System
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator, BookOpen } from 'lucide-react';
 import { Trade } from './types/trade';
@@ -24,6 +24,7 @@ import { DailyReview } from './components/DailyReview';
 import { HomePage } from './components/HomePage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
+import { Tutorial, TutorialButton, useTutorial, WelcomeMessage } from './components/Tutorial';
 
 // Memoized components to prevent unnecessary re-renders
 const MemoizedDashboard = React.memo(Dashboard);
@@ -143,6 +144,19 @@ function AppContent() {
     enableAutoSync,
     disableAutoSync
   } = useBrokerIntegration();
+  
+  // Tutorial hook
+  const { 
+    showTutorial, 
+    showWelcome,
+    hasSeenTutorial, 
+    hasSeenWelcome,
+    startTutorial, 
+    completeTutorial, 
+    closeTutorial,
+    closeWelcome,
+    startTutorialFromWelcome
+  } = useTutorial();
   
   // All useState and useLocalStorage hooks
   const [showHomePage, setShowHomePage] = useLocalStorage('show-homepage', true);
@@ -533,6 +547,7 @@ function AppContent() {
         <button
           key={item.id}
           onClick={() => handleNavigation(item.id)}
+          data-tutorial={`${item.id}-nav`}
           className={`w-full p-2 flex items-center justify-center rounded-lg transition-colors duration-200 relative ${
             isActive
               ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
@@ -554,6 +569,7 @@ function AppContent() {
       <button
         key={item.id}
         onClick={() => handleNavigation(item.id)}
+        data-tutorial={`${item.id}-nav`}
         className={`w-full flex items-center px-3 py-3 text-left rounded-lg transition-colors duration-200 group relative ${
           isActive
             ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 shadow-sm'
@@ -633,12 +649,14 @@ function AppContent() {
       // Daily view (default)
       return (
         <div className="space-y-6 sm:space-y-8">
-          {/* Trade entry forms - NOW WITH SELECTED DATE */}
+          {/* Trade entry forms - WITH TUTORIAL DATA ATTRIBUTES */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <ManualTradeEntry 
-              onTradeAdded={handleTradeAdded} 
-              selectedDate={selectedDate} 
-            />
+            <div data-tutorial="manual-trade-entry">
+              <ManualTradeEntry 
+                onTradeAdded={handleTradeAdded} 
+                selectedDate={selectedDate} 
+              />
+            </div>
             <BulkTradeImport 
               onTradesAdded={handleTradesAdded} 
               lastTrade={lastTrade} 
@@ -671,7 +689,9 @@ function AppContent() {
             </div>
           )}
 
-          <MemoizedDashboard dailyStats={dailyStats} selectedDate={selectedDate} />
+          <div data-tutorial="dashboard">
+            <MemoizedDashboard dailyStats={dailyStats} selectedDate={selectedDate} />
+          </div>
           <MemoizedAIInsights trades={activeTrades} selectedDate={selectedDate} />
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8">
             <MemoizedTimeAnalysis trades={activeTrades} selectedDate={selectedDate} />
@@ -802,8 +822,8 @@ function AppContent() {
       <div className={`min-h-screen transition-all duration-200 ${
         sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-72'
       }`}>
-        {/* Mobile Header - FIXED: Added Dark Mode Toggle */}
-        <header className="lg:hidden bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30">
+        {/* Mobile Header - WITH TUTORIAL BUTTON */}
+        <header className="lg:hidden bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30 main-header">
           <div className="px-4 h-16 flex items-center justify-between">
             {/* Mobile Logo */}
             <button 
@@ -816,8 +836,11 @@ function AppContent() {
               </h1>
             </button>
 
-            {/* Mobile Controls - FIXED: Added Dark Mode Toggle */}
+            {/* Mobile Controls - WITH TUTORIAL BUTTON */}
             <div className="flex items-center space-x-2">
+              {/* Tutorial Button */}
+              <TutorialButton onClick={startTutorial} />
+              
               {/* Dark Mode Toggle - Always visible on mobile */}
               <button
                 onClick={() => setDarkMode(!darkMode)}
@@ -848,6 +871,7 @@ function AppContent() {
                   <button
                     key={item.id}
                     onClick={() => handleNavigation(item.id)}
+                    data-tutorial={`${item.id}-nav`}
                     className={`w-full flex items-center px-3 py-3 text-left rounded-lg transition-colors ${
                       isActive
                         ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
@@ -876,8 +900,8 @@ function AppContent() {
           )}
         </header>
 
-        {/* Desktop Header Bar */}
-        <div className="hidden lg:flex items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+        {/* Desktop Header Bar - WITH TUTORIAL BUTTON */}
+        <div className="hidden lg:flex items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 main-header">
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
               {NAVIGATION_ITEMS.find(item => item.id === activeView)?.label || 'Dashboard'}
@@ -903,6 +927,9 @@ function AppContent() {
           )}
 
           <div className="flex items-center space-x-4">
+            {/* Tutorial Button */}
+            <TutorialButton onClick={startTutorial} />
+            
             {/* Refresh Button */}
             {currentUser && (
               <button
@@ -943,6 +970,21 @@ function AppContent() {
         isOpen={showProfile}
         onClose={() => setShowProfile(false)}
         trades={activeTrades}
+      />
+
+      {/* Tutorial Components */}
+      <WelcomeMessage
+        isOpen={showWelcome}
+        onClose={closeWelcome}
+        onStartTutorial={startTutorialFromWelcome}
+        userName={currentUser?.displayName || undefined}
+      />
+      
+      <Tutorial
+        isOpen={showTutorial}
+        onClose={closeTutorial}
+        onComplete={completeTutorial}
+        currentView={activeView}
       />
     </div>
   );
