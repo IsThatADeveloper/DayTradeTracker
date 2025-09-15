@@ -79,7 +79,7 @@ class DailyReviewService {
   }
 
   /**
-   * Get daily review for a specific date - FIXED: Use single-field query to avoid permissions issues
+   * Get daily review for a specific date - FIXED: Use simple query to avoid index issues
    * @param userId - User ID
    * @param date - Target date
    * @returns Promise resolving to daily review or null
@@ -90,14 +90,13 @@ class DailyReviewService {
       
       console.log('🔍 Attempting to fetch daily review:', { userId: userId.slice(0, 8), dateString });
       
-      // FIXED: Use only userId filter to avoid compound index issues
+      // FIXED: Use simple query with only userId to avoid compound index requirement
       const q = query(
         collection(db, DAILY_REVIEWS_COLLECTION),
-        where('userId', '==', userId),
-        orderBy('dateString', 'desc')
+        where('userId', '==', userId)
       );
 
-      console.log('🔍 Executing query...');
+      console.log('🔍 Executing simple userId query...');
       const querySnapshot = await getDocs(q);
       console.log('🔍 Query successful, found', querySnapshot.size, 'documents');
       
@@ -123,7 +122,15 @@ class DailyReviewService {
       
     } catch (error: any) {
       console.error('❌ Error fetching daily review:', error);
-      throw new Error(`Failed to fetch daily review: ${error.message}`);
+      
+      // Provide more specific error information
+      if (error.code === 'failed-precondition') {
+        throw new Error('Database index required. Please contact support or try again later.');
+      } else if (error.code === 'permission-denied') {
+        throw new Error('Permission denied. Please sign in again.');
+      } else {
+        throw new Error(`Failed to fetch daily review: ${error.message}`);
+      }
     }
   }
 
@@ -170,11 +177,11 @@ class DailyReviewService {
   }
 
   /**
-   * Get all daily reviews for a user within a date range - FIXED: Simplified query
+   * Get all daily reviews for a user within a date range - FIXED: Simple query only
    * @param userId - User ID
    * @param startDate - Start date (optional)
    * @param endDate - End date (optional)  
-   * @param limitCount - Maximum number of reviews to return
+   * @param limitCount - Maximum number of reviews to return (applied after filtering)
    * @returns Promise resolving to array of daily reviews
    */
   async getUserDailyReviews(
@@ -184,12 +191,10 @@ class DailyReviewService {
     limitCount: number = 50
   ): Promise<DailyReview[]> {
     try {
-      // FIXED: Use simple queries to avoid index requirements
-      let q = query(
+      // FIXED: Use simplest possible query to avoid index requirements
+      const q = query(
         collection(db, DAILY_REVIEWS_COLLECTION),
-        where('userId', '==', userId),
-        orderBy('dateString', 'desc'),
-        limit(limitCount)
+        where('userId', '==', userId)
       );
 
       const querySnapshot = await getDocs(q);
@@ -209,8 +214,14 @@ class DailyReviewService {
         reviews.push(review);
       });
 
-      console.log('✅ Loaded', reviews.length, 'daily reviews');
-      return reviews;
+      // Sort by date descending in memory
+      reviews.sort((a, b) => b.date.getTime() - a.date.getTime());
+      
+      // Apply limit after sorting
+      const limitedReviews = reviews.slice(0, limitCount);
+
+      console.log('✅ Loaded', limitedReviews.length, 'daily reviews');
+      return limitedReviews;
     } catch (error: any) {
       console.error('❌ Error fetching daily reviews:', error);
       throw new Error(`Failed to fetch daily reviews: ${error.message}`);
@@ -218,7 +229,7 @@ class DailyReviewService {
   }
 
   /**
-   * Get daily review summaries for calendar view - FIXED: Simplified query
+   * Get daily review summaries for calendar view - FIXED: Simple query only
    * @param userId - User ID
    * @param startDate - Start date
    * @param endDate - End date
@@ -475,6 +486,27 @@ class DailyReviewService {
     } catch (error: any) {
       console.error('❌ Error migrating dateString field:', error);
       throw new Error(`Failed to migrate dateString field: ${error.message}`);
+    }
+  }
+
+  /**
+   * Test connection to Firestore (for debugging)
+   */
+  async testConnection(userId: string): Promise<boolean> {
+    try {
+      console.log('🧪 Testing Firestore connection...');
+      
+      const q = query(
+        collection(db, DAILY_REVIEWS_COLLECTION),
+        where('userId', '==', userId)
+      );
+
+      const querySnapshot = await getDocs(q);
+      console.log('✅ Connection test successful, found', querySnapshot.size, 'documents');
+      return true;
+    } catch (error: any) {
+      console.error('❌ Connection test failed:', error);
+      return false;
     }
   }
 }

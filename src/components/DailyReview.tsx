@@ -1,15 +1,12 @@
-// src/components/DailyReview.tsx - Fixed Version
+// src/components/DailyReview.tsx - Clean Fixed Version
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   BookOpen,
   Star,
-  TrendingUp,
-  TrendingDown,
   Brain,
   Target,
   Calendar,
   Clock,
-  CheckCircle,
   AlertCircle,
   Plus,
   X,
@@ -65,6 +62,12 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
+  // Reminder input states - FIXED: Move to top level
+  const [goalInput, setGoalInput] = useState('');
+  const [watchInput, setWatchInput] = useState('');
+  const [strategyInput, setStrategyInput] = useState('');
+  const [reminderInput, setReminderInput] = useState('');
+
   // Filter trades for selected date
   const dayTrades = useMemo(() => {
     return trades.filter(trade => {
@@ -90,13 +93,30 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
         const defaultReview = dailyReviewService.createDefaultReview(currentUser.uid, selectedDate, dayTrades);
         review = {
           ...defaultReview,
-          id: '', // Will be set when saved
+          id: '',
           createdAt: new Date(),
           updatedAt: new Date(),
         };
       } else {
-        // Update metrics with current trades
+        // Update metrics and ensure all fields exist
         review.metrics = dailyReviewService.generateMetricsFromTrades(dayTrades, selectedDate);
+        
+        // FIXED: Ensure reminders object exists with all arrays
+        if (!review.reminders) {
+          review.reminders = {
+            tomorrowGoals: [],
+            watchList: [],
+            strategies: [],
+            reminders: [],
+          };
+        } else {
+          review.reminders = {
+            tomorrowGoals: review.reminders.tomorrowGoals || [],
+            watchList: review.reminders.watchList || [],
+            strategies: review.reminders.strategies || [],
+            reminders: review.reminders.reminders || [],
+          };
+        }
       }
       
       setDailyReview(review);
@@ -114,7 +134,6 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
 
     setIsSaving(true);
     try {
-      // Update metrics before saving
       const updatedReview = {
         ...dailyReview,
         metrics: dailyReviewService.generateMetricsFromTrades(dayTrades, selectedDate),
@@ -123,7 +142,6 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
 
       const reviewId = await dailyReviewService.saveDailyReview(currentUser.uid, updatedReview);
       
-      // Update local state with saved review
       setDailyReview({
         ...updatedReview,
         id: reviewId,
@@ -131,7 +149,6 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
       });
       
       setHasUnsavedChanges(false);
-      console.log('✅ Daily review saved successfully');
     } catch (error: any) {
       console.error('Failed to save daily review:', error);
       alert(`Failed to save daily review: ${error.message}`);
@@ -140,37 +157,45 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
     }
   }, [currentUser, dailyReview, dayTrades, selectedDate]);
 
-  // Update review field
-  const updateReview = useCallback(<T extends keyof DailyReviewType>(
-    field: T,
-    value: DailyReviewType[T]
-  ) => {
+  // FIXED: Simplified update functions
+  const updateReview = useCallback((field: keyof DailyReviewType, value: any) => {
     if (!dailyReview) return;
     
-    setDailyReview({
-      ...dailyReview,
-      [field]: value,
+    setDailyReview(prev => prev ? { ...prev, [field]: value } : prev);
+    setHasUnsavedChanges(true);
+  }, [dailyReview]);
+
+  const updateNestedField = useCallback((parentField: string, field: string, value: any) => {
+    if (!dailyReview) return;
+    
+    setDailyReview(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [parentField]: {
+          ...(prev[parentField as keyof DailyReviewType] as any),
+          [field]: value,
+        },
+      };
     });
     setHasUnsavedChanges(true);
   }, [dailyReview]);
 
-  // Update nested field
-  const updateNestedField = useCallback(<T extends keyof DailyReviewType, K extends keyof DailyReviewType[T]>(
-    parentField: T,
-    field: K,
-    value: DailyReviewType[T][K]
-  ) => {
+  // FIXED: Simplified reminder functions
+  const addReminderItem = useCallback((field: string, value: string, clearInput: () => void) => {
+    if (!value.trim() || !dailyReview) return;
+    
+    const currentItems = (dailyReview.reminders as any)[field] || [];
+    updateNestedField('reminders', field, [...currentItems, value.trim()]);
+    clearInput();
+  }, [dailyReview, updateNestedField]);
+
+  const removeReminderItem = useCallback((field: string, index: number) => {
     if (!dailyReview) return;
     
-    setDailyReview({
-      ...dailyReview,
-      [parentField]: {
-        ...(dailyReview[parentField] as Record<string, any>),
-        [field]: value,
-      },
-    });
-    setHasUnsavedChanges(true);
-  }, [dailyReview]);
+    const currentItems = (dailyReview.reminders as any)[field] || [];
+    updateNestedField('reminders', field, currentItems.filter((_: any, i: number) => i !== index));
+  }, [dailyReview, updateNestedField]);
 
   // Load review when date changes
   useEffect(() => {
@@ -229,6 +254,72 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
     );
   }
 
+  // FIXED: Much more balanced grade calculation
+  const calculateGrade = () => {
+    const ratingValues = Object.values(dailyReview.ratings);
+    const ratingAvg = ratingValues.reduce((sum, rating) => sum + rating, 0) / ratingValues.length;
+    
+    const psychologyValues = Object.values(dailyReview.psychology);
+    const psychologyAvg = psychologyValues.reduce((sum, rating) => sum + rating, 0) / psychologyValues.length;
+    
+    // FIXED: Start with 7 base (neutral/good) instead of 5
+    let performanceFactor = 7;
+    
+    // Enhanced performance calculation with more generous scoring
+    if (dailyReview.metrics.tradeCount === 0) {
+      // No trades = neutral performance (7/10 - not penalized for not trading)
+      performanceFactor = 7;
+    } else {
+      // Has trades - evaluate performance
+      if (dailyReview.metrics.totalPL > 0) {
+        performanceFactor += Math.min(2.5, dailyReview.metrics.totalPL / 200); // More generous profit bonus
+      }
+      
+      if (dailyReview.metrics.winRate >= 50) {
+        performanceFactor += (dailyReview.metrics.winRate - 50) / 20; // Bonus for good win rate
+      }
+      
+      if (dailyReview.metrics.totalPL < 0) {
+        performanceFactor -= Math.min(2, Math.abs(dailyReview.metrics.totalPL) / 500); // Less harsh loss penalty
+      }
+      
+      // Bonus for risk management (if no huge losses)
+      if (dailyReview.metrics.tradeCount > 0 && Math.abs(dailyReview.metrics.largestLoss) < 500) {
+        performanceFactor += 0.5;
+      }
+    }
+    
+    performanceFactor = Math.max(1, Math.min(10, performanceFactor));
+    
+    // FIXED: Rebalanced weights - less emphasis on performance, more on ratings/psychology
+    const finalScore = (ratingAvg * 0.5) + (psychologyAvg * 0.3) + (performanceFactor * 0.2);
+    
+    console.log('📊 Grade Debug:', {
+      ratingAvg: Number(ratingAvg.toFixed(2)),
+      psychologyAvg: Number(psychologyAvg.toFixed(2)), 
+      performanceFactor: Number(performanceFactor.toFixed(2)),
+      finalScore: Number(finalScore.toFixed(2)),
+      tradeCount: dailyReview.metrics.tradeCount,
+      totalPL: dailyReview.metrics.totalPL,
+      winRate: dailyReview.metrics.winRate
+    });
+    
+    // FIXED: More achievable A+ thresholds
+    if (finalScore >= 9.2) return 'A+';
+    if (finalScore >= 8.7) return 'A';
+    if (finalScore >= 8.2) return 'A-';
+    if (finalScore >= 7.7) return 'B+';
+    if (finalScore >= 7.2) return 'B';
+    if (finalScore >= 6.7) return 'B-';
+    if (finalScore >= 6.2) return 'C+';
+    if (finalScore >= 5.7) return 'C';
+    if (finalScore >= 5.2) return 'C-';
+    if (finalScore >= 4.7) return 'D+';
+    if (finalScore >= 4.2) return 'D';
+    if (finalScore >= 3.7) return 'D-';
+    return 'F';
+  };
+
   const renderStarRating = (value: number, onChange: (value: number) => void, size: 'sm' | 'lg' = 'sm') => {
     const starSize = size === 'lg' ? 'h-8 w-8' : 'h-5 w-5';
     
@@ -253,7 +344,7 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
   };
 
   const renderOverviewTab = () => {
-    const grade = dailyReviewService.calculateOverallGrade(dailyReview);
+    const grade = calculateGrade();
     const gradeColor = grade.startsWith('A') ? 'text-green-600' : 
                      grade.startsWith('B') ? 'text-blue-600' : 
                      grade.startsWith('C') ? 'text-yellow-600' : 'text-red-600';
@@ -321,9 +412,6 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
               (value) => updateReview('overallRating', value),
               'lg'
             )}
-            <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-              Rate your overall trading performance today
-            </p>
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
@@ -395,9 +483,6 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
           <Star className="h-5 w-5 mr-2 text-yellow-500" />
           Trading Performance Categories
         </h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-          Rate your performance in each area from 1 (very poor) to 10 (excellent)
-        </p>
         
         <div className="space-y-6">
           {RATING_CATEGORIES.map((category) => (
@@ -420,7 +505,7 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
               </div>
               {renderStarRating(
                 dailyReview.ratings[category.category as ReviewCategory],
-                (value) => updateNestedField('ratings', category.category as ReviewCategory, value),
+                (value) => updateNestedField('ratings', category.category, value),
                 'lg'
               )}
             </div>
@@ -437,9 +522,6 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
           <Brain className="h-5 w-5 mr-2 text-purple-500" />
           Trading Psychology & Mindset
         </h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-          Track your mental and emotional state throughout the trading day
-        </p>
         
         <div className="space-y-6">
           {PSYCHOLOGY_CATEGORIES.map((category) => (
@@ -457,12 +539,12 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
                   </div>
                 </div>
                 <div className="text-lg font-bold text-gray-900 dark:text-white">
-                  {dailyReview.psychology[category.category as keyof DailyReviewType['psychology']]}/10
+                  {(dailyReview.psychology as any)[category.category]}/10
                 </div>
               </div>
               {renderStarRating(
-                dailyReview.psychology[category.category as keyof DailyReviewType['psychology']],
-                (value) => updateNestedField('psychology', category.category as keyof DailyReviewType['psychology'], value),
+                (dailyReview.psychology as any)[category.category],
+                (value) => updateNestedField('psychology', category.category, value),
                 'lg'
               )}
             </div>
@@ -487,8 +569,8 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
             {config.label}
           </h3>
           <textarea
-            value={dailyReview.notes[key as keyof typeof dailyReview.notes]}
-            onChange={(e) => updateNestedField('notes', key as keyof typeof dailyReview.notes, e.target.value)}
+            value={(dailyReview.notes as any)[key]}
+            onChange={(e) => updateNestedField('notes', key, e.target.value)}
             placeholder={`Write about ${config.label.toLowerCase()}...`}
             rows={4}
             className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -498,27 +580,24 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
     </div>
   );
 
+  // FIXED: Simplified reminders tab
   const renderRemindersTab = () => {
-    const addArrayItem = (field: keyof typeof dailyReview.reminders, value: string) => {
-      if (!value.trim()) return;
-      const current = dailyReview.reminders[field];
-      updateNestedField('reminders', field, [...current, value.trim()]);
-    };
-
-    const removeArrayItem = (field: keyof typeof dailyReview.reminders, index: number) => {
-      const current = dailyReview.reminders[field];
-      updateNestedField('reminders', field, current.filter((_, i) => i !== index));
-    };
-
-    const renderArrayField = (field: keyof typeof dailyReview.reminders, label: string, icon: React.ElementType, placeholder: string) => {
-      const [inputValue, setInputValue] = useState('');
+    const renderSection = (
+      title: string,
+      field: string,
+      icon: React.ElementType,
+      placeholder: string,
+      inputValue: string,
+      setInputValue: (value: string) => void
+    ) => {
       const Icon = icon;
+      const items = (dailyReview.reminders as any)[field] || [];
 
       return (
         <div className="bg-white dark:bg-gray-800 rounded-lg p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
             <Icon className="h-5 w-5 mr-2 text-blue-600" />
-            {label}
+            {title}
           </h3>
           
           <div className="flex mb-4">
@@ -528,8 +607,7 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={(e) => {
                 if (e.key === 'Enter') {
-                  addArrayItem(field, inputValue);
-                  setInputValue('');
+                  addReminderItem(field, inputValue, () => setInputValue(''));
                 }
               }}
               placeholder={placeholder}
@@ -537,10 +615,7 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
             />
             <button
               type="button"
-              onClick={() => {
-                addArrayItem(field, inputValue);
-                setInputValue('');
-              }}
+              onClick={() => addReminderItem(field, inputValue, () => setInputValue(''))}
               className="px-4 py-2 bg-blue-600 text-white rounded-r-lg hover:bg-blue-700 transition-colors"
             >
               <Plus className="h-4 w-4" />
@@ -548,21 +623,21 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
           </div>
 
           <div className="space-y-2">
-            {dailyReview.reminders[field].map((item, index) => (
-              <div key={index} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
+            {items.map((item: string, index: number) => (
+              <div key={`${field}-${index}`} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
                 <span className="text-gray-900 dark:text-white">{item}</span>
                 <button
                   type="button"
-                  onClick={() => removeArrayItem(field, index)}
+                  onClick={() => removeReminderItem(field, index)}
                   className="text-red-600 hover:text-red-700 transition-colors"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
             ))}
-            {dailyReview.reminders[field].length === 0 && (
+            {items.length === 0 && (
               <p className="text-gray-500 dark:text-gray-400 text-sm italic">
-                No {label.toLowerCase()} added yet
+                No {title.toLowerCase()} added yet
               </p>
             )}
           </div>
@@ -572,93 +647,52 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
 
     return (
       <div className="space-y-6">
-        {renderArrayField('tomorrowGoals', 'Tomorrow\'s Goals', Target, 'Add a goal for tomorrow...')}
-        {renderArrayField('watchList', 'Watch List', Eye, 'Add a ticker to watch...')}
-        {renderArrayField('strategies', 'Strategies to Focus On', Flag, 'Add a trading strategy...')}
-        {renderArrayField('reminders', 'General Reminders', AlertCircle, 'Add a reminder...')}
+        {renderSection('Tomorrow\'s Goals', 'tomorrowGoals', Target, 'Add a goal for tomorrow...', goalInput, setGoalInput)}
+        {renderSection('Watch List', 'watchList', Eye, 'Add a ticker to watch...', watchInput, setWatchInput)}
+        {renderSection('Strategies to Focus On', 'strategies', Flag, 'Add a trading strategy...', strategyInput, setStrategyInput)}
+        {renderSection('General Reminders', 'reminders', AlertCircle, 'Add a reminder...', reminderInput, setReminderInput)}
       </div>
     );
   };
 
-  const renderInsightsTab = () => {
-    const grade = dailyReviewService.calculateOverallGrade(dailyReview);
-    
-    return (
-      <div className="space-y-6">
-        <div className="bg-white dark:bg-gray-800 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-            <Award className="h-5 w-5 mr-2 text-yellow-500" />
-            Performance Summary
-          </h3>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Strengths Today</h4>
-              <div className="space-y-2">
-                {RATING_CATEGORIES.filter(cat => dailyReview.ratings[cat.category as ReviewCategory] >= 7).map(cat => (
-                  <div key={cat.category} className="flex items-center p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                    <span className="mr-2">{cat.icon}</span>
-                    <span className="text-green-700 dark:text-green-300 text-sm">{cat.label}</span>
-                    <span className="ml-auto text-green-600 font-medium">{dailyReview.ratings[cat.category as ReviewCategory]}/10</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Areas for Improvement</h4>
-              <div className="space-y-2">
-                {RATING_CATEGORIES.filter(cat => dailyReview.ratings[cat.category as ReviewCategory] < 6).map(cat => (
-                  <div key={cat.category} className="flex items-center p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                    <span className="mr-2">{cat.icon}</span>
-                    <span className="text-red-700 dark:text-red-300 text-sm">{cat.label}</span>
-                    <span className="ml-auto text-red-600 font-medium">{dailyReview.ratings[cat.category as ReviewCategory]}/10</span>
-                  </div>
-                ))}
-              </div>
+  const renderInsightsTab = () => (
+    <div className="space-y-6">
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+          <Award className="h-5 w-5 mr-2 text-yellow-500" />
+          Performance Summary
+        </h3>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <h4 className="font-medium text-gray-900 dark:text-white mb-3">Strengths Today</h4>
+            <div className="space-y-2">
+              {RATING_CATEGORIES.filter(cat => dailyReview.ratings[cat.category as ReviewCategory] >= 7).map(cat => (
+                <div key={cat.category} className="flex items-center p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                  <span className="mr-2">{cat.icon}</span>
+                  <span className="text-green-700 dark:text-green-300 text-sm">{cat.label}</span>
+                  <span className="ml-auto text-green-600 font-medium">{dailyReview.ratings[cat.category as ReviewCategory]}/10</span>
+                </div>
+              ))}
             </div>
           </div>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-            <PieChart className="h-5 w-5 mr-2 text-blue-500" />
-            Today's Metrics
-          </h3>
           
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-              <div className="text-2xl font-bold text-blue-600 mb-1">
-                {dailyReview.metrics.tradeCount}
-              </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Trades Executed</div>
-            </div>
-            
-            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-              <div className={`text-2xl font-bold mb-1 ${dailyReview.metrics.winRate >= 50 ? 'text-green-600' : 'text-red-600'}`}>
-                {dailyReview.metrics.winRate.toFixed(1)}%
-              </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Win Rate</div>
-            </div>
-            
-            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-              <div className="text-2xl font-bold text-green-600 mb-1">
-                {formatCurrency(dailyReview.metrics.largestWin)}
-              </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Largest Win</div>
-            </div>
-            
-            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-              <div className="text-2xl font-bold text-red-600 mb-1">
-                {formatCurrency(dailyReview.metrics.largestLoss)}
-              </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Largest Loss</div>
+          <div>
+            <h4 className="font-medium text-gray-900 dark:text-white mb-3">Areas for Improvement</h4>
+            <div className="space-y-2">
+              {RATING_CATEGORIES.filter(cat => dailyReview.ratings[cat.category as ReviewCategory] < 6).map(cat => (
+                <div key={cat.category} className="flex items-center p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                  <span className="mr-2">{cat.icon}</span>
+                  <span className="text-red-700 dark:text-red-300 text-sm">{cat.label}</span>
+                  <span className="ml-auto text-red-600 font-medium">{dailyReview.ratings[cat.category as ReviewCategory]}/10</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
 
   return (
     <div className="max-w-6xl mx-auto">
