@@ -38,7 +38,6 @@ const MemoizedStockNews = React.memo(StockNews);
 const MemoizedEarningsProjection = React.memo(EarningsProjection);
 const MemoizedDailyReview = React.memo(DailyReview);
 
-// Navigation items configuration
 const NAVIGATION_ITEMS = [
   {
     id: 'daily',
@@ -47,28 +46,22 @@ const NAVIGATION_ITEMS = [
     description: 'Today\'s trading overview'
   },
   {
-    id: 'review',
-    label: 'Daily Review',
-    icon: BookOpen,
-    description: 'Daily report card and performance rating'
-  },
-  {
     id: 'calendar',
     label: 'Calendar',
     icon: CalendarDays,
     description: 'Monthly trading calendar'
   },
   {
+    id: 'review',
+    label: 'Daily Review',
+    icon: BookOpen,
+    description: 'Daily report card and performance rating'
+  },
+  {
     id: 'search',
     label: 'Stock Analysis',
     icon: Search,
     description: 'Search and analyze stocks'
-  },
-  {
-    id: 'brokers',
-    label: 'Brokers',
-    icon: Link,
-    description: 'Connect trading accounts'
   },
   {
     id: 'news',
@@ -81,6 +74,12 @@ const NAVIGATION_ITEMS = [
     label: 'Projections',
     icon: Calculator,
     description: 'Earnings and dividend calculator'
+  },
+  {
+    id: 'brokers',
+    label: 'Brokers',
+    icon: Link,
+    description: 'Connect trading accounts'
   }
 ];
 

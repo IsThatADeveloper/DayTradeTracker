@@ -1,4 +1,3 @@
-// src/components/Tutorial.tsx - Fully Responsive Version
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, 
@@ -15,7 +14,15 @@ import {
   HelpCircle,
   Sparkles,
   Clock,
-  DollarSign
+  DollarSign,
+  Link,
+  Globe,
+  RefreshCw,
+  LineChart,
+  FileText,
+  User,
+  Sun,
+  Menu
 } from 'lucide-react';
 
 interface TutorialStep {
@@ -23,9 +30,12 @@ interface TutorialStep {
   title: string;
   description: string;
   targetSelector: string;
-  position: 'top' | 'bottom' | 'left' | 'right';
+  fallbackSelector?: string;
+  position: 'top' | 'bottom' | 'left' | 'right' | 'center';
   icon: React.ComponentType<any>;
   optional?: boolean;
+  requiredView?: string;
+  mobilePosition?: 'top' | 'bottom' | 'center';
 }
 
 interface TutorialProps {
@@ -39,109 +49,152 @@ const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'welcome',
     title: 'Welcome to DayTradeTracker!',
-    description: 'Let\'s take a quick tour of the key features that will help you analyze and improve your trading performance.',
+    description: 'Let\'s take a comprehensive tour of all the features that will help you analyze and improve your trading performance.',
     targetSelector: '.main-header',
+    fallbackSelector: 'header',
     position: 'bottom',
+    mobilePosition: 'center',
     icon: Play
+  },
+  {
+    id: 'date-picker',
+    title: 'Select Your Trading Date',
+    description: 'Use this date picker to view trades from any specific day. All data will filter based on your selected date.',
+    targetSelector: 'input[type="date"]',
+    fallbackSelector: '.absolute.left-1\\/2',
+    position: 'bottom',
+    mobilePosition: 'bottom',
+    icon: Calendar,
+    requiredView: 'daily'
   },
   {
     id: 'manual-entry',
     title: 'Add Your First Trade',
-    description: 'Start by adding a trade manually. This form makes it easy to log your trades with all the important details.',
+    description: 'Start by adding a trade manually. Fill in ticker, entry/exit prices, quantity, and direction.',
     targetSelector: '[data-tutorial="manual-trade-entry"]',
+    fallbackSelector: '.grid > div:first-child',
     position: 'right',
-    icon: TrendingUp
+    mobilePosition: 'bottom',
+    icon: TrendingUp,
+    requiredView: 'daily'
+  },
+  {
+    id: 'bulk-import',
+    title: 'Bulk Import Trades',
+    description: 'Import multiple trades at once using CSV format or copy-paste from your broker statements.',
+    targetSelector: '.grid.grid-cols-1.lg\\:grid-cols-2 > div:nth-child(2)',
+    fallbackSelector: '.grid > div:nth-child(2)',
+    position: 'left',
+    mobilePosition: 'bottom',
+    icon: FileText,
+    requiredView: 'daily'
   },
   {
     id: 'dashboard',
     title: 'Performance Dashboard',
-    description: 'Your daily performance metrics are displayed here. Track your P&L, win rate, and key statistics at a glance.',
+    description: 'Your daily performance metrics are displayed here. Track your P&L, win rate, and total trades.',
     targetSelector: '[data-tutorial="dashboard"]',
+    fallbackSelector: '.space-y-6 > div:nth-child(3)',
     position: 'bottom',
-    icon: BarChart3
+    mobilePosition: 'bottom',
+    icon: BarChart3,
+    requiredView: 'daily'
   },
   {
     id: 'calendar-nav',
-    title: 'Calendar Navigation',
-    description: 'Click here to view your trading calendar. See your performance across different days and identify patterns.',
+    title: 'Trading Calendar View',
+    description: 'Switch to calendar view to see your daily P&L across the entire month.',
     targetSelector: '[data-tutorial="calendar-nav"]',
+    fallbackSelector: 'button[data-tutorial="calendar-nav"]',
     position: 'bottom',
+    mobilePosition: 'bottom',
     icon: Calendar
   },
   {
-    id: 'daily-review',
-    title: 'Daily Review',
-    description: 'Get AI-powered insights and a grade for your daily trading performance. Perfect for tracking improvement over time.',
+    id: 'review-nav',
+    title: 'Daily Review & Grading',
+    description: 'Get a detailed grade for each trading day and track your improvement.',
     targetSelector: '[data-tutorial="review-nav"]',
+    fallbackSelector: 'button[data-tutorial="review-nav"]',
     position: 'bottom',
+    mobilePosition: 'bottom',
     icon: BookOpen
   },
   {
-    id: 'stock-search',
+    id: 'search-nav',
     title: 'Stock Analysis',
-    description: 'Analyze your performance on specific stocks. See which tickers are your most profitable and which need work.',
+    description: 'Analyze your performance on individual stocks and see your most profitable tickers.',
     targetSelector: '[data-tutorial="search-nav"]',
+    fallbackSelector: 'button[data-tutorial="search-nav"]',
     position: 'bottom',
+    mobilePosition: 'bottom',
     icon: Search
   },
   {
-    id: 'projections',
-    title: 'Goals & Projections',
-    description: 'Set earnings targets and see projections based on your trading performance. Plan your financial future!',
-    targetSelector: '[data-tutorial="projections-nav"]',
+    id: 'brokers-nav',
+    title: 'Broker Integration',
+    description: 'Connect your brokerage accounts to automatically import trades.',
+    targetSelector: '[data-tutorial="brokers-nav"]',
+    fallbackSelector: 'button[data-tutorial="brokers-nav"]',
     position: 'bottom',
-    icon: Target
+    mobilePosition: 'bottom',
+    icon: Link
+  },
+  {
+    id: 'completion',
+    title: 'You\'re All Set!',
+    description: 'Congratulations! You now know the key features. Start adding trades or exploring the dashboard.',
+    targetSelector: '.main-header',
+    fallbackSelector: 'header',
+    position: 'center',
+    mobilePosition: 'center',
+    icon: CheckCircle
   }
 ];
 
-// Responsive CSS styles
 const tutorialStyles = `
   .tutorial-highlight {
     position: relative !important;
     z-index: 45 !important;
-    border-radius: 8px !important;
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3), 0 0 0 8px rgba(59, 130, 246, 0.1) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4), 0 0 0 6px rgba(59, 130, 246, 0.2) !important;
     animation: tutorialPulse 2s infinite !important;
+    transition: all 0.3s ease-in-out !important;
   }
 
   @keyframes tutorialPulse {
     0%, 100% {
-      box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3), 0 0 0 8px rgba(59, 130, 246, 0.1) !important;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4), 0 0 0 6px rgba(59, 130, 246, 0.2) !important;
     }
     50% {
-      box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.4), 0 0 0 12px rgba(59, 130, 246, 0.15) !important;
+      box-shadow: 0 0 0 5px rgba(59, 130, 246, 0.5), 0 0 0 10px rgba(59, 130, 246, 0.25) !important;
     }
   }
 
   .tutorial-overlay {
     pointer-events: none !important;
+    backdrop-filter: blur(1px) !important;
   }
 
   .tutorial-highlight {
     pointer-events: auto !important;
   }
 
-  /* Mobile-specific animations */
-  @media (max-width: 640px) {
-    .tutorial-highlight {
-      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4), 0 0 0 4px rgba(59, 130, 246, 0.2) !important;
-    }
-    
-    @keyframes tutorialPulse {
-      0%, 100% {
-        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4), 0 0 0 4px rgba(59, 130, 246, 0.2) !important;
-      }
-      50% {
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5), 0 0 0 6px rgba(59, 130, 246, 0.25) !important;
-      }
+  .tutorial-tooltip {
+    backdrop-filter: blur(20px) !important;
+    border: 2px solid rgba(59, 130, 246, 0.2) !important;
+  }
+
+  @media (max-width: 768px) {
+    .tutorial-tooltip {
+      max-width: calc(100vw - 16px) !important;
+      margin: 8px !important;
     }
   }
 
-  /* Touch-friendly interactions */
-  @media (pointer: coarse) {
-    .tutorial-tooltip button {
-      min-height: 44px !important;
-      min-width: 44px !important;
+  @media (prefers-reduced-motion: reduce) {
+    .tutorial-highlight {
+      animation: none !important;
     }
   }
 `;
@@ -156,27 +209,271 @@ export const Tutorial: React.FC<TutorialProps> = ({
   const [targetElement, setTargetElement] = useState<HTMLElement | null>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [viewportDimensions, setViewportDimensions] = useState({ width: 0, height: 0 });
+  const [elementSearchAttempts, setElementSearchAttempts] = useState(0);
 
-  // Check if device is mobile
+  // Device detection
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 640);
+    const updateDeviceInfo = () => {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      
+      setViewportDimensions({ width, height });
+      setIsMobile(width < 640);
     };
     
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    updateDeviceInfo();
+    window.addEventListener('resize', updateDeviceInfo);
+    return () => window.removeEventListener('resize', updateDeviceInfo);
   }, []);
 
-  // Filter steps based on current view
+  // Filter steps based on current view and user context
   const availableSteps = TUTORIAL_STEPS.filter(step => {
-    if (step.id === 'welcome') return true;
-    if (currentView === 'daily' && ['manual-entry', 'dashboard'].includes(step.id)) return true;
+    // Always include welcome and completion steps
+    if (step.id === 'welcome' || step.id === 'completion') return true;
+    
+    // Filter by required view
+    if (step.requiredView && step.requiredView !== currentView) return false;
+    
+    // Include navigation steps (they should always be available)
     if (step.id.includes('-nav')) return true;
+    
+    // Include view-specific steps for daily view
+    if (currentView === 'daily' && ['date-picker', 'manual-entry', 'bulk-import', 'dashboard'].includes(step.id)) {
+      return true;
+    }
+    
     return false;
   });
 
   const currentTutorialStep = availableSteps[currentStep];
+
+  // Simplified element finder
+  const findTargetElement = useCallback((step: TutorialStep): HTMLElement | null => {
+    try {
+      // Try primary selector
+      let element = document.querySelector(step.targetSelector) as HTMLElement;
+      if (element && element.offsetParent !== null) {
+        return element;
+      }
+
+      // Try fallback selector
+      if (step.fallbackSelector) {
+        element = document.querySelector(step.fallbackSelector) as HTMLElement;
+        if (element && element.offsetParent !== null) {
+          return element;
+        }
+      }
+
+      // For center positioning, use body
+      if (step.position === 'center') {
+        return document.body;
+      }
+    } catch (error) {
+      console.warn('Error finding tutorial element:', error);
+    }
+
+    return null;
+  }, []);
+
+  // Element detection with simplified retry logic
+  useEffect(() => {
+    if (!isOpen || !currentTutorialStep) return;
+
+    let mounted = true;
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    const attemptToFindElement = () => {
+      if (!mounted) return;
+
+      const element = findTargetElement(currentTutorialStep);
+      
+      if (element) {
+        setTargetElement(element);
+        setIsVisible(true);
+        setElementSearchAttempts(0);
+        
+        // Scroll into view
+        try {
+          element.scrollIntoView({
+            behavior: 'smooth',
+            block: isMobile ? 'start' : 'center',
+            inline: 'center'
+          });
+          
+          // Add highlight
+          setTimeout(() => {
+            if (mounted) {
+              element.classList.add('tutorial-highlight');
+            }
+          }, 300);
+        } catch (error) {
+          console.warn('Error scrolling to element:', error);
+        }
+        
+        return true;
+      }
+      
+      return false;
+    };
+
+    // Immediate attempt
+    if (!attemptToFindElement()) {
+      // Retry with delay
+      const retryInterval = setInterval(() => {
+        if (!mounted) {
+          clearInterval(retryInterval);
+          return;
+        }
+
+        retryCount++;
+        setElementSearchAttempts(retryCount);
+        
+        if (attemptToFindElement() || retryCount >= maxRetries) {
+          clearInterval(retryInterval);
+          
+          if (retryCount >= maxRetries) {
+            // For center-positioned or optional steps, continue anyway
+            if (currentTutorialStep.position === 'center' || currentTutorialStep.optional) {
+              setIsVisible(true);
+              setTargetElement(document.body);
+            } else {
+              // Auto-skip missing elements
+              setTimeout(() => {
+                if (mounted) {
+                  handleNext();
+                }
+              }, 500);
+            }
+          }
+        }
+      }, 500);
+
+      return () => {
+        mounted = false;
+        clearInterval(retryInterval);
+      };
+    }
+
+    return () => {
+      mounted = false;
+      // Cleanup highlights
+      const elements = document.querySelectorAll('.tutorial-highlight');
+      elements.forEach(el => {
+        el.classList.remove('tutorial-highlight');
+      });
+    };
+  }, [currentStep, currentTutorialStep, isOpen, isMobile, findTargetElement]);
+
+  // Responsive tooltip positioning
+  const getTooltipPosition = useCallback(() => {
+    if (!targetElement || !currentTutorialStep) {
+      return { top: 50, left: 50, width: isMobile ? viewportDimensions.width - 32 : 320 };
+    }
+
+    const rect = targetElement.getBoundingClientRect();
+    const { width: viewportWidth, height: viewportHeight } = viewportDimensions;
+    
+    let tooltipWidth = isMobile ? Math.min(viewportWidth - 24, 300) : 320;
+    let tooltipHeight = 200;
+
+    const offset = isMobile ? 16 : 24;
+    let top = 0;
+    let left = 0;
+
+    const position = isMobile && currentTutorialStep.mobilePosition 
+      ? currentTutorialStep.mobilePosition 
+      : currentTutorialStep.position;
+
+    switch (position) {
+      case 'center':
+        top = (viewportHeight - tooltipHeight) / 2;
+        left = (viewportWidth - tooltipWidth) / 2;
+        break;
+        
+      case 'bottom':
+        top = rect.bottom + offset;
+        left = isMobile ? 12 : Math.max(12, Math.min(rect.left + (rect.width / 2) - (tooltipWidth / 2), viewportWidth - tooltipWidth - 12));
+        break;
+        
+      case 'top':
+        top = rect.top - tooltipHeight - offset;
+        left = isMobile ? 12 : Math.max(12, Math.min(rect.left + (rect.width / 2) - (tooltipWidth / 2), viewportWidth - tooltipWidth - 12));
+        break;
+        
+      case 'right':
+        if (isMobile) {
+          top = rect.bottom + offset;
+          left = 12;
+        } else {
+          top = Math.max(12, rect.top + (rect.height / 2) - (tooltipHeight / 2));
+          left = rect.right + offset;
+        }
+        break;
+        
+      case 'left':
+        if (isMobile) {
+          top = rect.bottom + offset;
+          left = 12;
+        } else {
+          top = Math.max(12, rect.top + (rect.height / 2) - (tooltipHeight / 2));
+          left = rect.left - tooltipWidth - offset;
+        }
+        break;
+    }
+
+    // Boundary checking
+    const margin = 12;
+    const bottomMargin = isMobile ? 80 : margin;
+    
+    if (left < margin) left = margin;
+    if (left + tooltipWidth > viewportWidth - margin) {
+      left = viewportWidth - tooltipWidth - margin;
+    }
+    if (top < margin) top = margin;
+    if (top + tooltipHeight > viewportHeight - bottomMargin) {
+      top = Math.max(margin, viewportHeight - tooltipHeight - bottomMargin);
+    }
+
+    return { top, left, width: tooltipWidth };
+  }, [targetElement, currentTutorialStep, isMobile, viewportDimensions]);
+
+  const handleNext = () => {
+    if (currentStep < availableSteps.length - 1) {
+      setCurrentStep(currentStep + 1);
+      setElementSearchAttempts(0);
+      setIsVisible(false);
+    } else {
+      handleComplete();
+    }
+  };
+
+  const handlePrevious = () => {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1);
+      setElementSearchAttempts(0);
+      setIsVisible(false);
+    }
+  };
+
+  const handleComplete = () => {
+    try {
+      onComplete();
+      onClose();
+    } catch (error) {
+      console.error('Error completing tutorial:', error);
+      onClose();
+    }
+  };
+
+  const handleSkip = () => {
+    try {
+      onClose();
+    } catch (error) {
+      console.error('Error closing tutorial:', error);
+    }
+  };
 
   // Inject CSS styles
   useEffect(() => {
@@ -195,131 +492,40 @@ export const Tutorial: React.FC<TutorialProps> = ({
     };
   }, [isOpen]);
 
-  // Find and highlight target element
-  useEffect(() => {
-    if (!isOpen || !currentTutorialStep) return;
-
-    const findElement = () => {
-      const element = document.querySelector(currentTutorialStep.targetSelector) as HTMLElement;
-      if (element) {
-        setTargetElement(element);
-        setIsVisible(true);
-        
-        // Scroll element into view with mobile considerations
-        element.scrollIntoView({ 
-          behavior: 'smooth', 
-          block: isMobile ? 'start' : 'center',
-          inline: 'center'
-        });
-        
-        // Add highlight class
-        element.classList.add('tutorial-highlight');
-        
-        return true;
-      }
-      return false;
-    };
-
-    // Try to find element immediately
-    if (!findElement()) {
-      // If not found, try again after a short delay
-      const timeout = setTimeout(findElement, 500);
-      return () => clearTimeout(timeout);
-    }
-
-    return () => {
-      // Cleanup highlight
-      const elements = document.querySelectorAll('.tutorial-highlight');
-      elements.forEach(el => el.classList.remove('tutorial-highlight'));
-    };
-  }, [currentStep, currentTutorialStep, isOpen, isMobile]);
-
-  // Calculate responsive tooltip position
-  const getTooltipPosition = useCallback(() => {
-    if (!targetElement || !currentTutorialStep) return { top: 0, left: 0 };
-
-    const rect = targetElement.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    // Responsive tooltip dimensions
-    const tooltipWidth = isMobile ? Math.min(viewportWidth - 32, 280) : 320;
-    const tooltipHeight = isMobile ? 180 : 200;
-    const offset = isMobile ? 12 : 20;
-
-    let top = 0;
-    let left = 0;
-
-    // On mobile, prefer bottom positioning to avoid keyboard issues
-    if (isMobile) {
-      top = rect.bottom + offset;
-      left = 16; // Fixed left margin on mobile
-      
-      // If tooltip would go off bottom, position above
-      if (top + tooltipHeight > viewportHeight - 20) {
-        top = rect.top - tooltipHeight - offset;
-      }
-      
-      // If still off screen, center it
-      if (top < 20) {
-        top = Math.max(20, (viewportHeight - tooltipHeight) / 2);
-      }
-    } else {
-      // Desktop positioning logic
-      switch (currentTutorialStep.position) {
-        case 'bottom':
-          top = rect.bottom + offset;
-          left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
-          break;
-        case 'top':
-          top = rect.top - tooltipHeight - offset;
-          left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
-          break;
-        case 'right':
-          top = rect.top + (rect.height / 2) - (tooltipHeight / 2);
-          left = rect.right + offset;
-          break;
-        case 'left':
-          top = rect.top + (rect.height / 2) - (tooltipHeight / 2);
-          left = rect.left - tooltipWidth - offset;
-          break;
-      }
-
-      // Keep tooltip within viewport bounds
-      if (left < 10) left = 10;
-      if (left + tooltipWidth > viewportWidth - 10) left = viewportWidth - tooltipWidth - 10;
-      if (top < 10) top = 10;
-      if (top + tooltipHeight > viewportHeight - 10) top = viewportHeight - tooltipHeight - 10;
-    }
-
-    return { top, left, width: tooltipWidth };
-  }, [targetElement, currentTutorialStep, isMobile]);
-
-  const handleNext = () => {
-    if (currentStep < availableSteps.length - 1) {
-      setCurrentStep(currentStep + 1);
-    } else {
-      handleComplete();
-    }
-  };
-
-  const handlePrevious = () => {
-    if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
-    }
-  };
-
-  const handleComplete = () => {
-    onComplete();
-    onClose();
-  };
-
-  const handleSkip = () => {
-    onClose();
-  };
-
-  if (!isOpen || !currentTutorialStep || !isVisible) {
+  if (!isOpen || !currentTutorialStep || availableSteps.length === 0) {
     return null;
+  }
+
+  // Loading state for element search
+  if (!isVisible && !(currentTutorialStep.position === 'center' || currentTutorialStep.optional)) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-60 z-40 flex items-center justify-center">
+        <div className="bg-white rounded-xl p-6 max-w-sm mx-4">
+          <div className="text-center">
+            <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+            <h3 className="font-semibold text-gray-900 mb-2">Finding Tutorial Element</h3>
+            <p className="text-gray-700 text-sm mb-4">
+              Looking for: {currentTutorialStep.title}
+              {elementSearchAttempts > 0 && ` (${elementSearchAttempts}/3)`}
+            </p>
+            <div className="flex space-x-2">
+              <button
+                onClick={handleNext}
+                className="flex-1 px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Skip Step
+              </button>
+              <button
+                onClick={handleSkip}
+                className="flex-1 px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+              >
+                End Tutorial
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const position = getTooltipPosition();
@@ -328,59 +534,58 @@ export const Tutorial: React.FC<TutorialProps> = ({
   return (
     <>
       {/* Overlay */}
-      <div className="fixed inset-0 bg-black bg-opacity-50 z-40 tutorial-overlay" />
+      <div className="fixed inset-0 bg-black bg-opacity-60 z-40 tutorial-overlay" />
       
-      {/* Tutorial Tooltip - Fully Responsive */}
+      {/* Tutorial Tooltip */}
       <div
-        className="tutorial-tooltip fixed z-50 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700"
+        className="tutorial-tooltip fixed z-50 bg-white rounded-2xl shadow-2xl border"
         style={{
           top: `${position.top}px`,
           left: `${position.left}px`,
           width: `${position.width}px`,
-          maxHeight: isMobile ? '80vh' : 'auto',
-          overflow: isMobile ? 'auto' : 'visible'
+          maxHeight: isMobile ? '85vh' : '80vh',
+          overflow: 'auto'
         }}
       >
-        {/* Header - Responsive */}
-        <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
-            <div className="p-1.5 sm:p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex-shrink-0">
-              <Icon className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 dark:text-blue-400" />
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-blue-50 to-purple-50 rounded-t-2xl">
+          <div className="flex items-center space-x-3 flex-1 min-w-0">
+            <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg">
+              <Icon className="h-6 w-6 text-white" />
             </div>
-            <div className="min-w-0">
-              <h3 className="font-semibold text-gray-900 dark:text-white text-sm sm:text-base leading-tight">
+            <div className="min-w-0 flex-1">
+              <h3 className="font-bold text-gray-900 text-lg leading-tight">
                 {currentTutorialStep.title}
               </h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
+              <span className="text-sm text-blue-600 font-medium">
                 Step {currentStep + 1} of {availableSteps.length}
-              </p>
+              </span>
             </div>
           </div>
           <button
             onClick={handleSkip}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 flex-shrink-0 touch-manipulation"
+            className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg"
             title="Skip tutorial"
-            style={{ minHeight: '44px', minWidth: '44px' }}
           >
-            <X className="h-4 w-4 sm:h-5 sm:w-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Content - Responsive */}
-        <div className="p-3 sm:p-4">
-          <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed mb-3 sm:mb-4">
+        {/* Content */}
+        <div className="p-5">
+          <p className="text-gray-700 text-base leading-relaxed mb-5">
             {currentTutorialStep.description}
           </p>
 
-          {/* Progress Bar - Responsive */}
-          <div className="mb-3 sm:mb-4">
-            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
-              <span>Progress</span>
-              <span>{Math.round(((currentStep + 1) / availableSteps.length) * 100)}%</span>
+          {/* Progress Bar */}
+          <div className="mb-5">
+            <div className="flex justify-between text-sm text-gray-500 mb-2">
+              <span className="font-medium">Progress</span>
+              <span className="font-semibold">{Math.round(((currentStep + 1) / availableSteps.length) * 100)}%</span>
             </div>
-            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+            <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
               <div
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                className="bg-gradient-to-r from-blue-500 to-purple-600 h-full rounded-full transition-all duration-500"
                 style={{
                   width: `${((currentStep + 1) / availableSteps.length) * 100}%`
                 }}
@@ -388,43 +593,51 @@ export const Tutorial: React.FC<TutorialProps> = ({
             </div>
           </div>
 
-          {/* Navigation - Mobile Optimized */}
+          {/* Completion Message */}
+          {currentTutorialStep.id === 'completion' && (
+            <div className="mb-4 p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl">
+              <div className="flex items-center mb-2">
+                <CheckCircle className="h-5 w-5 text-green-600 mr-2" />
+                <span className="text-sm font-semibold text-green-800">Tutorial Complete!</span>
+              </div>
+              <p className="text-sm text-green-700">
+                You can restart this tutorial anytime from the help menu.
+              </p>
+            </div>
+          )}
+
+          {/* Navigation */}
           <div className="flex items-center justify-between">
             <button
               onClick={handlePrevious}
               disabled={currentStep === 0}
-              className="flex items-center px-2 sm:px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors touch-manipulation"
-              style={{ minHeight: '44px' }}
+              className="flex items-center px-4 py-3 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 rounded-lg"
             >
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              <span className="hidden sm:inline">Previous</span>
-              <span className="sm:hidden">Prev</span>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Previous
             </button>
 
-            <div className="flex space-x-1 sm:space-x-2">
+            <div className="flex space-x-2">
               <button
-                onClick={handleSkip}
-                className="px-2 sm:px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors touch-manipulation"
-                style={{ minHeight: '44px' }}
+                onClick={currentTutorialStep.id === 'completion' ? handleComplete : handleSkip}
+                className="px-4 py-3 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg"
               >
-                Skip
+                {currentTutorialStep.id === 'completion' ? 'Close' : 'Skip All'}
               </button>
+              
               <button
                 onClick={handleNext}
-                className="flex items-center px-3 sm:px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors touch-manipulation"
-                style={{ minHeight: '44px' }}
+                className="flex items-center px-5 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-semibold rounded-lg hover:from-blue-700 hover:to-purple-700 shadow-lg"
               >
                 {currentStep === availableSteps.length - 1 ? (
                   <>
-                    <CheckCircle className="h-4 w-4 mr-1" />
-                    <span className="hidden sm:inline">Finish</span>
-                    <span className="sm:hidden">Done</span>
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Finish
                   </>
                 ) : (
                   <>
-                    <span className="hidden sm:inline">Next</span>
-                    <span className="sm:hidden">Next</span>
-                    <ArrowRight className="h-4 w-4 ml-1" />
+                    Next
+                    <ArrowRight className="h-4 w-4 ml-2" />
                   </>
                 )}
               </button>
@@ -436,23 +649,22 @@ export const Tutorial: React.FC<TutorialProps> = ({
   );
 };
 
-// Responsive Tutorial Button Component
+// Tutorial Button Component
 export const TutorialButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
   return (
     <button
       onClick={onClick}
-      className="flex items-center px-2 sm:px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all duration-200 touch-manipulation"
+      className="flex items-center px-4 py-3 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-xl border border-transparent hover:border-blue-200 shadow-sm hover:shadow-md"
       title="Start tutorial"
-      style={{ minHeight: '44px' }}
     >
-      <HelpCircle className="h-4 w-4 mr-1 sm:mr-2" />
-      <span className="hidden sm:inline">Tutorial</span>
-      <span className="sm:hidden text-xs">Help</span>
+      <HelpCircle className="h-5 w-5 mr-2" />
+      <span className="font-semibold">Tutorial</span>
+      <div className="ml-2 text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full font-bold">?</div>
     </button>
   );
 };
 
-// Fully Responsive Welcome Message Component
+// Welcome Message Component
 export const WelcomeMessage: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -460,29 +672,6 @@ export const WelcomeMessage: React.FC<{
   userName?: string;
 }> = ({ isOpen, onClose, onStartTutorial, userName }) => {
   if (!isOpen) return null;
-
-  const features = [
-    {
-      icon: TrendingUp,
-      title: 'Track Every Trade',
-      description: 'Log trades manually or connect your broker for automatic import'
-    },
-    {
-      icon: Calendar,
-      title: 'Visual Performance Calendar',
-      description: 'See your daily P&L at a glance and identify patterns'
-    },
-    {
-      icon: BarChart3,
-      title: 'Advanced Analytics',
-      description: 'Deep insights into your trading performance and strategies'
-    },
-    {
-      icon: Target,
-      title: 'Goals & Projections',
-      description: 'Set targets and track your progress toward financial goals'
-    }
-  ];
 
   const handleStartTutorial = () => {
     onClose();
@@ -492,179 +681,108 @@ export const WelcomeMessage: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
-        {/* Header with gradient background - Responsive */}
-        <div className="bg-gradient-to-br from-blue-600 to-purple-700 text-white p-4 sm:p-6 rounded-t-2xl">
-          <div className="flex items-center justify-center mb-3 sm:mb-4">
-            <div className="p-2 sm:p-3 bg-white/20 rounded-xl backdrop-blur-sm">
-              <Sparkles className="h-6 w-6 sm:h-8 sm:w-8" />
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="bg-gradient-to-br from-blue-600 via-purple-600 to-cyan-600 text-white p-8 rounded-t-3xl relative overflow-hidden">
+          <div className="relative">
+            <div className="flex items-center justify-center mb-6">
+              <div className="p-4 bg-white/20 rounded-2xl backdrop-blur-sm">
+                <Sparkles className="h-10 w-10 animate-pulse" />
+              </div>
             </div>
+            <h2 className="text-3xl font-bold text-center mb-4">
+              Welcome to DayTradeTracker{userName && (
+                <span className="block text-xl font-normal text-blue-100 mt-2">
+                  Hello, {userName}!
+                </span>
+              )}
+            </h2>
+            <p className="text-blue-100 text-center text-xl leading-relaxed">
+              Transform your trading with intelligent analytics
+            </p>
           </div>
-          <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-center mb-2">
-            Welcome to DayTradeTracker{userName ? `, ${userName}` : ''}!
-          </h2>
-          <p className="text-blue-100 text-center text-base sm:text-lg">
-            Your journey to better trading starts here
-          </p>
         </div>
 
-        {/* Content - Responsive */}
-        <div className="p-4 sm:p-6">
-          {/* Introduction */}
-          <div className="text-center mb-6 sm:mb-8">
-            <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-2 sm:mb-3">
-              Transform Your Trading Performance
+        {/* Content */}
+        <div className="p-8">
+          <div className="text-center mb-8">
+            <h3 className="text-2xl font-bold text-gray-900 mb-4">
+              Your Complete Trading Analytics Platform
             </h3>
-            <p className="text-gray-600 dark:text-gray-300 leading-relaxed text-sm sm:text-base">
-              DayTradeTracker helps you analyze patterns, track performance, and optimize your 
-              trading strategy with powerful analytics and insights.
+            <p className="text-gray-600 leading-relaxed text-lg">
+              Track trades, analyze patterns, and optimize your trading strategy with powerful insights.
             </p>
           </div>
 
-          {/* Features Grid - Responsive */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-6 sm:mb-8">
-            {features.map((feature, index) => (
-              <div 
-                key={index}
-                className="bg-gray-50 dark:bg-gray-700 rounded-xl p-3 sm:p-4 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-              >
-                <div className="flex items-start space-x-3">
-                  <div className="p-1.5 sm:p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex-shrink-0">
-                    <feature.icon className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 dark:text-blue-400" />
+          {/* Feature highlights */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            {[
+              { icon: TrendingUp, title: 'Smart Trade Tracking', desc: 'Log trades manually or connect your broker' },
+              { icon: BarChart3, title: 'Performance Analytics', desc: 'Deep insights into your trading patterns' },
+              { icon: Calendar, title: 'Visual Calendar', desc: 'See your daily P&L at a glance' },
+              { icon: Target, title: 'Goals & Projections', desc: 'Set targets and track progress' }
+            ].map((feature, index) => (
+              <div key={index} className="p-6 bg-gray-50 rounded-2xl">
+                <div className="flex items-center mb-3">
+                  <div className="p-2 bg-blue-600 rounded-lg mr-3">
+                    <feature.icon className="h-6 w-6 text-white" />
                   </div>
-                  <div>
-                    <h4 className="font-semibold text-gray-900 dark:text-white text-sm">
-                      {feature.title}
-                    </h4>
-                    <p className="text-gray-600 dark:text-gray-300 text-xs mt-1">
-                      {feature.description}
-                    </p>
-                  </div>
+                  <h4 className="font-bold text-gray-900">{feature.title}</h4>
                 </div>
+                <p className="text-gray-600 text-sm">{feature.desc}</p>
               </div>
             ))}
           </div>
 
-          {/* Quick Stats Preview - Responsive */}
-          <div className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 rounded-xl p-3 sm:p-4 mb-6 sm:mb-8 border border-green-200 dark:border-green-800">
-            <h4 className="font-semibold text-gray-900 dark:text-white mb-3 text-center text-sm sm:text-base">
-              What You'll Track
-            </h4>
-            <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
-              <div>
-                <div className="flex items-center justify-center mb-1 sm:mb-2">
-                  <DollarSign className="h-4 w-4 sm:h-5 sm:w-5 text-green-600" />
-                </div>
-                <p className="text-xs text-gray-600 dark:text-gray-300">Daily P&L</p>
-              </div>
-              <div>
-                <div className="flex items-center justify-center mb-1 sm:mb-2">
-                  <Target className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
-                </div>
-                <p className="text-xs text-gray-600 dark:text-gray-300">Win Rate</p>
-              </div>
-              <div>
-                <div className="flex items-center justify-center mb-1 sm:mb-2">
-                  <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-purple-600" />
-                </div>
-                <p className="text-xs text-gray-600 dark:text-gray-300">Best Times</p>
-              </div>
-            </div>
-          </div>
-
-          {/* What's Next - Responsive */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 sm:p-4 mb-4 sm:mb-6 border border-blue-200 dark:border-blue-800">
-            <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-2 sm:mb-3 flex items-center text-sm sm:text-base">
-              <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-              What's Next?
-            </h4>
-            <div className="space-y-2 text-xs sm:text-sm">
-              <div className="flex items-center text-blue-800 dark:text-blue-200">
-                <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-blue-600 rounded-full mr-2 sm:mr-3 flex-shrink-0"></div>
-                Take a quick interactive tour of the key features
-              </div>
-              <div className="flex items-center text-blue-800 dark:text-blue-200">
-                <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-blue-600 rounded-full mr-2 sm:mr-3 flex-shrink-0"></div>
-                Add your first trade to get started
-              </div>
-              <div className="flex items-center text-blue-800 dark:text-blue-200">
-                <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-blue-600 rounded-full mr-2 sm:mr-3 flex-shrink-0"></div>
-                Explore your performance analytics
-              </div>
-            </div>
-          </div>
-
-          {/* Action Buttons - Responsive & Touch-Friendly */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Action buttons */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <button
               onClick={handleStartTutorial}
-              className="flex items-center justify-center px-4 sm:px-6 py-3 sm:py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold text-sm sm:text-base touch-manipulation"
-              style={{ minHeight: '48px' }}
+              className="flex items-center justify-center px-8 py-5 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl hover:from-blue-700 hover:to-purple-700 font-bold text-lg shadow-xl"
             >
-              <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-              Start Interactive Tour
-              <ArrowRight className="h-3 w-3 sm:h-4 sm:w-4 ml-2" />
+              <Sparkles className="h-6 w-6 mr-3" />
+              Start Tutorial
+              <ArrowRight className="h-5 w-5 ml-3" />
             </button>
+            
             <button
               onClick={onClose}
-              className="flex items-center justify-center px-4 sm:px-6 py-3 sm:py-4 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-semibold text-sm sm:text-base touch-manipulation"
-              style={{ minHeight: '48px' }}
+              className="flex items-center justify-center px-8 py-5 border-2 border-gray-300 text-gray-700 rounded-2xl hover:border-blue-500 hover:text-blue-600 hover:bg-gray-50 font-bold text-lg"
             >
-              Skip & Explore
+              Skip & Start Trading
             </button>
           </div>
 
-          {/* Small note - Responsive */}
-          <p className="text-xs text-gray-500 dark:text-gray-400 text-center mt-3 sm:mt-4">
-            You can always restart the tutorial later from the help menu
-          </p>
+          <div className="text-center mt-6">
+            <p className="text-sm text-gray-500">
+              You can restart the tutorial anytime from the help menu
+            </p>
+          </div>
         </div>
       </div>
     </div>
   );
 };
 
-// Tutorial Manager Hook (unchanged but included for completeness)
+// Tutorial Manager Hook - Using React state instead of localStorage
 export const useTutorial = () => {
   const [showTutorial, setShowTutorial] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(true); // Show welcome by default
   const [hasSeenTutorial, setHasSeenTutorial] = useState(false);
   const [hasSeenWelcome, setHasSeenWelcome] = useState(false);
-
-  useEffect(() => {
-    const tutorialStatus = localStorage.getItem('daytrader-tutorial-completed');
-    const welcomeStatus = localStorage.getItem('daytrader-welcome-seen');
-    const hasCompletedTutorial = tutorialStatus === 'true';
-    const hasSeenWelcomeMessage = welcomeStatus === 'true';
-    
-    setHasSeenTutorial(hasCompletedTutorial);
-    setHasSeenWelcome(hasSeenWelcomeMessage);
-
-    // Show welcome message for completely new users
-    if (!hasSeenWelcomeMessage) {
-      const timer = setTimeout(() => {
-        setShowWelcome(true);
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-    // Show tutorial for users who have seen welcome but not completed tutorial
-    else if (!hasCompletedTutorial) {
-      const timer = setTimeout(() => {
-        setShowTutorial(true);
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, []);
+  const [tutorialProgress, setTutorialProgress] = useState(0);
 
   const startTutorial = useCallback(() => {
     setShowTutorial(true);
+    setTutorialProgress(0);
   }, []);
 
   const completeTutorial = useCallback(() => {
-    localStorage.setItem('daytrader-tutorial-completed', 'true');
     setHasSeenTutorial(true);
+    setHasSeenWelcome(true);
     setShowTutorial(false);
+    setTutorialProgress(100);
   }, []);
 
   const closeTutorial = useCallback(() => {
@@ -672,19 +790,26 @@ export const useTutorial = () => {
   }, []);
 
   const closeWelcome = useCallback(() => {
-    localStorage.setItem('daytrader-welcome-seen', 'true');
     setHasSeenWelcome(true);
     setShowWelcome(false);
   }, []);
 
   const startTutorialFromWelcome = useCallback(() => {
-    localStorage.setItem('daytrader-welcome-seen', 'true');
     setHasSeenWelcome(true);
     setShowWelcome(false);
-    // Start tutorial after a brief delay
     setTimeout(() => {
       setShowTutorial(true);
+      setTutorialProgress(0);
     }, 300);
+  }, []);
+
+  const resetTutorial = useCallback(() => {
+    setHasSeenTutorial(false);
+    setHasSeenWelcome(false);
+    setTutorialProgress(0);
+    setShowTutorial(false);
+    setShowWelcome(false);
+    setTimeout(() => setShowWelcome(true), 500);
   }, []);
 
   return {
@@ -692,10 +817,85 @@ export const useTutorial = () => {
     showWelcome,
     hasSeenTutorial,
     hasSeenWelcome,
+    tutorialProgress,
+    startTutorial,
+    completeTutorial,
+    closeTutorial,
+    closeWelcome,
+    startTutorialFromWelcome,
+    resetTutorial,
+    setTutorialProgress
+  };
+};
+
+// Demo App
+const DemoApp = () => {
+  const {
+    showTutorial,
+    showWelcome,
     startTutorial,
     completeTutorial,
     closeTutorial,
     closeWelcome,
     startTutorialFromWelcome
-  };
+  } = useTutorial();
+
+  return (
+    <div className="min-h-screen bg-gray-100 p-4">
+      <header className="main-header bg-white rounded-lg shadow-sm p-6 mb-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-gray-900">DayTradeTracker</h1>
+          <div className="flex space-x-4">
+            <TutorialButton onClick={startTutorial} />
+            <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+              <User className="h-6 w-6 text-white" />
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div data-tutorial="manual-trade-entry" className="bg-white rounded-lg shadow-sm p-6">
+          <h2 className="text-lg font-semibold mb-4">Add Trade</h2>
+          <div className="space-y-4">
+            <input type="text" placeholder="Ticker" className="w-full px-3 py-2 border rounded-lg" />
+            <input type="number" placeholder="Entry Price" className="w-full px-3 py-2 border rounded-lg" />
+            <button className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700">
+              Add Trade
+            </button>
+          </div>
+        </div>
+
+        <div data-tutorial="dashboard" className="bg-white rounded-lg shadow-sm p-6">
+          <h2 className="text-lg font-semibold mb-4">Performance Dashboard</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-600">+$250</div>
+              <div className="text-sm text-gray-500">Today's P&L</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-blue-600">75%</div>
+              <div className="text-sm text-gray-500">Win Rate</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <Tutorial 
+        isOpen={showTutorial}
+        onClose={closeTutorial}
+        onComplete={completeTutorial}
+        currentView="daily"
+      />
+
+      <WelcomeMessage
+        isOpen={showWelcome}
+        onClose={closeWelcome}
+        onStartTutorial={startTutorialFromWelcome}
+        userName="Trader"
+      />
+    </div>
+  );
 };
+
+export default DemoApp;
