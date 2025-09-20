@@ -821,38 +821,41 @@ function AppContent() {
       <div className={`min-h-screen transition-all duration-200 ${
         sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-72'
       }`}>
-        {/* Mobile Header - WITH TUTORIAL BUTTON */}
+{/* Mobile Header - RESPONSIVE LAYOUT */}
         <header className="lg:hidden bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30 main-header">
-          <div className="px-4 h-16 flex items-center justify-between">
-            {/* Mobile Logo */}
+          <div className="px-3 sm:px-4 h-16 flex items-center justify-between">
+            {/* Mobile Logo - Responsive */}
             <button 
               onClick={handleLogoClick}
-              className="flex items-center hover:opacity-80 transition-opacity"
+              className="flex items-center hover:opacity-80 transition-opacity min-w-0 flex-shrink-0"
             >
-              <TrendingUp className="h-8 w-8 text-blue-600 mr-3" />
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                DayTradeTracker
+              <TrendingUp className="h-7 w-7 sm:h-8 sm:w-8 text-blue-600 mr-2 sm:mr-3 flex-shrink-0" />
+              <h1 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white truncate">
+                <span className="hidden min-[480px]:inline">DayTradeTracker</span>
+                <span className="min-[480px]:hidden">DTT</span>
               </h1>
             </button>
 
-            {/* Mobile Controls - WITH TUTORIAL BUTTON */}
-            <div className="flex items-center space-x-2">
-              {/* Tutorial Button */}
-              <TutorialButton onClick={startTutorial} />
+            {/* Mobile Controls - PRIORITIZED LAYOUT */}
+            <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
+              {/* Tutorial Button - Hidden on very small screens */}
+              <div className="hidden sm:block">
+                <TutorialButton onClick={startTutorial} />
+              </div>
               
-              {/* Dark Mode Toggle - Always visible on mobile */}
+              {/* Dark Mode Toggle - Compact on small screens */}
               <button
                 onClick={() => setDarkMode(!darkMode)}
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                className="p-1.5 sm:p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                 title="Toggle dark mode"
               >
-                {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+                {darkMode ? <Sun className="h-4 w-4 sm:h-5 sm:w-5" /> : <Moon className="h-4 w-4 sm:h-5 sm:w-5" />}
               </button>
 
-              {/* Mobile Menu Toggle */}
+              {/* Mobile Menu Toggle - Always visible and prominent */}
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md"
+                className="p-1.5 sm:p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md"
               >
                 {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </button>
