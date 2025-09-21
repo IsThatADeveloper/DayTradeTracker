@@ -1,4 +1,4 @@
-// src/components/DailyReview.tsx - Fully Responsive Version
+// src/components/DailyReview.tsx - Enhanced Mobile Version
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   BookOpen,
@@ -24,7 +24,8 @@ import {
   Flag,
   Tag,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Menu
 } from 'lucide-react';
 import { format, isToday, subDays } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
@@ -63,6 +64,7 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   // Reminder input states
   const [goalInput, setGoalInput] = useState('');
@@ -214,10 +216,10 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
 
   if (!currentUser) {
     return (
-      <div className="text-center py-8 px-4">
-        <BookOpen className="h-12 w-12 sm:h-16 sm:w-16 text-gray-400 mx-auto mb-4" />
-        <h3 className="text-lg sm:text-xl font-medium text-gray-900 dark:text-white mb-2">Sign In Required</h3>
-        <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 max-w-md mx-auto">
+      <div className="text-center py-12 px-4">
+        <BookOpen className="h-16 w-16 sm:h-20 sm:w-20 text-gray-400 mx-auto mb-6" />
+        <h3 className="text-xl sm:text-2xl font-medium text-gray-900 dark:text-white mb-3">Sign In Required</h3>
+        <p className="text-base sm:text-lg text-gray-600 dark:text-gray-400 max-w-md mx-auto">
           Sign in to access your daily trading reviews and report cards.
         </p>
       </div>
@@ -226,24 +228,24 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
 
   if (isLoading) {
     return (
-      <div className="text-center py-8 px-4">
-        <RefreshCw className="h-6 w-6 sm:h-8 sm:w-8 text-blue-600 mx-auto mb-4 animate-spin" />
-        <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">Loading daily review...</p>
+      <div className="text-center py-12 px-4">
+        <RefreshCw className="h-8 w-8 sm:h-10 sm:w-10 text-blue-600 mx-auto mb-6 animate-spin" />
+        <p className="text-base sm:text-lg text-gray-600 dark:text-gray-400">Loading daily review...</p>
       </div>
     );
   }
 
   if (!dailyReview) {
     return (
-      <div className="text-center py-8 px-4">
-        <AlertCircle className="h-12 w-12 sm:h-16 sm:w-16 text-red-400 mx-auto mb-4" />
-        <h3 className="text-lg sm:text-xl font-medium text-gray-900 dark:text-white mb-2">Failed to Load Review</h3>
-        <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mb-4 max-w-md mx-auto">
+      <div className="text-center py-12 px-4">
+        <AlertCircle className="h-16 w-16 sm:h-20 sm:w-20 text-red-400 mx-auto mb-6" />
+        <h3 className="text-xl sm:text-2xl font-medium text-gray-900 dark:text-white mb-3">Failed to Load Review</h3>
+        <p className="text-base sm:text-lg text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
           Unable to load the daily review for {format(selectedDate, 'MMMM d, yyyy')}.
         </p>
         <button
           onClick={loadDailyReview}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm sm:text-base"
+          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-base sm:text-lg font-medium"
         >
           Try Again
         </button>
@@ -299,25 +301,25 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
     return 'F';
   };
 
-  // Responsive star rating with larger touch targets on mobile
+  // Enhanced mobile-friendly star rating
   const renderStarRating = (value: number, onChange: (value: number) => void, size: 'sm' | 'lg' = 'sm') => {
-    const starSize = size === 'lg' ? 'h-4 w-4 sm:h-6 sm:w-6 md:h-7 md:w-7' : 'h-3 w-3 sm:h-4 sm:w-4';
-    const spacing = size === 'lg' ? 'space-x-0.5 sm:space-x-1 md:space-x-1.5' : 'space-x-0.5 sm:space-x-1';
+    const starSize = size === 'lg' ? 'h-6 w-6 sm:h-7 sm:w-7 md:h-8 md:w-8' : 'h-4 w-4 sm:h-5 sm:w-5';
+    const spacing = size === 'lg' ? 'gap-1 sm:gap-1.5 md:gap-2' : 'gap-0.5 sm:gap-1';
     
     return (
-      <div className={`flex ${spacing} flex-wrap justify-center sm:justify-start`}>
+      <div className={`flex ${spacing} flex-wrap justify-start`}>
         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((star) => (
           <button
             key={star}
             type="button"
             onClick={() => onChange(star)}
-            className={`${starSize} transition-colors p-1 -m-1 touch-manipulation ${
+            className={`${starSize} transition-all duration-200 p-2 -m-2 touch-manipulation rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 ${
               star <= value
-                ? star <= 3 ? 'text-red-500' : star <= 6 ? 'text-yellow-500' : 'text-green-500'
-                : 'text-gray-300 dark:text-gray-600 hover:text-gray-400'
+                ? star <= 3 ? 'text-red-500 hover:text-red-600' : star <= 6 ? 'text-yellow-500 hover:text-yellow-600' : 'text-green-500 hover:text-green-600'
+                : 'text-gray-300 dark:text-gray-600 hover:text-gray-400 dark:hover:text-gray-500'
             }`}
           >
-            <Star className="fill-current" />
+            <Star className="fill-current drop-shadow-sm" />
           </button>
         ))}
       </div>
@@ -331,84 +333,79 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
                      grade.startsWith('C') ? 'text-yellow-600' : 'text-red-600';
 
     return (
-      <div className="space-y-4 sm:space-y-6">
-        {/* Grade Card - Responsive */}
-        <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-lg p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 space-y-3 sm:space-y-0">
+      <div className="space-y-6">
+        {/* Grade Card - Enhanced for mobile */}
+        <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-xl p-6 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
             <div className="text-center sm:text-left">
-              <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-1">
+              <h3 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white mb-2">
                 Daily Report Card
               </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">
                 {format(selectedDate, 'EEEE, MMMM d, yyyy')}
               </p>
             </div>
             <div className="text-center">
-              <div className={`text-3xl sm:text-4xl md:text-5xl font-bold ${gradeColor} mb-1`}>
+              <div className={`text-4xl sm:text-5xl md:text-6xl font-bold ${gradeColor} mb-2`}>
                 {grade}
               </div>
-              <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+              <div className="text-sm text-gray-600 dark:text-gray-400">
                 Overall Grade
               </div>
             </div>
           </div>
           
-          {/* Responsive metrics grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-            <div className="text-center p-2 sm:p-3 bg-white dark:bg-gray-800 rounded-lg">
-              <div className={`text-lg sm:text-xl font-bold ${dailyReview.metrics.totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+          {/* Enhanced metrics grid */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="text-center p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm">
+              <div className={`text-xl sm:text-2xl font-bold ${dailyReview.metrics.totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {formatCurrency(dailyReview.metrics.totalPL)}
               </div>
-              <div className="text-xs text-gray-600 dark:text-gray-400">Total P&L</div>
+              <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">Total P&L</div>
             </div>
-            <div className="text-center p-2 sm:p-3 bg-white dark:bg-gray-800 rounded-lg">
-              <div className="text-lg sm:text-xl font-bold text-blue-600">
+            <div className="text-center p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm">
+              <div className="text-xl sm:text-2xl font-bold text-blue-600">
                 {dailyReview.metrics.tradeCount}
               </div>
-              <div className="text-xs text-gray-600 dark:text-gray-400">Trades</div>
+              <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">Trades</div>
             </div>
-            <div className="text-center p-2 sm:p-3 bg-white dark:bg-gray-800 rounded-lg">
-              <div className={`text-lg sm:text-xl font-bold ${dailyReview.metrics.winRate >= 50 ? 'text-green-600' : 'text-red-600'}`}>
+            <div className="text-center p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm">
+              <div className={`text-xl sm:text-2xl font-bold ${dailyReview.metrics.winRate >= 50 ? 'text-green-600' : 'text-red-600'}`}>
                 {dailyReview.metrics.winRate.toFixed(1)}%
               </div>
-              <div className="text-xs text-gray-600 dark:text-gray-400">Win Rate</div>
+              <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">Win Rate</div>
             </div>
-            <div className="text-center p-2 sm:p-3 bg-white dark:bg-gray-800 rounded-lg">
-              <div className="text-lg sm:text-xl font-bold text-purple-600">
+            <div className="text-center p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm">
+              <div className="text-xl sm:text-2xl font-bold text-purple-600">
                 {dailyReview.overallRating}/10
               </div>
-              <div className="text-xs text-gray-600 dark:text-gray-400">Self Rating</div>
+              <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">Self Rating</div>
             </div>
           </div>
         </div>
 
-        {/* Quick Actions - Responsive grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
-            <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center text-sm sm:text-base">
-              <Target className="h-4 w-4 mr-2 text-blue-600" />
+        {/* Quick Actions - Enhanced layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+            <h4 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center text-base sm:text-lg">
+              <Target className="h-5 w-5 mr-2 text-blue-600" />
               Overall Self-Rating
             </h4>
-            <div className="flex flex-col items-center">
+            <div className="flex justify-start">
               {renderStarRating(
                 dailyReview.overallRating,
                 (value) => updateReview('overallRating', value),
                 'lg'
               )}
-              {/* Mobile helper text */}
-              <div className="text-xs text-gray-400 dark:text-gray-500 mt-2 sm:hidden text-center">
-                <span className="inline-block mr-3">1-5: Poor Day</span>
-                <span className="inline-block">6-10: Great Day</span>
-              </div>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
-            <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center text-sm sm:text-base">
-              <Tag className="h-4 w-4 mr-2 text-purple-600" />
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+            <h4 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center text-base sm:text-lg">
+              <Tag className="h-5 w-5 mr-2 text-purple-600" />
               Market Tags
             </h4>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-2">
               {COMMON_TAGS.slice(0, 6).map((tag) => (
                 <button
                   key={tag}
@@ -419,9 +416,9 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
                       : [...dailyReview.tags, tag];
                     updateReview('tags', tags);
                   }}
-                  className={`px-2 py-1 text-xs rounded-full transition-colors touch-manipulation ${
+                  className={`px-3 py-2 text-sm rounded-full transition-all duration-200 touch-manipulation ${
                     dailyReview.tags.includes(tag)
-                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 ring-2 ring-blue-500/20'
                       : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                   }`}
                 >
@@ -432,34 +429,34 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
           </div>
         </div>
 
-        {/* Date Navigation - Mobile optimized */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
-          <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center text-sm sm:text-base">
-            <Calendar className="h-4 w-4 mr-2 text-green-600" />
+        {/* Date Navigation - Enhanced mobile design */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+          <h4 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center text-base sm:text-lg">
+            <Calendar className="h-5 w-5 mr-2 text-green-600" />
             Navigate Reviews
           </h4>
-          <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+          <div className="flex flex-col sm:flex-row gap-3">
             <button
               onClick={() => onDateSelect(subDays(selectedDate, 1))}
-              className="flex items-center justify-center px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors touch-manipulation"
+              className="flex items-center justify-center px-4 py-3 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors touch-manipulation"
             >
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="h-4 w-4 mr-2" />
               Previous Day
             </button>
             <button
               onClick={() => onDateSelect(new Date())}
               disabled={isToday(selectedDate)}
-              className="px-3 py-2 text-sm bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded-md hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
+              className="px-4 py-3 text-sm font-medium bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
             >
               Today
             </button>
             <button
               onClick={() => onDateSelect(subDays(selectedDate, -1))}
               disabled={isToday(selectedDate)}
-              className="flex items-center justify-center px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
+              className="flex items-center justify-center px-4 py-3 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
             >
               Next Day
-              <ChevronRight className="h-4 w-4 ml-1" />
+              <ChevronRight className="h-4 w-4 ml-2" />
             </button>
           </div>
         </div>
@@ -468,29 +465,29 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
   };
 
   const renderRatingsTab = () => (
-    <div className="space-y-4 sm:space-y-6">
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 sm:p-6">
-        <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-          <Star className="h-5 w-5 mr-2 text-yellow-500" />
+    <div className="space-y-6">
+      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+        <h3 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
+          <Star className="h-6 w-6 mr-3 text-yellow-500" />
           Trading Performance Categories
         </h3>
         
-        <div className="space-y-4 sm:space-y-6">
+        <div className="space-y-6">
           {RATING_CATEGORIES.map((category) => (
-            <div key={category.category} className="border-b border-gray-200 dark:border-gray-700 pb-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 sm:mb-2 space-y-2 sm:space-y-0">
+            <div key={category.category} className="border-b border-gray-200 dark:border-gray-700 pb-6 last:border-b-0">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 space-y-3 sm:space-y-0">
                 <div className="flex items-center">
-                  <span className="text-xl sm:text-2xl mr-3">{category.icon}</span>
+                  <span className="text-2xl sm:text-3xl mr-4">{category.icon}</span>
                   <div className="min-w-0 flex-1">
-                    <h4 className="font-medium text-gray-900 dark:text-white text-sm sm:text-base">
+                    <h4 className="font-semibold text-gray-900 dark:text-white text-base sm:text-lg">
                       {category.label}
                     </h4>
-                    <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                       {category.description}
                     </p>
                   </div>
                 </div>
-                <div className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white text-center sm:text-right">
+                <div className="text-2xl font-bold text-gray-900 dark:text-white text-center sm:text-right">
                   {dailyReview.ratings[category.category as ReviewCategory]}/10
                 </div>
               </div>
@@ -509,29 +506,29 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
   );
 
   const renderPsychologyTab = () => (
-    <div className="space-y-4 sm:space-y-6">
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 sm:p-6">
-        <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-          <Brain className="h-5 w-5 mr-2 text-purple-500" />
+    <div className="space-y-6">
+      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+        <h3 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
+          <Brain className="h-6 w-6 mr-3 text-purple-500" />
           Trading Psychology & Mindset
         </h3>
         
-        <div className="space-y-4 sm:space-y-6">
+        <div className="space-y-6">
           {PSYCHOLOGY_CATEGORIES.map((category) => (
-            <div key={category.category} className="border-b border-gray-200 dark:border-gray-700 pb-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 sm:mb-2 space-y-2 sm:space-y-0">
+            <div key={category.category} className="border-b border-gray-200 dark:border-gray-700 pb-6 last:border-b-0">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 space-y-3 sm:space-y-0">
                 <div className="flex items-center">
-                  <span className="text-xl sm:text-2xl mr-3">{category.icon}</span>
+                  <span className="text-2xl sm:text-3xl mr-4">{category.icon}</span>
                   <div className="min-w-0 flex-1">
-                    <h4 className="font-medium text-gray-900 dark:text-white text-sm sm:text-base">
+                    <h4 className="font-semibold text-gray-900 dark:text-white text-base sm:text-lg">
                       {category.label}
                     </h4>
-                    <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                       {category.description}
                     </p>
                   </div>
                 </div>
-                <div className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white text-center sm:text-right">
+                <div className="text-2xl font-bold text-gray-900 dark:text-white text-center sm:text-right">
                   {(dailyReview.psychology as any)[category.category]}/10
                 </div>
               </div>
@@ -550,7 +547,7 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
   );
 
   const renderNotesTab = () => (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-6">
       {Object.entries({
         whatWorked: { label: 'What Worked Well', icon: ThumbsUp, color: 'text-green-600' },
         whatDidntWork: { label: 'What Needs Improvement', icon: ThumbsDown, color: 'text-red-600' },
@@ -558,17 +555,17 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
         marketConditions: { label: 'Market Conditions', icon: BarChart3, color: 'text-blue-600' },
         generalNotes: { label: 'General Notes & Thoughts', icon: MessageSquare, color: 'text-purple-600' },
       }).map(([key, config]) => (
-        <div key={key} className="bg-white dark:bg-gray-800 rounded-lg p-4 sm:p-6">
+        <div key={key} className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
           <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-            <config.icon className={`h-5 w-5 mr-2 ${config.color}`} />
+            <config.icon className={`h-5 w-5 mr-3 ${config.color}`} />
             {config.label}
           </h3>
           <textarea
             value={(dailyReview.notes as any)[key]}
             onChange={(e) => updateNestedField('notes', key, e.target.value)}
             placeholder={`Write about ${config.label.toLowerCase()}...`}
-            rows={4}
-            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+            rows={5}
+            className="w-full p-4 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base leading-relaxed"
           />
         </div>
       ))}
@@ -588,14 +585,14 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
       const items = (dailyReview.reminders as any)[field] || [];
 
       return (
-        <div className="bg-white dark:bg-gray-800 rounded-lg p-4 sm:p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
           <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-            <Icon className="h-5 w-5 mr-2 text-blue-600" />
+            <Icon className="h-5 w-5 mr-3 text-blue-600" />
             {title}
           </h3>
           
-          {/* Mobile-optimized input */}
-          <div className="flex flex-col sm:flex-row mb-4 space-y-2 sm:space-y-0">
+          {/* Enhanced mobile input */}
+          <div className="flex flex-col sm:flex-row mb-6 gap-3">
             <input
               type="text"
               value={inputValue}
@@ -606,32 +603,32 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
                 }
               }}
               placeholder={placeholder}
-              className="flex-1 p-3 border border-gray-300 dark:border-gray-600 rounded-lg sm:rounded-l-lg sm:rounded-r-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+              className="flex-1 p-4 border border-gray-300 dark:border-gray-600 rounded-lg sm:rounded-l-lg sm:rounded-r-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
             />
             <button
               type="button"
               onClick={() => addReminderItem(field, inputValue, () => setInputValue(''))}
-              className="px-4 py-3 bg-blue-600 text-white rounded-lg sm:rounded-l-none sm:rounded-r-lg hover:bg-blue-700 transition-colors touch-manipulation"
+              className="px-6 py-4 bg-blue-600 text-white rounded-lg sm:rounded-l-none sm:rounded-r-lg hover:bg-blue-700 transition-colors touch-manipulation font-medium"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-5 w-5" />
             </button>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-3">
             {items.map((item: string, index: number) => (
-              <div key={`${field}-${index}`} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                <span className="text-gray-900 dark:text-white text-sm sm:text-base min-w-0 flex-1 mr-2">{item}</span>
+              <div key={`${field}-${index}`} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                <span className="text-gray-900 dark:text-white text-base min-w-0 flex-1 mr-3">{item}</span>
                 <button
                   type="button"
                   onClick={() => removeReminderItem(field, index)}
-                  className="text-red-600 hover:text-red-700 transition-colors p-1 touch-manipulation"
+                  className="text-red-600 hover:text-red-700 transition-colors p-2 -m-2 touch-manipulation"
                 >
-                  <X className="h-4 w-4" />
+                  <X className="h-5 w-5" />
                 </button>
               </div>
             ))}
             {items.length === 0 && (
-              <p className="text-gray-500 dark:text-gray-400 text-sm italic text-center py-4">
+              <p className="text-gray-500 dark:text-gray-400 text-base italic text-center py-8">
                 No {title.toLowerCase()} added yet
               </p>
             )}
@@ -641,7 +638,7 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
     };
 
     return (
-      <div className="space-y-4 sm:space-y-6">
+      <div className="space-y-6">
         {renderSection('Tomorrow\'s Goals', 'tomorrowGoals', Target, 'Add a goal for tomorrow...', goalInput, setGoalInput)}
         {renderSection('Watch List', 'watchList', Eye, 'Add a ticker to watch...', watchInput, setWatchInput)}
         {renderSection('Strategies to Focus On', 'strategies', Flag, 'Add a trading strategy...', strategyInput, setStrategyInput)}
@@ -651,37 +648,43 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
   };
 
   const renderInsightsTab = () => (
-    <div className="space-y-4 sm:space-y-6">
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 sm:p-6">
-        <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-          <Award className="h-5 w-5 mr-2 text-yellow-500" />
+    <div className="space-y-6">
+      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+        <h3 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
+          <Award className="h-6 w-6 mr-3 text-yellow-500" />
           Performance Summary
         </h3>
         
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div>
-            <h4 className="font-medium text-gray-900 dark:text-white mb-3 text-sm sm:text-base">Strengths Today</h4>
-            <div className="space-y-2">
+            <h4 className="font-semibold text-gray-900 dark:text-white mb-4 text-base sm:text-lg">Strengths Today</h4>
+            <div className="space-y-3">
               {RATING_CATEGORIES.filter(cat => dailyReview.ratings[cat.category as ReviewCategory] >= 7).map(cat => (
-                <div key={cat.category} className="flex items-center p-2 sm:p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                  <span className="mr-2 text-sm sm:text-base">{cat.icon}</span>
-                  <span className="text-green-700 dark:text-green-300 text-xs sm:text-sm flex-1 min-w-0">{cat.label}</span>
-                  <span className="ml-auto text-green-600 font-medium text-xs sm:text-sm">{dailyReview.ratings[cat.category as ReviewCategory]}/10</span>
+                <div key={cat.category} className="flex items-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                  <span className="mr-3 text-lg">{cat.icon}</span>
+                  <span className="text-green-700 dark:text-green-300 text-sm sm:text-base flex-1 min-w-0">{cat.label}</span>
+                  <span className="ml-auto text-green-600 font-semibold">{dailyReview.ratings[cat.category as ReviewCategory]}/10</span>
                 </div>
               ))}
+              {RATING_CATEGORIES.filter(cat => dailyReview.ratings[cat.category as ReviewCategory] >= 7).length === 0 && (
+                <p className="text-gray-500 dark:text-gray-400 text-center py-4 italic">No standout strengths today</p>
+              )}
             </div>
           </div>
           
           <div>
-            <h4 className="font-medium text-gray-900 dark:text-white mb-3 text-sm sm:text-base">Areas for Improvement</h4>
-            <div className="space-y-2">
+            <h4 className="font-semibold text-gray-900 dark:text-white mb-4 text-base sm:text-lg">Areas for Improvement</h4>
+            <div className="space-y-3">
               {RATING_CATEGORIES.filter(cat => dailyReview.ratings[cat.category as ReviewCategory] < 6).map(cat => (
-                <div key={cat.category} className="flex items-center p-2 sm:p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                  <span className="mr-2 text-sm sm:text-base">{cat.icon}</span>
-                  <span className="text-red-700 dark:text-red-300 text-xs sm:text-sm flex-1 min-w-0">{cat.label}</span>
-                  <span className="ml-auto text-red-600 font-medium text-xs sm:text-sm">{dailyReview.ratings[cat.category as ReviewCategory]}/10</span>
+                <div key={cat.category} className="flex items-center p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                  <span className="mr-3 text-lg">{cat.icon}</span>
+                  <span className="text-red-700 dark:text-red-300 text-sm sm:text-base flex-1 min-w-0">{cat.label}</span>
+                  <span className="ml-auto text-red-600 font-semibold">{dailyReview.ratings[cat.category as ReviewCategory]}/10</span>
                 </div>
               ))}
+              {RATING_CATEGORIES.filter(cat => dailyReview.ratings[cat.category as ReviewCategory] < 6).length === 0 && (
+                <p className="text-gray-500 dark:text-gray-400 text-center py-4 italic">All areas performing well!</p>
+              )}
             </div>
           </div>
         </div>
@@ -690,60 +693,60 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
   );
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-      {/* Responsive Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 space-y-4 sm:space-y-0">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-6">
+      {/* Enhanced Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
         <div className="text-center sm:text-left">
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white flex items-center justify-center sm:justify-start">
-            <BookOpen className="h-5 w-5 sm:h-6 sm:w-6 mr-2 text-blue-600" />
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white flex items-center justify-center sm:justify-start">
+            <BookOpen className="h-6 w-6 sm:h-8 sm:w-8 mr-3 text-blue-600" />
             Daily Trading Review
           </h1>
-          <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mt-1">
+          <p className="text-base sm:text-lg text-gray-600 dark:text-gray-400 mt-2">
             {format(selectedDate, 'EEEE, MMMM d, yyyy')} • {dayTrades.length} trades
           </p>
         </div>
         
-        <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-3">
+        <div className="flex flex-col sm:flex-row items-center gap-3">
           {hasUnsavedChanges && (
-            <span className="text-xs sm:text-sm text-yellow-600 dark:text-yellow-400 flex items-center">
-              <Clock className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+            <span className="text-sm text-yellow-600 dark:text-yellow-400 flex items-center">
+              <Clock className="h-4 w-4 mr-2" />
               Unsaved changes
             </span>
           )}
           <button
             onClick={saveDailyReview}
             disabled={isSaving}
-            className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center text-sm sm:text-base touch-manipulation"
+            className="w-full sm:w-auto px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center font-medium touch-manipulation"
           >
             {isSaving ? (
-              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
             ) : (
-              <Save className="h-4 w-4 mr-2" />
+              <Save className="h-5 w-5 mr-2" />
             )}
             {isSaving ? 'Saving...' : 'Save Review'}
           </button>
         </div>
       </div>
 
-      {/* Responsive Tabs */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md mb-4 sm:mb-6">
+      {/* Enhanced Mobile-Friendly Tabs */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm mb-6">
         <div className="border-b border-gray-200 dark:border-gray-700">
-          {/* Mobile: Scrollable horizontal tabs */}
+          {/* Mobile: Better scrollable tabs */}
           <nav className="flex overflow-x-auto px-4 sm:px-6 scrollbar-hide">
-            <div className="flex space-x-4 sm:space-x-8 min-w-max">
+            <div className="flex space-x-6 sm:space-x-8 min-w-max">
               {TABS.map((tab) => {
                 const Icon = tab.icon;
                 return (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap touch-manipulation ${
+                    className={`flex items-center py-4 px-2 border-b-2 font-medium text-sm transition-all duration-200 whitespace-nowrap touch-manipulation ${
                       activeTab === tab.id
                         ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                         : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300'
                     }`}
                   >
-                    <Icon className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    <Icon className="h-4 w-4 mr-2" />
                     <span className="hidden sm:inline">{tab.label}</span>
                     <span className="sm:hidden">{tab.shortLabel}</span>
                   </button>
@@ -753,8 +756,8 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
           </nav>
         </div>
 
-        {/* Tab Content with responsive padding */}
-        <div className="p-4 sm:p-6">
+        {/* Enhanced Tab Content */}
+        <div className="p-6">
           {activeTab === 'overview' && renderOverviewTab()}
           {activeTab === 'ratings' && renderRatingsTab()}
           {activeTab === 'psychology' && renderPsychologyTab()}
