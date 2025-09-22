@@ -685,6 +685,16 @@ export const WelcomeMessage: React.FC<{
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="bg-gradient-to-br from-blue-600 via-purple-600 to-cyan-600 text-white p-8 rounded-t-3xl relative overflow-hidden">
+          {/* Close button */}
+          <button
+            onClick={onClose}
+            className="absolute top-3 right-3 z-10 text-white/80 hover:text-white p-3 hover:bg-white/20 rounded-xl transition-all duration-200 cursor-pointer"
+            title="Close welcome message"
+            style={{ minWidth: '44px', minHeight: '44px' }}
+          >
+            <X className="h-6 w-6" />
+          </button>
+          
           <div className="relative">
             <div className="flex items-center justify-center mb-6">
               <div className="p-4 bg-white/20 rounded-2xl backdrop-blur-sm">
