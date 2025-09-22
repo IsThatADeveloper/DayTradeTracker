@@ -1,4 +1,4 @@
-// src/components/ManualTradeEntry.tsx - FIXED Date Handling
+// src/components/ManualTradeEntry.tsx - FIXED: Allow break even trades
 import React, { useState, useCallback, useMemo } from 'react';
 import { Plus, X, DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
 
@@ -22,15 +22,14 @@ interface TradeFormData {
 }
 
 /**
- * FIXED: Helper function to create initial timestamp based on selected date or current time
+ * Helper function to create initial timestamp based on selected date or current time
  * This preserves the selected date without timezone issues
  */
 const createInitialTimestamp = (selectedDate?: Date): string => {
   let baseDate: Date;
   
   if (selectedDate) {
-    // CRITICAL FIX: Create a new date using the selected date's local date components
-    // This avoids timezone offset issues when the selectedDate was created from user input
+    // Create a new date using the selected date's local date components
     baseDate = new Date(
       selectedDate.getFullYear(),
       selectedDate.getMonth(), 
@@ -50,7 +49,7 @@ const createInitialTimestamp = (selectedDate?: Date): string => {
     now.getMinutes()
   );
   
-  // FIXED: Use proper local datetime string without timezone conversion issues
+  // Use proper local datetime string without timezone conversion issues
   const year = targetDate.getFullYear();
   const month = String(targetDate.getMonth() + 1).padStart(2, '0');
   const day = String(targetDate.getDate()).padStart(2, '0');
@@ -61,7 +60,7 @@ const createInitialTimestamp = (selectedDate?: Date): string => {
 };
 
 /**
- * FIXED: Convert datetime-local string to Date object preserving local time
+ * Convert datetime-local string to Date object preserving local time
  */
 const localDateTimeToDate = (dateTimeLocal: string): Date => {
   // datetime-local gives us "YYYY-MM-DDTHH:MM" format
@@ -71,7 +70,7 @@ const localDateTimeToDate = (dateTimeLocal: string): Date => {
 
 /**
  * Manual trade entry form component for adding individual trades
- * FIXED: Proper date handling to prevent day-ahead issues
+ * FIXED: Allow break-even trades
  */
 export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ 
   onTradeAdded,
@@ -108,16 +107,11 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
   }, [createInitialFormData]);
 
   /**
-   * FIXED: Update form when selectedDate changes - preserve the selected date
+   * Update form when selectedDate changes - preserve the selected date
    */
   React.useEffect(() => {
     if (isOpen && selectedDate) {
       console.log('🗓️ ManualTradeEntry: selectedDate changed:', selectedDate);
-      console.log('🗓️ ManualTradeEntry: selectedDate details:', {
-        date: selectedDate.toDateString(),
-        iso: selectedDate.toISOString(),
-        local: selectedDate.toLocaleString()
-      });
       
       const newTimestamp = createInitialTimestamp(selectedDate);
       console.log('🗓️ ManualTradeEntry: new timestamp:', newTimestamp);
@@ -130,7 +124,7 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
   }, [selectedDate, isOpen]);
 
   /**
-   * Validate form data before submission
+   * FIXED: Validate form data before submission - REMOVED break-even trade restriction
    */
   const validateForm = useCallback((): { isValid: boolean; error?: string } => {
     const { ticker, entryPrice, exitPrice, quantity } = formData;
@@ -154,9 +148,8 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
       return { isValid: false, error: 'Quantity must be a valid positive number' };
     }
     
-    if (entryPriceNum === exitPriceNum) {
-      return { isValid: false, error: 'Entry and exit prices cannot be the same' };
-    }
+    // REMOVED: Entry and exit price equality check
+    // Break-even trades are valid and should be allowed
     
     return { isValid: true };
   }, [formData]);
@@ -179,7 +172,7 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
   }, [formData.entryPrice, formData.exitPrice, formData.quantity, formData.direction]);
 
   /**
-   * FIXED: Handle form submission with proper date handling
+   * Handle form submission with proper date handling
    */
   const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -196,7 +189,7 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
       console.log('📝 ManualTradeEntry: Form submission started');
       console.log('📝 ManualTradeEntry: Form timestamp string:', formData.timestamp);
       
-      // FIXED: Proper date conversion without timezone issues
+      // Proper date conversion without timezone issues
       const tradeDate = localDateTimeToDate(formData.timestamp);
       
       console.log('📝 ManualTradeEntry: Converted trade date:', {
@@ -214,7 +207,7 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
         exitPrice: parseFloat(formData.exitPrice),
         quantity: parseInt(formData.quantity),
         direction: formData.direction,
-        timestamp: tradeDate, // This should now preserve the correct date
+        timestamp: tradeDate,
         realizedPL: calculatedPL,
         notes: formData.notes.trim() || undefined,
       };
@@ -223,7 +216,8 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
         id: trade.id,
         ticker: trade.ticker,
         timestamp: trade.timestamp,
-        timestampString: trade.timestamp.toDateString()
+        timestampString: trade.timestamp.toDateString(),
+        realizedPL: trade.realizedPL
       });
 
       await onTradeAdded(trade);
@@ -298,6 +292,9 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
       return null;
     }
 
+    const plValue = calculatedPL;
+    const isBreakEven = plValue === 0;
+
     return (
       <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
         <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -308,12 +305,17 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
             Realized P&L:
           </span>
           <span className={`text-base sm:text-lg font-semibold ${
-            calculatedPL >= 0 ? 'text-green-600' : 'text-red-600'
+            isBreakEven 
+              ? 'text-gray-600 dark:text-gray-400' 
+              : plValue >= 0 
+                ? 'text-green-600' 
+                : 'text-red-600'
           }`}>
             {new Intl.NumberFormat('en-US', {
               style: 'currency',
               currency: 'USD',
-            }).format(calculatedPL)}
+            }).format(plValue)}
+            {isBreakEven && <span className="text-xs ml-1">(Break Even)</span>}
           </span>
         </div>
         {selectedDate && (

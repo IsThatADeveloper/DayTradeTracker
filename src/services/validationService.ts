@@ -1,4 +1,4 @@
-// src/services/validationService.ts
+// src/services/validationService.ts - FIXED: Allow break even trades
 import DOMPurify from 'dompurify';
 import { Trade } from '../types/trade';
 
@@ -67,6 +67,9 @@ class ValidationService {
     } else {
       errors.push('Valid exit price is required');
     }
+
+    // REMOVED: Entry and exit price equality check to allow break-even trades
+    // Break-even trades are valid trading scenarios and should be allowed
 
     // Validate quantity
     if (typeof trade.quantity === 'number') {
