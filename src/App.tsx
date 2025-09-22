@@ -25,6 +25,7 @@ import { HomePage } from './components/HomePage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
 import { Tutorial, TutorialButton, useTutorial, WelcomeMessage } from './components/Tutorial';
+import { SecurityUtils } from './utils/securityUtils';
 
 // Memoized components to prevent unnecessary re-renders
 const MemoizedDashboard = React.memo(Dashboard);
@@ -132,7 +133,20 @@ class ErrorBoundary extends React.Component<
 function AppContent() {
   // CRITICAL FIX: ALL hooks must be called before ANY conditional returns
   // This fixes the "Rendered fewer hooks than expected" error
-  
+
+  useEffect(() => {
+    // Initialize security
+    try {
+      SecurityUtils.initializeSecurity();
+    } catch (error) {
+      console.error('Security initialization failed:', error);
+      // In production, you might want to prevent app from loading
+      if (process.env.NODE_ENV === 'production') {
+        alert('Security check failed. Please contact support.');
+      }
+    }
+  }, []);
+
   const { currentUser } = useAuth();
   const {
     connections: brokerConnections,
@@ -143,37 +157,37 @@ function AppContent() {
     enableAutoSync,
     disableAutoSync
   } = useBrokerIntegration();
-  
+
   // Tutorial hook
-  const { 
-    showTutorial, 
+  const {
+    showTutorial,
     showWelcome,
-    hasSeenTutorial, 
+    hasSeenTutorial,
     hasSeenWelcome,
-    startTutorial, 
-    completeTutorial, 
+    startTutorial,
+    completeTutorial,
     closeTutorial,
     closeWelcome,
     startTutorialFromWelcome
   } = useTutorial();
-  
+
   // All useState and useLocalStorage hooks
   const [showHomePage, setShowHomePage] = useLocalStorage('show-homepage', true);
   const [localTrades, setLocalTrades] = useLocalStorage<Trade[]>('day-trader-trades', []);
   const [cloudTrades, setCloudTrades] = useState<Trade[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  
+
   // FIXED: Use localStorage to persist active view across reloads
   const [activeView, setActiveView] = useLocalStorage<ActiveViewType>('active-view', 'daily');
-  
+
   const [darkMode, setDarkMode] = useLocalStorage('day-trader-dark-mode', false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [isLoadingCloudData, setIsLoadingCloudData] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useLocalStorage<string | null>('last-sync-time', null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  
+
   // FIXED: Better sidebar state management for Vercel desktop
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -212,8 +226,8 @@ function AppContent() {
   const isSameDayLocal = useCallback((date1: Date, date2: Date): boolean => {
     // CRITICAL FIX: Compare date components directly without timezone conversions
     return date1.getFullYear() === date2.getFullYear() &&
-           date1.getMonth() === date2.getMonth() &&
-           date1.getDate() === date2.getDate();
+      date1.getMonth() === date2.getMonth() &&
+      date1.getDate() === date2.getDate();
   }, []);
 
   const loadCloudTrades = useCallback(async () => {
@@ -296,17 +310,17 @@ function AppContent() {
             ...updates,
             updateCount: currentTrade.updateCount || 0
           };
-          
+
           await tradeService.updateTrade(tradeId, updatesWithCount);
-          
-          setCloudTrades(prev => prev.map(trade => 
-            trade.id === tradeId 
-              ? { 
-                  ...trade, 
-                  ...updates, 
-                  updateCount: (trade.updateCount || 0) + 1,
-                  lastUpdated: new Date()
-                } 
+
+          setCloudTrades(prev => prev.map(trade =>
+            trade.id === tradeId
+              ? {
+                ...trade,
+                ...updates,
+                updateCount: (trade.updateCount || 0) + 1,
+                lastUpdated: new Date()
+              }
               : trade
           ));
         } else {
@@ -317,14 +331,14 @@ function AppContent() {
         alert(`Update failed: ${error.message}`);
       }
     } else {
-      setLocalTrades(prev => prev.map(trade => 
-        trade.id === tradeId 
-          ? { 
-              ...trade, 
-              ...updates, 
-              updateCount: (trade.updateCount || 0) + 1,
-              lastUpdated: new Date()
-            } 
+      setLocalTrades(prev => prev.map(trade =>
+        trade.id === tradeId
+          ? {
+            ...trade,
+            ...updates,
+            updateCount: (trade.updateCount || 0) + 1,
+            lastUpdated: new Date()
+          }
           : trade
       ));
     }
@@ -355,13 +369,13 @@ function AppContent() {
       // CRITICAL FIX: Parse date input correctly without timezone issues
       const [year, month, day] = inputValue.split('-').map(Number);
       const newDate = new Date(year, month - 1, day); // month is 0-indexed
-      
+
       console.log('📅 App: handleDateChange:', {
         inputValue,
         newDate: newDate.toDateString(),
         components: { year, month: month - 1, day }
       });
-      
+
       setSelectedDate(newDate);
     }
   }, []);
@@ -369,9 +383,9 @@ function AppContent() {
   const handleSyncAllBrokers = useCallback(async () => {
     try {
       const results = await syncAllTrades();
-      const totalImported = results.reduce((sum, result) => 
+      const totalImported = results.reduce((sum, result) =>
         sum + (result.result?.tradesImported || 0), 0);
-      
+
       if (totalImported > 0) {
         await loadCloudTrades();
         alert(`Successfully synced ${totalImported} new trades from all brokers!`);
@@ -406,7 +420,7 @@ function AppContent() {
       }))
       .filter(trade => {
         const isSameDay = isSameDayLocal(trade.timestamp, selectedDate);
-        
+
         if (process.env.NODE_ENV === 'development' && isSameDay) {
           console.log('📊 Found matching trade:', {
             ticker: trade.ticker,
@@ -414,7 +428,7 @@ function AppContent() {
             selectedDate: selectedDate.toDateString()
           });
         }
-        
+
         return isSameDay;
       });
 
@@ -441,17 +455,17 @@ function AppContent() {
     const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
     const day = String(selectedDate.getDate()).padStart(2, '0');
     const result = `${year}-${month}-${day}`;
-    
+
     console.log('📅 App: dateInputValue:', {
       selectedDate: selectedDate.toDateString(),
       result
     });
-    
+
     return result;
   }, [selectedDate]);
 
-  const lastTrade = useMemo(() => 
-    activeTrades.length > 0 ? activeTrades[0] : undefined, 
+  const lastTrade = useMemo(() =>
+    activeTrades.length > 0 ? activeTrades[0] : undefined,
     [activeTrades]
   );
 
@@ -479,7 +493,7 @@ function AppContent() {
     const handleError = (event: ErrorEvent) => {
       console.error('Global error:', event.error);
     };
-    
+
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       console.error('Unhandled promise rejection:', event.reason);
     };
@@ -537,21 +551,20 @@ function AppContent() {
   const renderSidebarItem = (item: typeof NAVIGATION_ITEMS[0]) => {
     const isActive = activeView === item.id;
     const Icon = item.icon;
-    
+
     const showBadge = item.id === 'brokers' && brokerConnections.length > 0;
     const badgeContent = item.id === 'brokers' ? brokerConnections.length : totalBrokerTrades;
-    
+
     if (sidebarCollapsed) {
       return (
         <button
           key={item.id}
           onClick={() => handleNavigation(item.id)}
           data-tutorial={`${item.id}-nav`}
-          className={`w-full p-2 flex items-center justify-center rounded-lg transition-colors duration-200 relative ${
-            isActive
+          className={`w-full p-2 flex items-center justify-center rounded-lg transition-colors duration-200 relative ${isActive
               ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
               : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700'
-          }`}
+            }`}
           title={item.description}
         >
           <Icon className="h-5 w-5" />
@@ -563,24 +576,22 @@ function AppContent() {
         </button>
       );
     }
-    
+
     return (
       <button
         key={item.id}
         onClick={() => handleNavigation(item.id)}
         data-tutorial={`${item.id}-nav`}
-        className={`w-full flex items-center px-3 py-3 text-left rounded-lg transition-colors duration-200 group relative ${
-          isActive
+        className={`w-full flex items-center px-3 py-3 text-left rounded-lg transition-colors duration-200 group relative ${isActive
             ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 shadow-sm'
             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
-        }`}
+          }`}
       >
         <div className="flex items-center flex-shrink-0">
-          <Icon className={`h-5 w-5 ${
-            isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'
-          }`} />
+          <Icon className={`h-5 w-5 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'
+            }`} />
         </div>
-        
+
         <div className="ml-3 flex items-center justify-between min-w-0 flex-1 overflow-hidden">
           <span className="font-medium whitespace-nowrap truncate">{item.label}</span>
           {showBadge && (
@@ -598,11 +609,11 @@ function AppContent() {
     try {
       if (activeView === 'calendar') {
         return (
-          <MemoizedCalendar 
-            trades={activeTrades} 
-            selectedDate={selectedDate} 
-            onDateSelect={setSelectedDate} 
-            onMonthChange={setCurrentMonth} 
+          <MemoizedCalendar
+            trades={activeTrades}
+            selectedDate={selectedDate}
+            onDateSelect={setSelectedDate}
+            onMonthChange={setCurrentMonth}
             currentMonth={currentMonth}
             onDateDoubleClick={(date) => {
               console.log('📅 Calendar: Double-clicked date:', date.toDateString());
@@ -612,7 +623,7 @@ function AppContent() {
           />
         );
       }
-      
+
       if (activeView === 'review') {
         return (
           <MemoizedDailyReview
@@ -622,7 +633,7 @@ function AppContent() {
           />
         );
       }
-      
+
       if (activeView === 'search') {
         return (
           <MemoizedStockSearch
@@ -632,37 +643,37 @@ function AppContent() {
           />
         );
       }
-      
+
       if (activeView === 'brokers') {
         return <BrokerSetup onTradesImported={() => loadCloudTrades()} />;
       }
-      
+
       if (activeView === 'news') {
         return <MemoizedStockNews trades={activeTrades} />;
       }
-      
+
       if (activeView === 'projections') {
         return <MemoizedEarningsProjection trades={activeTrades} selectedDate={selectedDate} />;
       }
-      
+
       // Daily view (default)
       return (
         <div className="space-y-6 sm:space-y-8">
           {/* Trade entry forms - WITH TUTORIAL DATA ATTRIBUTES */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div data-tutorial="manual-trade-entry">
-              <ManualTradeEntry 
-                onTradeAdded={handleTradeAdded} 
-                selectedDate={selectedDate} 
+              <ManualTradeEntry
+                onTradeAdded={handleTradeAdded}
+                selectedDate={selectedDate}
               />
             </div>
-            <BulkTradeImport 
-              onTradesAdded={handleTradesAdded} 
-              lastTrade={lastTrade} 
+            <BulkTradeImport
+              onTradesAdded={handleTradesAdded}
+              lastTrade={lastTrade}
               selectedDate={selectedDate}
             />
           </div>
-          
+
           {/* Broker notification */}
           {currentUser && brokerConnections.length === 0 && (
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
@@ -696,11 +707,11 @@ function AppContent() {
             <MemoizedTimeAnalysis trades={activeTrades} selectedDate={selectedDate} />
             <MemoizedEquityCurve trades={activeTrades} selectedDate={selectedDate} />
           </div>
-          <MemoizedTradeTable 
-            trades={dailyTrades} 
-            onUpdateTrade={handleUpdateTrade} 
-            onExportTrades={handleExportTradesWithData} 
-            onDeleteTrade={handleDeleteTrade} 
+          <MemoizedTradeTable
+            trades={dailyTrades}
+            onUpdateTrade={handleUpdateTrade}
+            onExportTrades={handleExportTradesWithData}
+            onDeleteTrade={handleDeleteTrade}
           />
         </div>
       );
@@ -720,9 +731,8 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
       {/* FIXED: Better sidebar positioning for Vercel */}
-      <div className={`hidden lg:flex fixed top-0 left-0 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 z-40 transition-all duration-200 flex-col ${
-        sidebarCollapsed ? 'w-16' : 'w-72'
-      }`}>
+      <div className={`hidden lg:flex fixed top-0 left-0 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 z-40 transition-all duration-200 flex-col ${sidebarCollapsed ? 'w-16' : 'w-72'
+        }`}>
         {/* Sidebar Header */}
         <div className="flex items-center p-4 border-b border-gray-200 dark:border-gray-700 h-16 flex-shrink-0">
           {sidebarCollapsed ? (
@@ -749,7 +759,7 @@ function AppContent() {
                   </h1>
                 </button>
               </div>
-              
+
               <div className="flex-shrink-0 ml-3">
                 <button
                   onClick={() => setSidebarCollapsed(true)}
@@ -777,9 +787,8 @@ function AppContent() {
             <button
               onClick={handleSyncAllBrokers}
               disabled={isAnySyncing()}
-              className={`flex items-center justify-center bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors text-sm font-medium ${
-                sidebarCollapsed ? 'p-2 w-full' : 'w-full px-3 py-2'
-              }`}
+              className={`flex items-center justify-center bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors text-sm font-medium ${sidebarCollapsed ? 'p-2 w-full' : 'w-full px-3 py-2'
+                }`}
               title={sidebarCollapsed ? 'Sync all brokers' : ''}
             >
               <RefreshCw className={`h-4 w-4 ${isAnySyncing() ? 'animate-spin' : ''} ${!sidebarCollapsed ? 'mr-2' : ''}`} />
@@ -818,14 +827,13 @@ function AppContent() {
       </div>
 
       {/* FIXED: Better main content positioning */}
-      <div className={`min-h-screen transition-all duration-200 ${
-        sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-72'
-      }`}>
-{/* Mobile Header - RESPONSIVE LAYOUT */}
+      <div className={`min-h-screen transition-all duration-200 ${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-72'
+        }`}>
+        {/* Mobile Header - RESPONSIVE LAYOUT */}
         <header className="lg:hidden bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30 main-header">
           <div className="px-3 sm:px-4 h-16 flex items-center justify-between">
             {/* Mobile Logo - Responsive */}
-            <button 
+            <button
               onClick={handleLogoClick}
               className="flex items-center hover:opacity-80 transition-opacity min-w-0 flex-shrink-0"
             >
@@ -842,7 +850,7 @@ function AppContent() {
               <div className="hidden sm:block">
                 <TutorialButton onClick={startTutorial} />
               </div>
-              
+
               {/* Dark Mode Toggle - Compact on small screens */}
               <button
                 onClick={() => setDarkMode(!darkMode)}
@@ -868,17 +876,16 @@ function AppContent() {
               {NAVIGATION_ITEMS.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeView === item.id;
-                
+
                 return (
                   <button
                     key={item.id}
                     onClick={() => handleNavigation(item.id)}
                     data-tutorial={`${item.id}-nav`}
-                    className={`w-full flex items-center px-3 py-3 text-left rounded-lg transition-colors ${
-                      isActive
+                    className={`w-full flex items-center px-3 py-3 text-left rounded-lg transition-colors ${isActive
                         ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
                         : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
+                      }`}
                   >
                     <Icon className="h-5 w-5 mr-3" />
                     <span className="font-medium">{item.label}</span>
@@ -931,7 +938,7 @@ function AppContent() {
           <div className="flex items-center space-x-4">
             {/* Tutorial Button */}
             <TutorialButton onClick={startTutorial} />
-            
+
             {/* Refresh Button */}
             {currentUser && (
               <button
@@ -963,9 +970,9 @@ function AppContent() {
         onClose={() => setShowSyncModal(false)}
         localTrades={localTrades}
         cloudTrades={cloudTrades}
-        onSyncToCloud={async () => {}}
-        onSyncFromCloud={async () => {}}
-        onMergeData={async () => {}}
+        onSyncToCloud={async () => { }}
+        onSyncFromCloud={async () => { }}
+        onMergeData={async () => { }}
       />
 
       <Profile
@@ -981,7 +988,7 @@ function AppContent() {
         onStartTutorial={startTutorialFromWelcome}
         userName={currentUser?.displayName || undefined}
       />
-      
+
       <Tutorial
         isOpen={showTutorial}
         onClose={closeTutorial}
