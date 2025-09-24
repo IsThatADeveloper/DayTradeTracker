@@ -1,4 +1,4 @@
-// src/components/BulkTradeImport.tsx - Updated version with selectedDate support
+// src/components/BulkTradeImport.tsx - UPDATED: Enhanced decimal precision support
 import React, { useState } from 'react';
 import { 
   Upload, 
@@ -52,7 +52,7 @@ const createTimestamp = (selectedDate?: Date, offsetSeconds: number = 0): Date =
 
 /**
  * Bulk trade import component supporting CSV, duplication, and manual entry methods
- * Now automatically uses the selected date from daily view when available
+ * UPDATED: Enhanced decimal precision support throughout
  */
 export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({ 
   onTradesAdded, 
@@ -88,7 +88,7 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
   };
 
   /**
-   * Parse and validate CSV data
+   * Parse and validate CSV data with enhanced precision support
    */
   const handleCSVImport = (): void => {
     setIsProcessing(true);
@@ -144,7 +144,7 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
   };
 
   /**
-   * Parse a single CSV line into a Trade object
+   * UPDATED: Parse CSV line with full precision support (no rounding)
    */
   const parseCSVLine = (parts: string[], lineNumber: number, index: number): { trade?: Trade; error?: string } => {
     try {
@@ -152,8 +152,8 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
       const ticker = parts[0]?.trim().toUpperCase();
       const direction = parts[1]?.trim().toLowerCase() as 'long' | 'short';
       const quantity = parseInt(parts[2]?.trim());
-      const entryPrice = parseFloat(parts[3]?.trim());
-      const exitPrice = parseFloat(parts[4]?.trim());
+      const entryPrice = parseFloat(parts[3]?.trim());   // UPDATED: No rounding - full precision
+      const exitPrice = parseFloat(parts[4]?.trim());    // UPDATED: No rounding - full precision
       const timeStr = parts[5]?.trim();
       const notes = parts[6]?.trim() || '';
 
@@ -161,6 +161,11 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
       if (!ticker || !['long', 'short'].includes(direction) || 
           isNaN(quantity) || isNaN(entryPrice) || isNaN(exitPrice)) {
         return { error: `Line ${lineNumber}: Invalid data format` };
+      }
+
+      // UPDATED: Allow very small prices for crypto/penny stocks
+      if (entryPrice <= 0 || exitPrice <= 0) {
+        return { error: `Line ${lineNumber}: Prices must be positive numbers` };
       }
 
       // Parse timestamp - use selected date if no time specified
@@ -184,7 +189,7 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
         }
       }
 
-      // Calculate P&L
+      // Calculate P&L with full precision
       const realizedPL = direction === 'long' 
         ? (exitPrice - entryPrice) * quantity
         : (entryPrice - exitPrice) * quantity;
@@ -195,10 +200,10 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
           ticker,
           direction,
           quantity,
-          entryPrice,
-          exitPrice,
+          entryPrice,        // UPDATED: Keep full precision
+          exitPrice,         // UPDATED: Keep full precision
           timestamp,
-          realizedPL,
+          realizedPL,        // UPDATED: Full precision P&L calculation
           notes,
         }
       };
@@ -267,13 +272,23 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
   };
 
   /**
-   * Validate a bulk trade entry
+   * UPDATED: Validate bulk trade with enhanced precision support
    */
   const validateBulkTrade = (trade: Partial<Trade>, index: number): { trade?: Trade; error?: string } => {
     if (!trade.ticker || !trade.entryPrice || !trade.exitPrice || !trade.quantity) {
       return { error: `Trade ${index}: Missing required fields` };
     }
 
+    // UPDATED: Enhanced validation for very small prices
+    if (trade.entryPrice <= 0) {
+      return { error: `Trade ${index}: Entry price must be positive` };
+    }
+
+    if (trade.exitPrice <= 0) {
+      return { error: `Trade ${index}: Exit price must be positive` };
+    }
+
+    // UPDATED: Full precision P&L calculation (no rounding)
     const realizedPL = trade.direction === 'long'
       ? ((trade.exitPrice as number) - (trade.entryPrice as number)) * (trade.quantity as number)
       : ((trade.entryPrice as number) - (trade.exitPrice as number)) * (trade.quantity as number);
@@ -284,10 +299,10 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
         ticker: trade.ticker.toUpperCase(),
         direction: trade.direction as 'long' | 'short',
         quantity: trade.quantity as number,
-        entryPrice: trade.entryPrice as number,
-        exitPrice: trade.exitPrice as number,
+        entryPrice: trade.entryPrice as number,    // UPDATED: Keep full precision
+        exitPrice: trade.exitPrice as number,     // UPDATED: Keep full precision
         timestamp: trade.timestamp as Date,
-        realizedPL,
+        realizedPL,                               // UPDATED: Full precision P&L
         notes: trade.notes || '',
       }
     };
@@ -334,7 +349,7 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
   };
 
   /**
-   * Calculate P&L for preview
+   * UPDATED: Calculate P&L with full precision
    */
   const calculatePL = (trade: Partial<Trade>): number => {
     if (!trade.entryPrice || !trade.exitPrice || !trade.quantity) return 0;
@@ -444,7 +459,7 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
   };
 
   /**
-   * Render bulk trade entry form
+   * UPDATED: Render bulk trade entry form with enhanced precision inputs
    */
   const renderBulkTradeEntry = (trade: Partial<Trade>, index: number) => {
     return (
@@ -508,33 +523,33 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
             />
           </div>
           
-          {/* Entry Price */}
+          {/* UPDATED: Entry Price with enhanced precision */}
           <div className="flex flex-col">
             <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
               ENTRY PRICE
             </label>
             <input
               type="number"
-              step="0.01"
+              step="0.000001"  // UPDATED: Allow up to 6 decimal places
               value={trade.entryPrice || ''}
               onChange={(e) => updateBulkTrade(index, 'entryPrice', parseFloat(e.target.value) || undefined)}
               className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold"
-              placeholder="150.00"
+              placeholder="150.000000"  // UPDATED: Show higher precision placeholder
             />
           </div>
           
-          {/* Exit Price */}
+          {/* UPDATED: Exit Price with enhanced precision */}
           <div className="flex flex-col">
             <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
               EXIT PRICE
             </label>
             <input
               type="number"
-              step="0.01"
+              step="0.000001"  // UPDATED: Allow up to 6 decimal places
               value={trade.exitPrice || ''}
               onChange={(e) => updateBulkTrade(index, 'exitPrice', parseFloat(e.target.value) || undefined)}
               className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold"
-              placeholder="155.00"
+              placeholder="155.000000"  // UPDATED: Show higher precision placeholder
             />
           </div>
           
@@ -552,7 +567,7 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
           </div>
         </div>
         
-        {/* P&L Preview */}
+        {/* UPDATED: P&L Preview with enhanced formatting */}
         {trade.entryPrice && trade.exitPrice && trade.quantity && (
           <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
             <div className="flex items-center justify-between">
@@ -565,6 +580,12 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
                 {formatCurrency(calculatePL(trade))}
               </span>
             </div>
+            {/* UPDATED: Show break-even indicator */}
+            {calculatePL(trade) === 0 && (
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Break-even trade
+              </div>
+            )}
           </div>
         )}
         
@@ -678,7 +699,7 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
         </div>
       )}
 
-      {/* CSV Import */}
+      {/* UPDATED: CSV Import with enhanced precision instructions */}
       {importMethod === 'csv' && (
         <div className="space-y-6">
           <div>
@@ -688,12 +709,14 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
             <textarea
               value={csvText}
               onChange={(e) => setCsvText(e.target.value)}
-              placeholder={`AAPL,long,100,150.00,155.00,2024-01-15 10:30:00,Great trade\nTSLA,short,50,200.00,195.00,2024-01-15 11:00:00,Quick scalp`}
+              placeholder={`AAPL,long,100,150.123456,155.987654,2024-01-15 10:30:00,High precision trade\nTSLA,short,50,200.5,195.123,2024-01-15 11:00:00,Quick scalp\nBTC,long,1,65432.123456,65987.654321,2024-01-15 12:00:00,Crypto with full precision`}
               rows={8}
               className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm resize-none"
             />
             <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
               <strong>Format:</strong> Ticker, Direction (long/short), Quantity, Entry Price, Exit Price, Time (optional), Notes (optional)
+              <br />
+              <strong>UPDATED:</strong> Prices support up to 6 decimal places (e.g., 1.123456)
               {selectedDate && (
                 <span className="block mt-1 text-blue-600 dark:text-blue-400">
                   <strong>Note:</strong> Times without dates will use {selectedDate.toLocaleDateString()}
@@ -737,7 +760,7 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
             </div>
           </div>
           
-          {/* Summary and Submit */}
+          {/* UPDATED: Summary and Submit with enhanced P&L display */}
           <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl p-4 border-2 border-blue-200 dark:border-blue-700">
             <div className="flex items-center justify-between mb-4">
               <div className="text-sm text-blue-800 dark:text-blue-200">
@@ -751,6 +774,10 @@ export const BulkTradeImport: React.FC<BulkTradeImportProps> = ({
                     }`}>
                       {formatCurrency(bulkTrades.reduce((sum, t) => sum + calculatePL(t), 0))}
                     </span>
+                    {/* UPDATED: Show break-even indicator for total */}
+                    {bulkTrades.reduce((sum, t) => sum + calculatePL(t), 0) === 0 && (
+                      <span className="text-xs ml-2 text-gray-600 dark:text-gray-400">(Break Even)</span>
+                    )}
                   </div>
                 )}
                 {selectedDate && (

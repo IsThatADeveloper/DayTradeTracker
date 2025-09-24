@@ -1,4 +1,4 @@
-// src/components/ManualTradeEntry.tsx - FIXED: Allow break even trades
+// src/components/ManualTradeEntry.tsx - UPDATED: Allow more decimal places for prices
 import React, { useState, useCallback, useMemo } from 'react';
 import { Plus, X, DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
 
@@ -70,7 +70,7 @@ const localDateTimeToDate = (dateTimeLocal: string): Date => {
 
 /**
  * Manual trade entry form component for adding individual trades
- * FIXED: Allow break-even trades
+ * UPDATED: Allow break-even trades and more decimal precision
  */
 export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({ 
   onTradeAdded,
@@ -124,7 +124,7 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
   }, [selectedDate, isOpen]);
 
   /**
-   * FIXED: Validate form data before submission - REMOVED break-even trade restriction
+   * UPDATED: Validate form data with improved decimal precision support
    */
   const validateForm = useCallback((): { isValid: boolean; error?: string } => {
     const { ticker, entryPrice, exitPrice, quantity } = formData;
@@ -148,14 +148,13 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
       return { isValid: false, error: 'Quantity must be a valid positive number' };
     }
     
-    // REMOVED: Entry and exit price equality check
-    // Break-even trades are valid and should be allowed
+    // Allow break-even trades - no equality check needed
     
     return { isValid: true };
   }, [formData]);
 
   /**
-   * Calculate real-time P&L preview
+   * Calculate real-time P&L preview with higher precision
    */
   const calculatedPL = useMemo((): number => {
     const entryPriceNum = parseFloat(formData.entryPrice);
@@ -217,7 +216,9 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
         ticker: trade.ticker,
         timestamp: trade.timestamp,
         timestampString: trade.timestamp.toDateString(),
-        realizedPL: trade.realizedPL
+        realizedPL: trade.realizedPL,
+        entryPrice: trade.entryPrice,
+        exitPrice: trade.exitPrice
       });
 
       await onTradeAdded(trade);
@@ -314,6 +315,8 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
             {new Intl.NumberFormat('en-US', {
               style: 'currency',
               currency: 'USD',
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 6 // Allow up to 6 decimal places in display
             }).format(plValue)}
             {isBreakEven && <span className="text-xs ml-1">(Break Even)</span>}
           </span>
@@ -408,11 +411,11 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
               <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="number"
-                step="0.01"
+                step="0.000001"  // UPDATED: Allow up to 6 decimal places
                 min="0"
                 value={formData.entryPrice}
                 onChange={(e) => handleInputChange('entryPrice', e.target.value)}
-                placeholder="0.00"
+                placeholder="0.000000"
                 className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
                 disabled={isSubmitting}
                 required
@@ -428,11 +431,11 @@ export const ManualTradeEntry: React.FC<ManualTradeEntryProps> = ({
               <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="number"
-                step="0.01"
+                step="0.000001"  // UPDATED: Allow up to 6 decimal places
                 min="0"
                 value={formData.exitPrice}
                 onChange={(e) => handleInputChange('exitPrice', e.target.value)}
-                placeholder="0.00"
+                placeholder="0.000000"
                 className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
                 disabled={isSubmitting}
                 required

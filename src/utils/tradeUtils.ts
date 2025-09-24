@@ -1,4 +1,4 @@
-// src/utils/tradeUtils.ts - Improved version with better organization and documentation
+// src/utils/tradeUtils.ts - Enhanced version with better decimal precision support
 import { 
   format, 
   parseISO, 
@@ -200,16 +200,156 @@ export const getCalendarData = (trades: Trade[], currentDate: Date) => {
 };
 
 /**
- * Format a number as currency with proper locale formatting
+ * ENHANCED: Format a number as currency with dynamic precision
+ * Shows appropriate decimal places based on the amount size
  * @param amount - The amount to format
- * @returns Formatted currency string (e.g., "$1,234.56")
+ * @param options - Formatting options
+ * @returns Formatted currency string (e.g., "$1,234.56" or "$0.001234")
  */
-export const formatCurrency = (amount: number): string => {
+export const formatCurrency = (amount: number, options?: {
+  alwaysShowCents?: boolean;
+  maxDecimalPlaces?: number;
+  minDecimalPlaces?: number;
+  forceDecimals?: number;
+}): string => {
+  const { 
+    alwaysShowCents = true, 
+    maxDecimalPlaces = 8, 
+    minDecimalPlaces = 2,
+    forceDecimals
+  } = options || {};
+
+  // If forceDecimals is specified, use that
+  if (typeof forceDecimals === 'number') {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: forceDecimals,
+      maximumFractionDigits: forceDecimals,
+    }).format(amount);
+  }
+
+  // Dynamic decimal places based on amount size
+  let decimalPlaces = minDecimalPlaces;
+  const absAmount = Math.abs(amount);
+  
+  if (absAmount === 0) {
+    decimalPlaces = 2; // Always show $0.00
+  } else if (absAmount < 0.0001) {
+    // For amounts less than $0.0001, show up to 8 decimal places
+    decimalPlaces = Math.min(maxDecimalPlaces, 8);
+  } else if (absAmount < 0.01) {
+    // For amounts less than a cent, show up to 6 decimal places
+    decimalPlaces = Math.min(maxDecimalPlaces, 6);
+  } else if (absAmount < 0.1) {
+    // For amounts less than 10 cents, show up to 4 decimal places
+    decimalPlaces = Math.min(maxDecimalPlaces, 4);
+  } else if (absAmount < 1) {
+    // For amounts less than $1, show up to 3 decimal places
+    decimalPlaces = Math.min(maxDecimalPlaces, 3);
+  } else if (alwaysShowCents) {
+    // For normal amounts, show 2 decimal places minimum
+    decimalPlaces = Math.min(maxDecimalPlaces, 2);
+  } else {
+    // For large round amounts, might not need decimals
+    decimalPlaces = amount % 1 === 0 ? 0 : Math.min(maxDecimalPlaces, 2);
+  }
+
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
-    minimumFractionDigits: 2,
+    minimumFractionDigits: Math.min(decimalPlaces, minDecimalPlaces),
+    maximumFractionDigits: decimalPlaces,
   }).format(amount);
+};
+
+/**
+ * Format currency for display in tight spaces (shorter format)
+ * @param amount - The amount to format
+ * @returns Compact formatted currency string
+ */
+export const formatCurrencyCompact = (amount: number): string => {
+  const absAmount = Math.abs(amount);
+  
+  if (absAmount >= 1000000) {
+    return formatCurrency(amount / 1000000, { maxDecimalPlaces: 2 }) + 'M';
+  } else if (absAmount >= 1000) {
+    return formatCurrency(amount / 1000, { maxDecimalPlaces: 2 }) + 'K';
+  } else {
+    return formatCurrency(amount, { maxDecimalPlaces: 6 });
+  }
+};
+
+/**
+ * Format currency for input fields (no currency symbol, appropriate precision)
+ * @param amount - The amount to format
+ * @param maxDecimals - Maximum decimal places to show
+ * @returns Number formatted for input
+ */
+export const formatCurrencyForInput = (amount: number, maxDecimals: number = 8): string => {
+  const absAmount = Math.abs(amount);
+  
+  // Remove trailing zeros but maintain reasonable precision
+  if (absAmount === 0) {
+    return '0.00';
+  } else if (absAmount < 0.0001) {
+    return amount.toFixed(Math.min(maxDecimals, 8));
+  } else if (absAmount < 0.01) {
+    return amount.toFixed(Math.min(maxDecimals, 6));
+  } else if (absAmount < 1) {
+    return amount.toFixed(Math.min(maxDecimals, 4));
+  } else {
+    return amount.toFixed(Math.min(maxDecimals, 2));
+  }
+};
+
+/**
+ * Parse currency input string to number, handling various formats
+ * @param input - Input string from user
+ * @returns Parsed number or NaN if invalid
+ */
+export const parseCurrencyInput = (input: string): number => {
+  if (!input || typeof input !== 'string') return NaN;
+  
+  // Remove currency symbols, commas, and whitespace
+  const cleaned = input.replace(/[$,\s]/g, '');
+  
+  // Parse as float
+  const parsed = parseFloat(cleaned);
+  
+  // Return NaN for invalid inputs, otherwise return the number
+  return isNaN(parsed) ? NaN : parsed;
+};
+
+/**
+ * Format number with appropriate precision for price display
+ * @param price - Price to format
+ * @param options - Formatting options
+ * @returns Formatted price string
+ */
+export const formatPrice = (price: number, options?: {
+  maxDecimalPlaces?: number;
+  minDecimalPlaces?: number;
+}): string => {
+  const { maxDecimalPlaces = 6, minDecimalPlaces = 2 } = options || {};
+  
+  const absPrice = Math.abs(price);
+  let decimalPlaces = minDecimalPlaces;
+  
+  if (absPrice < 0.0001 && absPrice > 0) {
+    decimalPlaces = Math.min(maxDecimalPlaces, 8);
+  } else if (absPrice < 0.01) {
+    decimalPlaces = Math.min(maxDecimalPlaces, 6);
+  } else if (absPrice < 1) {
+    decimalPlaces = Math.min(maxDecimalPlaces, 4);
+  } else {
+    decimalPlaces = Math.min(maxDecimalPlaces, 2);
+  }
+  
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: Math.min(decimalPlaces, minDecimalPlaces),
+    maximumFractionDigits: decimalPlaces,
+  }).format(price);
 };
 
 /**
@@ -428,7 +568,7 @@ export const calculateTickerPerformance = (trades: Trade[]) => {
 };
 
 /**
- * Validate trade data for completeness and accuracy
+ * ENHANCED: Validate trade data for completeness and accuracy (allows break-even trades)
  * @param trade - Partial trade object to validate
  * @returns Validation result with errors if any
  */
@@ -460,10 +600,7 @@ export const validateTrade = (trade: Partial<Trade>): { isValid: boolean; errors
     errors.push('Valid timestamp is required');
   }
   
-  // Business logic validation
-  if (trade.entryPrice && trade.exitPrice && trade.entryPrice === trade.exitPrice) {
-    errors.push('Entry and exit prices cannot be the same');
-  }
+  // REMOVED: Entry and exit price equality check - break-even trades are now allowed
   
   return {
     isValid: errors.length === 0,

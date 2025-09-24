@@ -1,4 +1,4 @@
-// src/services/validationService.ts - FIXED: Allow break even trades
+// src/services/validationService.ts - UPDATED: Removed price rounding to allow higher precision
 import DOMPurify from 'dompurify';
 import { Trade } from '../types/trade';
 
@@ -47,12 +47,14 @@ class ValidationService {
       errors.push('Ticker is required');
     }
 
-    // Validate prices
+    // UPDATED: Validate prices without rounding - preserve full precision
     if (typeof trade.entryPrice === 'number') {
       if (trade.entryPrice <= 0 || trade.entryPrice > 100000) {
-        errors.push('Entry price must be between $0.01 and $100,000');
+        errors.push('Entry price must be between $0.000001 and $100,000');
       } else {
-        sanitized.entryPrice = Math.round(trade.entryPrice * 100) / 100;
+        // REMOVED: Math.round(trade.entryPrice * 100) / 100
+        // Now preserves full precision up to JavaScript's number limits
+        sanitized.entryPrice = trade.entryPrice;
       }
     } else {
       errors.push('Valid entry price is required');
@@ -60,16 +62,17 @@ class ValidationService {
 
     if (typeof trade.exitPrice === 'number') {
       if (trade.exitPrice <= 0 || trade.exitPrice > 100000) {
-        errors.push('Exit price must be between $0.01 and $100,000');
+        errors.push('Exit price must be between $0.000001 and $100,000');
       } else {
-        sanitized.exitPrice = Math.round(trade.exitPrice * 100) / 100;
+        // REMOVED: Math.round(trade.exitPrice * 100) / 100
+        // Now preserves full precision up to JavaScript's number limits
+        sanitized.exitPrice = trade.exitPrice;
       }
     } else {
       errors.push('Valid exit price is required');
     }
 
-    // REMOVED: Entry and exit price equality check to allow break-even trades
-    // Break-even trades are valid trading scenarios and should be allowed
+    // Break-even trades are now allowed - no equality check needed
 
     // Validate quantity
     if (typeof trade.quantity === 'number') {
