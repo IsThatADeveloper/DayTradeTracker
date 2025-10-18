@@ -1,3 +1,4 @@
+// src/components/EquityCurve.tsx - FIXED: Handle Firestore Timestamps
 import React, { useState, useMemo } from 'react';
 import {
   Chart as ChartJS,
@@ -59,6 +60,40 @@ const timeRangeOptions: TimeRangeOption[] = [
   { value: 'annual', label: 'Annual', description: 'Past 5 years by year' }
 ];
 
+// FIXED: Helper function to safely convert any timestamp to Date
+const ensureDate = (timestamp: any): Date => {
+  if (!timestamp) {
+    return new Date();
+  }
+  
+  if (timestamp instanceof Date) {
+    return timestamp;
+  }
+  
+  // Handle Firestore Timestamp objects
+  if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+    return timestamp.toDate();
+  }
+  
+  // Handle timestamp objects with seconds/nanoseconds (Firestore format)
+  if (timestamp.seconds !== undefined) {
+    return new Date(timestamp.seconds * 1000);
+  }
+  
+  // Try to parse as string or number
+  try {
+    const date = new Date(timestamp);
+    if (!isNaN(date.getTime())) {
+      return date;
+    }
+  } catch (e) {
+    console.error('Failed to parse timestamp:', timestamp);
+  }
+  
+  // Fallback to current date
+  return new Date();
+};
+
 export const EquityCurve: React.FC<EquityCurveProps> = ({ trades, selectedDate }) => {
   const [timeRange, setTimeRange] = useState<TimeRange>('daily');
 
@@ -67,156 +102,160 @@ export const EquityCurve: React.FC<EquityCurveProps> = ({ trades, selectedDate }
       return { labels: [], datasets: [] };
     }
 
-    let filteredTrades: Trade[] = [];
-    let labels: string[] = [];
-    let equityPoints: number[] = [];
+    try {
+      // FIXED: Safely convert all timestamps to Dates before sorting
+      const sortedTrades = [...trades]
+        .map(trade => ({
+          ...trade,
+          timestamp: ensureDate(trade.timestamp)
+        }))
+        .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-    const sortedTrades = [...trades].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+      let filteredTrades: Trade[] = [];
+      let labels: string[] = [];
+      let equityPoints: number[] = [];
 
-    switch (timeRange) {
-      case 'daily': {
-        // Filter trades for the selected day
-        const startOfDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
-        const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
-        
-        filteredTrades = sortedTrades.filter(trade => 
-          trade.timestamp >= startOfDay && trade.timestamp < endOfDay
-        );
+      const now = new Date();
 
-        let runningTotal = 0;
-        labels = filteredTrades.map(trade => 
-          trade.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        );
-        equityPoints = filteredTrades.map(trade => {
-          runningTotal += trade.realizedPL;
-          return runningTotal;
-        });
-        break;
-      }
-
-      case 'weekly': {
-        // Past 12 weeks
-        const endDate = endOfWeek(selectedDate, { weekStartsOn: 1 });
-        const startDate = startOfWeek(subMonths(selectedDate, 3), { weekStartsOn: 1 });
-        
-        const weeks = eachWeekOfInterval({ start: startDate, end: endDate }, { weekStartsOn: 1 });
-        
-        let runningTotal = 0;
-        // Calculate running total up to start date
-        sortedTrades
-          .filter(trade => trade.timestamp < startDate)
-          .forEach(trade => runningTotal += trade.realizedPL);
-
-        labels = weeks.map(week => format(week, 'MMM d'));
-        equityPoints = weeks.map(weekStart => {
-          const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
-          const weekTrades = sortedTrades.filter(trade => 
-            isWithinInterval(trade.timestamp, { start: weekStart, end: weekEnd })
+      switch (timeRange) {
+        case 'daily': {
+          const startOfDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+          const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
+          
+          filteredTrades = sortedTrades.filter(trade => 
+            trade.timestamp >= startOfDay && trade.timestamp < endOfDay
           );
-          const weekPL = weekTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
-          runningTotal += weekPL;
-          return runningTotal;
-        });
-        break;
-      }
 
-      case 'monthly': {
-        // Past 12 months
-        const endDate = endOfMonth(selectedDate);
-        const startDate = startOfMonth(subMonths(selectedDate, 11));
-        
-        const months = eachMonthOfInterval({ start: startDate, end: endDate });
-        
-        let runningTotal = 0;
-        // Calculate running total up to start date
-        sortedTrades
-          .filter(trade => trade.timestamp < startDate)
-          .forEach(trade => runningTotal += trade.realizedPL);
-
-        labels = months.map(month => format(month, 'MMM yyyy'));
-        equityPoints = months.map(monthStart => {
-          const monthEnd = endOfMonth(monthStart);
-          const monthTrades = sortedTrades.filter(trade => 
-            isWithinInterval(trade.timestamp, { start: monthStart, end: monthEnd })
+          let runningTotal = 0;
+          labels = filteredTrades.map(trade => 
+            trade.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           );
-          const monthPL = monthTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
-          runningTotal += monthPL;
-          return runningTotal;
-        });
-        break;
+          equityPoints = filteredTrades.map(trade => {
+            runningTotal += trade.realizedPL;
+            return runningTotal;
+          });
+          break;
+        }
+
+        case 'weekly': {
+          const endDate = endOfWeek(selectedDate, { weekStartsOn: 1 });
+          const startDate = startOfWeek(subMonths(selectedDate, 3), { weekStartsOn: 1 });
+          
+          const weeks = eachWeekOfInterval({ start: startDate, end: endDate }, { weekStartsOn: 1 });
+          
+          let runningTotal = 0;
+          sortedTrades
+            .filter(trade => trade.timestamp < startDate)
+            .forEach(trade => runningTotal += trade.realizedPL);
+
+          labels = weeks.map(week => format(week, 'MMM d'));
+          equityPoints = weeks.map(weekStart => {
+            const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
+            const weekTrades = sortedTrades.filter(trade => 
+              isWithinInterval(trade.timestamp, { start: weekStart, end: weekEnd })
+            );
+            const weekPL = weekTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
+            runningTotal += weekPL;
+            return runningTotal;
+          });
+          break;
+        }
+
+        case 'monthly': {
+          const endDate = endOfMonth(selectedDate);
+          const startDate = startOfMonth(subMonths(selectedDate, 11));
+          
+          const months = eachMonthOfInterval({ start: startDate, end: endDate });
+          
+          let runningTotal = 0;
+          sortedTrades
+            .filter(trade => trade.timestamp < startDate)
+            .forEach(trade => runningTotal += trade.realizedPL);
+
+          labels = months.map(month => format(month, 'MMM yyyy'));
+          equityPoints = months.map(monthStart => {
+            const monthEnd = endOfMonth(monthStart);
+            const monthTrades = sortedTrades.filter(trade => 
+              isWithinInterval(trade.timestamp, { start: monthStart, end: monthEnd })
+            );
+            const monthPL = monthTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
+            runningTotal += monthPL;
+            return runningTotal;
+          });
+          break;
+        }
+
+        case 'biannual': {
+          const endDate = endOfMonth(selectedDate);
+          const startDate = startOfMonth(subMonths(selectedDate, 23));
+          
+          const months = eachMonthOfInterval({ start: startDate, end: endDate });
+          
+          let runningTotal = 0;
+          sortedTrades
+            .filter(trade => trade.timestamp < startDate)
+            .forEach(trade => runningTotal += trade.realizedPL);
+
+          labels = months.map(month => format(month, 'MMM yy'));
+          equityPoints = months.map(monthStart => {
+            const monthEnd = endOfMonth(monthStart);
+            const monthTrades = sortedTrades.filter(trade => 
+              isWithinInterval(trade.timestamp, { start: monthStart, end: monthEnd })
+            );
+            const monthPL = monthTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
+            runningTotal += monthPL;
+            return runningTotal;
+          });
+          break;
+        }
+
+        case 'annual': {
+          const endDate = endOfYear(selectedDate);
+          const startDate = startOfYear(subYears(selectedDate, 4));
+          
+          const years = eachYearOfInterval({ start: startDate, end: endDate });
+          
+          let runningTotal = 0;
+          sortedTrades
+            .filter(trade => trade.timestamp < startDate)
+            .forEach(trade => runningTotal += trade.realizedPL);
+
+          labels = years.map(year => format(year, 'yyyy'));
+          equityPoints = years.map(yearStart => {
+            const yearEnd = endOfYear(yearStart);
+            const yearTrades = sortedTrades.filter(trade => 
+              isWithinInterval(trade.timestamp, { start: yearStart, end: yearEnd })
+            );
+            const yearPL = yearTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
+            runningTotal += yearPL;
+            return runningTotal;
+          });
+          break;
+        }
       }
 
-      case 'biannual': {
-        // Past 2 years by month
-        const endDate = endOfMonth(selectedDate);
-        const startDate = startOfMonth(subMonths(selectedDate, 23));
-        
-        const months = eachMonthOfInterval({ start: startDate, end: endDate });
-        
-        let runningTotal = 0;
-        // Calculate running total up to start date
-        sortedTrades
-          .filter(trade => trade.timestamp < startDate)
-          .forEach(trade => runningTotal += trade.realizedPL);
-
-        labels = months.map(month => format(month, 'MMM yy'));
-        equityPoints = months.map(monthStart => {
-          const monthEnd = endOfMonth(monthStart);
-          const monthTrades = sortedTrades.filter(trade => 
-            isWithinInterval(trade.timestamp, { start: monthStart, end: monthEnd })
-          );
-          const monthPL = monthTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
-          runningTotal += monthPL;
-          return runningTotal;
-        });
-        break;
-      }
-
-      case 'annual': {
-        // Past 5 years
-        const endDate = endOfYear(selectedDate);
-        const startDate = startOfYear(subYears(selectedDate, 4));
-        
-        const years = eachYearOfInterval({ start: startDate, end: endDate });
-        
-        let runningTotal = 0;
-        // Calculate running total up to start date
-        sortedTrades
-          .filter(trade => trade.timestamp < startDate)
-          .forEach(trade => runningTotal += trade.realizedPL);
-
-        labels = years.map(year => format(year, 'yyyy'));
-        equityPoints = years.map(yearStart => {
-          const yearEnd = endOfYear(yearStart);
-          const yearTrades = sortedTrades.filter(trade => 
-            isWithinInterval(trade.timestamp, { start: yearStart, end: yearEnd })
-          );
-          const yearPL = yearTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
-          runningTotal += yearPL;
-          return runningTotal;
-        });
-        break;
-      }
+      return {
+        labels,
+        datasets: [
+          {
+            label: 'Cumulative P&L',
+            data: equityPoints,
+            borderColor: 'rgb(59, 130, 246)',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.1,
+            pointBackgroundColor: 'rgb(59, 130, 246)',
+            pointBorderColor: 'rgb(59, 130, 246)',
+            pointRadius: timeRange === 'daily' ? 3 : 4,
+            pointHoverRadius: timeRange === 'daily' ? 5 : 6,
+          },
+        ],
+      };
+    } catch (error) {
+      console.error('Error generating equity curve data:', error);
+      return { labels: [], datasets: [] };
     }
-
-    return {
-      labels,
-      datasets: [
-        {
-          label: 'Cumulative P&L',
-          data: equityPoints,
-          borderColor: 'rgb(59, 130, 246)',
-          backgroundColor: 'rgba(59, 130, 246, 0.1)',
-          borderWidth: 2,
-          fill: true,
-          tension: 0.1,
-          pointBackgroundColor: 'rgb(59, 130, 246)',
-          pointBorderColor: 'rgb(59, 130, 246)',
-          pointRadius: timeRange === 'daily' ? 3 : 4,
-          pointHoverRadius: timeRange === 'daily' ? 5 : 6,
-        },
-      ],
-    };
   }, [trades, selectedDate, timeRange]);
 
   const options = {
