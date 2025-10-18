@@ -1,6 +1,6 @@
-// src/App.tsx - Updated with Tutorial System
+// src/App.tsx - Enhanced with Detailed Error Boundary
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator, BookOpen } from 'lucide-react';
+import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator, BookOpen, AlertCircle } from 'lucide-react';
 import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useBrokerIntegration } from './hooks/useBrokerIntegration';
@@ -19,7 +19,6 @@ import { Profile } from './components/Profile';
 import { AIInsights } from './components/AIInsights';
 import { StockSearch } from './components/StockSearch';
 import { StockNews } from './components/StockNews';
-// import { EarningsProjection } from './components/EarningsProjection';
 import { DailyReview } from './components/DailyReview';
 import { HomePage } from './components/HomePage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -36,7 +35,6 @@ const MemoizedTradeTable = React.memo(TradeTable);
 const MemoizedCalendar = React.memo(Calendar);
 const MemoizedStockSearch = React.memo(StockSearch);
 const MemoizedStockNews = React.memo(StockNews);
-// const MemoizedEarningsProjection = React.memo(EarningsProjection);
 const MemoizedDailyReview = React.memo(DailyReview);
 
 const NAVIGATION_ITEMS = [
@@ -86,14 +84,14 @@ const NAVIGATION_ITEMS = [
 
 type ActiveViewType = 'calendar' | 'daily' | 'review' | 'search' | 'brokers' | 'news' | 'projections';
 
-// Error Boundary Component
+// ENHANCED Error Boundary Component with Detailed Logging
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  { hasError: boolean; error?: Error }
+  { hasError: boolean; error?: Error; errorInfo?: React.ErrorInfo; copied: boolean }
 > {
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, copied: false };
   }
 
   static getDerivedStateFromError(error: Error) {
@@ -101,25 +99,229 @@ class ErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('App Error:', error, errorInfo);
+    // ENHANCED: Detailed logging to help debug
+    console.group('🔴 Application Error Caught');
+    console.error('Error:', error);
+    console.error('Error Message:', error.message);
+    console.error('Error Stack:', error.stack);
+    console.error('Component Stack:', errorInfo?.componentStack);
+    console.error('Environment:', {
+      url: window.location.href,
+      protocol: window.location.protocol,
+      host: window.location.host,
+      isHTTPS: window.location.protocol === 'https:',
+      hasLocalStorage: typeof localStorage !== 'undefined',
+      hasCookies: navigator.cookieEnabled,
+      isOnline: navigator.onLine,
+      userAgent: navigator.userAgent,
+      nodeEnv: process.env.NODE_ENV
+    });
+    console.groupEnd();
+
+    this.setState({ error, errorInfo });
+
+    // Try to send to analytics if available
+    try {
+      if ((window as any).gtag) {
+        (window as any).gtag('event', 'exception', {
+          description: error.toString(),
+          fatal: true
+        });
+      }
+    } catch (e) {
+      console.error('Failed to log to analytics:', e);
+    }
   }
+
+  copyErrorToClipboard = () => {
+    const { error, errorInfo } = this.state;
+    const errorText = `
+=== Application Error Report ===
+Time: ${new Date().toISOString()}
+URL: ${window.location.href}
+Protocol: ${window.location.protocol}
+Host: ${window.location.host}
+User Agent: ${navigator.userAgent}
+
+Error Message:
+${error?.message || 'Unknown error'}
+
+Error Stack:
+${error?.stack || 'No stack trace available'}
+
+Component Stack:
+${errorInfo?.componentStack || 'No component stack available'}
+
+Environment:
+- Is HTTPS: ${window.location.protocol === 'https:'}
+- LocalStorage Available: ${typeof localStorage !== 'undefined'}
+- Cookies Enabled: ${navigator.cookieEnabled}
+- Online: ${navigator.onLine}
+- Node ENV: ${process.env.NODE_ENV}
+`;
+
+    navigator.clipboard.writeText(errorText).then(() => {
+      this.setState({ copied: true });
+      setTimeout(() => this.setState({ copied: false }), 2000);
+    }).catch(err => {
+      console.error('Failed to copy to clipboard:', err);
+      alert('Failed to copy. Please manually copy the error from console.');
+    });
+  };
 
   render() {
     if (this.state.hasError) {
+      const { error, errorInfo, copied } = this.state;
+
       return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
-          <div className="max-w-md w-full text-center">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-              <h2 className="text-xl font-bold text-red-600 mb-4">Something went wrong</h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                The application encountered an error. Please try refreshing the page.
-              </p>
-              <button
-                onClick={() => window.location.reload()}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-              >
-                Refresh Page
-              </button>
+          <div className="max-w-4xl w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl overflow-hidden">
+            {/* Header */}
+            <div className="bg-red-600 p-6">
+              <div className="flex items-center">
+                <AlertCircle className="h-8 w-8 text-white mr-3" />
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Application Error</h2>
+                  <p className="text-red-100 mt-1">Something went wrong</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Error Details */}
+            <div className="p-6 space-y-4">
+              {/* Error Message */}
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                <h3 className="font-semibold text-red-900 dark:text-red-100 mb-2">
+                  Error Message:
+                </h3>
+                <p className="text-red-800 dark:text-red-200 font-mono text-sm break-words">
+                  {error?.message || 'Unknown error occurred'}
+                </p>
+              </div>
+
+              {/* Environment Info */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-900 dark:text-white mb-3 text-sm">
+                    Environment
+                  </h4>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">URL:</span>
+                      <span className="text-gray-900 dark:text-white font-mono truncate ml-2 text-right">
+                        {window.location.host}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Protocol:</span>
+                      <span className="text-gray-900 dark:text-white font-mono">
+                        {window.location.protocol}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">HTTPS:</span>
+                      <span className={`font-mono ${window.location.protocol === 'https:' ? 'text-green-600' : 'text-red-600'}`}>
+                        {window.location.protocol === 'https:' ? '✓ Yes' : '✗ No (REQUIRED!)'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">NODE_ENV:</span>
+                      <span className="text-gray-900 dark:text-white font-mono">
+                        {process.env.NODE_ENV}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-900 dark:text-white mb-3 text-sm">
+                    Browser
+                  </h4>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">LocalStorage:</span>
+                      <span className={`font-mono ${typeof localStorage !== 'undefined' ? 'text-green-600' : 'text-red-600'}`}>
+                        {typeof localStorage !== 'undefined' ? '✓ Available' : '✗ Blocked'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Cookies:</span>
+                      <span className={`font-mono ${navigator.cookieEnabled ? 'text-green-600' : 'text-red-600'}`}>
+                        {navigator.cookieEnabled ? '✓ Enabled' : '✗ Disabled'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Online:</span>
+                      <span className={`font-mono ${navigator.onLine ? 'text-green-600' : 'text-red-600'}`}>
+                        {navigator.onLine ? '✓ Connected' : '✗ Offline'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stack Trace */}
+              <details className="bg-gray-50 dark:bg-gray-700 rounded-lg">
+                <summary className="p-3 cursor-pointer font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg text-sm">
+                  📋 View Full Error Stack (Click to expand)
+                </summary>
+                <div className="p-3 border-t border-gray-200 dark:border-gray-600">
+                  <pre className="text-xs font-mono text-gray-800 dark:text-gray-200 overflow-x-auto whitespace-pre-wrap">
+                    {error?.stack || 'No stack trace available'}
+                  </pre>
+                </div>
+              </details>
+
+              {/* Component Stack */}
+              {errorInfo?.componentStack && (
+                <details className="bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <summary className="p-3 cursor-pointer font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg text-sm">
+                    🧩 View Component Stack (Click to expand)
+                  </summary>
+                  <div className="p-3 border-t border-gray-200 dark:border-gray-600">
+                    <pre className="text-xs font-mono text-gray-800 dark:text-gray-200 overflow-x-auto whitespace-pre-wrap">
+                      {errorInfo.componentStack}
+                    </pre>
+                  </div>
+                </details>
+              )}
+
+              {/* Troubleshooting */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-2 text-sm">
+                  💡 Troubleshooting Steps
+                </h4>
+                <ol className="list-decimal list-inside space-y-1 text-xs text-blue-800 dark:text-blue-200">
+                  <li><strong>Open Browser Console (F12)</strong> - Look for red error messages</li>
+                  <li><strong>Check HTTPS</strong> - URL must start with https:// (not http://)</li>
+                  <li><strong>Clear Cache</strong> - Clear browser cache and cookies</li>
+                  <li><strong>Try Incognito</strong> - Test in private/incognito mode</li>
+                  <li><strong>Disable Extensions</strong> - Temporarily disable browser extensions</li>
+                  <li><strong>Check Firebase Console</strong> - Ensure your domain is authorized</li>
+                </ol>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium text-sm flex items-center justify-center"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh Page
+                </button>
+                
+                <button
+                  onClick={this.copyErrorToClipboard}
+                  className="flex-1 px-4 py-3 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors font-medium text-sm"
+                >
+                  {copied ? '✓ Copied!' : 'Copy Error Details'}
+                </button>
+              </div>
+
+              <div className="text-center text-xs text-gray-600 dark:text-gray-400 pt-2">
+                <p>Press F12 to open browser console for more details</p>
+              </div>
             </div>
           </div>
         </div>
@@ -131,18 +333,37 @@ class ErrorBoundary extends React.Component<
 }
 
 function AppContent() {
-  // CRITICAL FIX: ALL hooks must be called before ANY conditional returns
-  // This fixes the "Rendered fewer hooks than expected" error
+  // CRITICAL: Console logging BEFORE any other code
+  console.log('🚀 AppContent: Starting initialization...', {
+    timestamp: new Date().toISOString(),
+    url: window.location.href,
+    protocol: window.location.protocol,
+    host: window.location.host,
+    isHTTPS: window.location.protocol === 'https:',
+    hasLocalStorage: typeof localStorage !== 'undefined',
+    hasCookies: navigator.cookieEnabled,
+    nodeEnv: process.env.NODE_ENV,
+  });
 
+  // Security initialization with detailed error logging
   useEffect(() => {
-    // Initialize security
+    console.log('🔒 Security: Initializing...');
     try {
       SecurityUtils.initializeSecurity();
+      console.log('✅ Security: Initialized successfully');
     } catch (error) {
-      console.error('Security initialization failed:', error);
-      // In production, you might want to prevent app from loading
+      console.error('❌ Security: Initialization failed:', error);
+      console.error('Security Error Details:', {
+        message: (error as Error).message,
+        stack: (error as Error).stack,
+        protocol: window.location.protocol,
+        isProduction: process.env.NODE_ENV === 'production'
+      });
+      
+      // In production, prevent app from loading on security failure
       if (process.env.NODE_ENV === 'production') {
-        alert('Security check failed. Please contact support.');
+        alert(`Security check failed: ${(error as Error).message}\n\nPlease ensure you're using HTTPS.`);
+        throw error; // Re-throw to trigger error boundary
       }
     }
   }, []);
@@ -177,54 +398,41 @@ function AppContent() {
   const [cloudTrades, setCloudTrades] = useState<Trade[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
-
-  // FIXED: Use localStorage to persist active view across reloads
   const [activeView, setActiveView] = useLocalStorage<ActiveViewType>('active-view', 'daily');
-
   const [darkMode, setDarkMode] = useLocalStorage('day-trader-dark-mode', false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [isLoadingCloudData, setIsLoadingCloudData] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useLocalStorage<string | null>('last-sync-time', null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  // FIXED: Better sidebar state management for Vercel desktop
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
 
-  // All computed values
   const activeTrades = currentUser ? cloudTrades : localTrades;
   const totalBrokerTrades = getTotalBrokerTrades();
 
-  // FIXED: Add mounted check to prevent hydration issues
   useEffect(() => {
     setIsMounted(true);
+    console.log('✅ AppContent: Component mounted');
   }, []);
 
-  // All useCallback hooks
   const handleGetStarted = useCallback(() => {
     console.log('🏠 Getting started - hiding homepage');
     setShowHomePage(false);
   }, [setShowHomePage]);
 
   const handleLogoClick = useCallback(() => {
-    console.log('🏠 Logo clicked, current showHomePage:', showHomePage);
-    console.log('🏠 Setting showHomePage to true');
+    console.log('🏠 Logo clicked, showing homepage');
     setShowHomePage(true);
     setMobileMenuOpen(false);
     setActiveView('daily');
-  }, [setShowHomePage, showHomePage, setActiveView]);
+  }, [setShowHomePage, setActiveView]);
 
-  // FIXED: Normalize date to local date without timezone issues
   const normalizeToLocalDate = useCallback((date: Date): Date => {
-    // CRITICAL FIX: Don't use timezone offset calculations
-    // Just create a new date with the same year, month, day in local time
     return new Date(date.getFullYear(), date.getMonth(), date.getDate());
   }, []);
 
-  // FIXED: Compare if two dates are the same day in local time
   const isSameDayLocal = useCallback((date1: Date, date2: Date): boolean => {
-    // CRITICAL FIX: Compare date components directly without timezone conversions
     return date1.getFullYear() === date2.getFullYear() &&
       date1.getMonth() === date2.getMonth() &&
       date1.getDate() === date2.getDate();
@@ -267,13 +475,7 @@ function AppContent() {
   }, [currentUser, setLocalTrades]);
 
   const handleTradesAdded = useCallback(async (newTrades: Trade[]) => {
-    console.log('📈 App: Multiple trades added:', {
-      count: newTrades.length,
-      trades: newTrades.map(t => ({
-        ticker: t.ticker,
-        timestamp: t.timestamp.toDateString()
-      }))
-    });
+    console.log('📈 App: Multiple trades added:', newTrades.length);
 
     if (currentUser) {
       try {
@@ -294,13 +496,7 @@ function AppContent() {
   }, [currentUser, setLocalTrades]);
 
   const handleUpdateTrade = useCallback(async (tradeId: string, updates: Partial<Trade>) => {
-    console.log('🔄 App: Updating trade:', {
-      tradeId: tradeId.slice(0, 8),
-      updates: {
-        ...updates,
-        timestamp: updates.timestamp?.toDateString()
-      }
-    });
+    console.log('🔄 App: Updating trade:', tradeId);
 
     if (currentUser) {
       try {
@@ -358,24 +554,11 @@ function AppContent() {
     }
   }, [currentUser, setLocalTrades]);
 
-  const handleExportTrades = useCallback(() => {
-    // This will be computed from dailyTrades useMemo below
-  }, []);
-
-  // FIXED: Handle date input changes properly
   const handleDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value;
     if (inputValue) {
-      // CRITICAL FIX: Parse date input correctly without timezone issues
       const [year, month, day] = inputValue.split('-').map(Number);
-      const newDate = new Date(year, month - 1, day); // month is 0-indexed
-
-      console.log('📅 App: handleDateChange:', {
-        inputValue,
-        newDate: newDate.toDateString(),
-        components: { year, month: month - 1, day }
-      });
-
+      const newDate = new Date(year, month - 1, day);
       setSelectedDate(newDate);
     }
   }, []);
@@ -398,7 +581,6 @@ function AppContent() {
     }
   }, [syncAllTrades, loadCloudTrades]);
 
-  // FIXED: Add handler for navigation with proper type checking
   const handleNavigation = useCallback((viewId: string) => {
     if (['daily', 'review', 'calendar', 'search', 'brokers', 'news', 'projections'].includes(viewId)) {
       setActiveView(viewId as ActiveViewType);
@@ -406,39 +588,13 @@ function AppContent() {
     }
   }, [setActiveView]);
 
-  // FIXED: dailyTrades computation with proper date filtering
   const dailyTrades = useMemo(() => {
-    console.log('📊 App: Computing dailyTrades:', {
-      selectedDate: selectedDate.toDateString(),
-      totalTrades: activeTrades.length
-    });
-
-    const filtered = activeTrades
+    return activeTrades
       .map(trade => ({
         ...trade,
         timestamp: trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp),
       }))
-      .filter(trade => {
-        const isSameDay = isSameDayLocal(trade.timestamp, selectedDate);
-
-        if (process.env.NODE_ENV === 'development' && isSameDay) {
-          console.log('📊 Found matching trade:', {
-            ticker: trade.ticker,
-            tradeDate: trade.timestamp.toDateString(),
-            selectedDate: selectedDate.toDateString()
-          });
-        }
-
-        return isSameDay;
-      });
-
-    console.log('📊 App: dailyTrades result:', {
-      selectedDate: selectedDate.toDateString(),
-      filteredCount: filtered.length,
-      totalCount: activeTrades.length
-    });
-
-    return filtered;
+      .filter(trade => isSameDayLocal(trade.timestamp, selectedDate));
   }, [activeTrades, selectedDate, isSameDayLocal]);
 
   const dailyStats = useMemo(() => {
@@ -449,19 +605,11 @@ function AppContent() {
     return getWeeklyStats(activeTrades, selectedDate);
   }, [activeTrades, selectedDate]);
 
-  // FIXED: dateInputValue computation
   const dateInputValue = useMemo(() => {
     const year = selectedDate.getFullYear();
     const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
     const day = String(selectedDate.getDate()).padStart(2, '0');
-    const result = `${year}-${month}-${day}`;
-
-    console.log('📅 App: dateInputValue:', {
-      selectedDate: selectedDate.toDateString(),
-      result
-    });
-
-    return result;
+    return `${year}-${month}-${day}`;
   }, [selectedDate]);
 
   const lastTrade = useMemo(() =>
@@ -469,7 +617,6 @@ function AppContent() {
     [activeTrades]
   );
 
-  // All useEffect hooks
   useEffect(() => {
     const htmlElement = document.documentElement;
     if (darkMode) {
@@ -488,26 +635,6 @@ function AppContent() {
     }
   }, [currentUser, loadCloudTrades]);
 
-  // FIXED: Add error handling for export function
-  useEffect(() => {
-    const handleError = (event: ErrorEvent) => {
-      console.error('Global error:', event.error);
-    };
-
-    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      console.error('Unhandled promise rejection:', event.reason);
-    };
-
-    window.addEventListener('error', handleError);
-    window.addEventListener('unhandledrejection', handleUnhandledRejection);
-
-    return () => {
-      window.removeEventListener('error', handleError);
-      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
-    };
-  }, []);
-
-  // Update export function to use dailyTrades
   const handleExportTradesWithData = useCallback(() => {
     if (dailyTrades.length === 0) return;
     const csv = [
@@ -528,7 +655,6 @@ function AppContent() {
     URL.revokeObjectURL(url);
   }, [dailyTrades, selectedDate]);
 
-  // FIXED: Prevent render until mounted (fixes hydration issues)
   if (!isMounted) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
@@ -537,21 +663,13 @@ function AppContent() {
     );
   }
 
-  // CRITICAL FIX: Now that ALL hooks have been called, we can safely do conditional returns
-  // This prevents the "Rendered fewer hooks than expected" error
   if (showHomePage) {
-    console.log('🏠 Rendering HomePage component, showHomePage:', showHomePage);
     return <HomePage onGetStarted={handleGetStarted} />;
   }
 
-  console.log('🏠 Rendering main app, showHomePage:', showHomePage);
-  console.log('📅 App: Current selectedDate:', selectedDate.toDateString());
-
-  // Render sidebar navigation item
   const renderSidebarItem = (item: typeof NAVIGATION_ITEMS[0]) => {
     const isActive = activeView === item.id;
     const Icon = item.icon;
-
     const showBadge = item.id === 'brokers' && brokerConnections.length > 0;
     const badgeContent = item.id === 'brokers' ? brokerConnections.length : totalBrokerTrades;
 
@@ -604,7 +722,6 @@ function AppContent() {
     );
   };
 
-  // Render main content based on active view
   const renderMainContent = () => {
     try {
       if (activeView === 'calendar') {
@@ -616,7 +733,6 @@ function AppContent() {
             onMonthChange={setCurrentMonth}
             currentMonth={currentMonth}
             onDateDoubleClick={(date) => {
-              console.log('📅 Calendar: Double-clicked date:', date.toDateString());
               setSelectedDate(date);
               setActiveView('daily');
             }}
@@ -653,13 +769,11 @@ function AppContent() {
       }
 
       if (activeView === 'projections') {
-        // return <MemoizedEarningsProjection trades={activeTrades} selectedDate={selectedDate} />;
+        return null;
       }
 
-      // Daily view (default)
       return (
         <div className="space-y-6 sm:space-y-8">
-          {/* Trade entry forms - WITH TUTORIAL DATA ATTRIBUTES */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div data-tutorial="manual-trade-entry">
               <ManualTradeEntry
@@ -674,7 +788,6 @@ function AppContent() {
             />
           </div>
 
-          {/* Broker notification */}
           {currentUser && brokerConnections.length === 0 && (
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
               <div className="flex items-center justify-between">
@@ -730,10 +843,8 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-      {/* FIXED: Better sidebar positioning for Vercel */}
       <div className={`hidden lg:flex fixed top-0 left-0 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 z-40 transition-all duration-200 flex-col ${sidebarCollapsed ? 'w-16' : 'w-72'
         }`}>
-        {/* Sidebar Header */}
         <div className="flex items-center p-4 border-b border-gray-200 dark:border-gray-700 h-16 flex-shrink-0">
           {sidebarCollapsed ? (
             <div className="w-full flex justify-center">
@@ -773,16 +884,13 @@ function AppContent() {
           )}
         </div>
 
-        {/* Navigation Items */}
         <nav className="flex-1 px-4 py-6 overflow-y-auto">
           <div className="space-y-2">
             {NAVIGATION_ITEMS.map(renderSidebarItem)}
           </div>
         </nav>
 
-        {/* Sidebar Footer */}
         <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-3 flex-shrink-0">
-          {/* Broker Sync Button */}
           {currentUser && brokerConnections.length > 0 && (
             <button
               onClick={handleSyncAllBrokers}
@@ -800,7 +908,6 @@ function AppContent() {
             </button>
           )}
 
-          {/* Auth and Theme Toggle */}
           {!sidebarCollapsed ? (
             <div className="flex items-center space-x-2">
               <div className="flex-1">
@@ -826,13 +933,10 @@ function AppContent() {
         </div>
       </div>
 
-      {/* FIXED: Better main content positioning */}
       <div className={`min-h-screen transition-all duration-200 ${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-72'
         }`}>
-        {/* Mobile Header - RESPONSIVE LAYOUT */}
         <header className="lg:hidden bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30 main-header">
           <div className="px-3 sm:px-4 h-16 flex items-center justify-between">
-            {/* Mobile Logo - Responsive */}
             <button
               onClick={handleLogoClick}
               className="flex items-center hover:opacity-80 transition-opacity min-w-0 flex-shrink-0"
@@ -844,14 +948,11 @@ function AppContent() {
               </h1>
             </button>
 
-            {/* Mobile Controls - PRIORITIZED LAYOUT */}
             <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
-              {/* Tutorial Button - Hidden on very small screens */}
               <div className="hidden sm:block">
                 <TutorialButton onClick={startTutorial} />
               </div>
 
-              {/* Dark Mode Toggle - Compact on small screens */}
               <button
                 onClick={() => setDarkMode(!darkMode)}
                 className="p-1.5 sm:p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -860,7 +961,6 @@ function AppContent() {
                 {darkMode ? <Sun className="h-4 w-4 sm:h-5 sm:w-5" /> : <Moon className="h-4 w-4 sm:h-5 sm:w-5" />}
               </button>
 
-              {/* Mobile Menu Toggle - Always visible and prominent */}
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 className="p-1.5 sm:p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md"
@@ -870,7 +970,6 @@ function AppContent() {
             </div>
           </div>
 
-          {/* Mobile Menu */}
           {mobileMenuOpen && (
             <div className="border-t border-gray-200 dark:border-gray-700 py-4 px-4 space-y-2">
               {NAVIGATION_ITEMS.map((item) => {
@@ -898,7 +997,6 @@ function AppContent() {
                 );
               })}
 
-              {/* Mobile Auth */}
               <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                 <AuthComponent onOpenProfile={() => {
                   setShowProfile(true);
@@ -909,7 +1007,6 @@ function AppContent() {
           )}
         </header>
 
-        {/* Desktop Header Bar - WITH TUTORIAL BUTTON */}
         <div className="hidden lg:flex items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 main-header">
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -920,7 +1017,6 @@ function AppContent() {
             </p>
           </div>
 
-          {/* Centered Date Picker - only show on daily view */}
           {activeView === 'daily' && (
             <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center space-x-2">
               <label className="text-sm font-medium text-gray-600 dark:text-gray-400">
@@ -936,10 +1032,8 @@ function AppContent() {
           )}
 
           <div className="flex items-center space-x-4">
-            {/* Tutorial Button */}
             <TutorialButton onClick={startTutorial} />
 
-            {/* Refresh Button */}
             {currentUser && (
               <button
                 onClick={loadCloudTrades}
@@ -951,20 +1045,17 @@ function AppContent() {
               </button>
             )}
 
-            {/* Auth Component - Desktop (only show when sidebar collapsed) */}
             {sidebarCollapsed && (
               <AuthComponent onOpenProfile={() => setShowProfile(true)} />
             )}
           </div>
         </div>
 
-        {/* Main Content */}
         <main className="p-4 sm:p-6 lg:p-8">
           {renderMainContent()}
         </main>
       </div>
 
-      {/* Modals */}
       <SyncModal
         isOpen={showSyncModal}
         onClose={() => setShowSyncModal(false)}
@@ -981,7 +1072,6 @@ function AppContent() {
         trades={activeTrades}
       />
 
-      {/* Tutorial Components */}
       <WelcomeMessage
         isOpen={showWelcome}
         onClose={closeWelcome}
