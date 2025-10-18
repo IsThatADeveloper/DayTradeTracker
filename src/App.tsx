@@ -19,7 +19,7 @@ import { Profile } from './components/Profile';
 import { AIInsights } from './components/AIInsights';
 import { StockSearch } from './components/StockSearch';
 import { StockNews } from './components/StockNews';
-import { EarningsProjection } from './components/EarningsProjection';
+// import { EarningsProjection } from './components/EarningsProjection';
 import { DailyReview } from './components/DailyReview';
 import { HomePage } from './components/HomePage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -36,7 +36,7 @@ const MemoizedTradeTable = React.memo(TradeTable);
 const MemoizedCalendar = React.memo(Calendar);
 const MemoizedStockSearch = React.memo(StockSearch);
 const MemoizedStockNews = React.memo(StockNews);
-const MemoizedEarningsProjection = React.memo(EarningsProjection);
+// const MemoizedEarningsProjection = React.memo(EarningsProjection);
 const MemoizedDailyReview = React.memo(DailyReview);
 
 const NAVIGATION_ITEMS = [
@@ -653,7 +653,7 @@ function AppContent() {
       }
 
       if (activeView === 'projections') {
-        return <MemoizedEarningsProjection trades={activeTrades} selectedDate={selectedDate} />;
+        // return <MemoizedEarningsProjection trades={activeTrades} selectedDate={selectedDate} />;
       }
 
       // Daily view (default)
