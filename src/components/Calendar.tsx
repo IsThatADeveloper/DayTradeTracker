@@ -1,17 +1,17 @@
 // src/components/Calendar.tsx - Enhanced Calendar with Weekly P&L Display
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, TrendingUp, Clock, ChevronDown, BarChart3 } from 'lucide-react';
-import { 
-  format, 
-  addMonths, 
-  subMonths, 
-  startOfWeek, 
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, TrendingUp, Clock, ChevronDown, BarChart3, DollarSign } from 'lucide-react';
+import {
+  format,
+  addMonths,
+  subMonths,
+  startOfWeek,
   endOfWeek,
   startOfMonth,
   endOfMonth,
   eachDayOfInterval,
-  isSameMonth, 
-  isToday, 
+  isSameMonth,
+  isToday,
   isSameDay,
   isWithinInterval,
   startOfDay,
@@ -97,13 +97,17 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [firstDate, setFirstDate] = useState<Date | null>(null);
   const [secondDate, setSecondDate] = useState<Date | null>(null);
   const [showCustomRange, setShowCustomRange] = useState(false);
-  
+
   // Dropdown states
   const [showRangeDropdown, setShowRangeDropdown] = useState(false);
   const [showChartDropdown, setShowChartDropdown] = useState(false);
   const [selectedRange, setSelectedRange] = useState<string>('');
   const [selectedChartView, setSelectedChartView] = useState<string>('1m');
-  
+
+  // Commission states
+  const [applyCommission, setApplyCommission] = useState(false);
+  const [commissionAmount, setCommissionAmount] = useState<number>(0);
+
   // Refs for dropdown management
   const rangeDropdownRef = useRef<HTMLDivElement>(null);
   const chartDropdownRef = useRef<HTMLDivElement>(null);
@@ -133,16 +137,22 @@ export const Calendar: React.FC<CalendarProps> = ({
   // Get earliest and latest trade dates
   const tradeDataRange = useMemo(() => {
     if (trades.length === 0) return { earliest: new Date(), latest: new Date() };
-    
-    const dates = trades.map(trade => 
+
+    const dates = trades.map(trade =>
       trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp)
     );
-    
+
     return {
       earliest: new Date(Math.min(...dates.map(d => d.getTime()))),
       latest: new Date(Math.max(...dates.map(d => d.getTime())))
     };
   }, [trades]);
+
+  // Calculate adjusted P&L with commission
+  const getAdjustedPL = useCallback((pl: number, tradeCount: number): number => {
+    if (!applyCommission || commissionAmount === 0) return pl;
+    return pl - (commissionAmount * tradeCount);
+  }, [applyCommission, commissionAmount]);
 
   // Calendar data calculation with weekly P&L
   const calendarData = useMemo((): MonthData[] | DayData[] => {
@@ -150,22 +160,22 @@ export const Calendar: React.FC<CalendarProps> = ({
       // For yearly view, we need all 12 months of the current year
       const currentYear = new Date().getFullYear();
       const yearData: MonthData[] = [];
-      
+
       for (let month = 0; month < 12; month++) {
         const monthStart = new Date(currentYear, month, 1);
         const monthEnd = new Date(currentYear, month + 1, 0);
         const daysInMonth = monthEnd.getDate();
         const firstDayOfWeek = monthStart.getDay(); // 0 = Sunday, 1 = Monday, etc.
-        
+
         const monthCalendar: DayData[] = [];
         let monthlyPL = 0;
         let monthlyTrades = 0;
-        
+
         // Create exactly 42 days (6 weeks × 7 days) for consistent layout
         for (let dayIndex = 0; dayIndex < 42; dayIndex++) {
           let currentDate: Date;
           let isCurrentMonth = false;
-          
+
           if (dayIndex < firstDayOfWeek) {
             // Days from previous month
             const prevMonth = month === 0 ? 11 : month - 1;
@@ -185,20 +195,20 @@ export const Calendar: React.FC<CalendarProps> = ({
             const dayOfNextMonth = dayIndex - firstDayOfWeek - daysInMonth + 1;
             currentDate = new Date(nextYear, nextMonth, dayOfNextMonth);
           }
-          
+
           const dayTrades = trades.filter(trade => {
             const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
             return isSameDay(tradeDate, currentDate);
           });
-          
-          const totalPL = dayTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
-          
+
+          const totalPL = getAdjustedPL(dayTrades.reduce((sum, trade) => sum + trade.realizedPL, 0), dayTrades.length);
+
           // Add to monthly totals if it's a current month day
           if (isCurrentMonth && dayTrades.length > 0) {
             monthlyPL += totalPL;
             monthlyTrades += dayTrades.length;
           }
-          
+
           monthCalendar.push({
             date: currentDate,
             totalPL,
@@ -207,7 +217,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             isCurrentMonth
           });
         }
-        
+
         yearData.push({
           month: monthStart,
           monthName: format(monthStart, 'MMM'),
@@ -216,34 +226,34 @@ export const Calendar: React.FC<CalendarProps> = ({
           monthlyTrades
         });
       }
-      
+
       return yearData;
     } else if (selectedChartView === 'all') {
       // For YTD view, show months from earliest to latest trade
       const allTimeData: MonthData[] = [];
-      
+
       if (trades.length === 0) return allTimeData;
-      
+
       const startDate = startOfMonth(tradeDataRange.earliest);
       const endDate = endOfMonth(tradeDataRange.latest);
-      
+
       let currentDate = startDate;
-      
+
       while (currentDate <= endDate) {
         const monthStart = startOfMonth(currentDate);
         const monthEnd = endOfMonth(currentDate);
         const daysInMonth = monthEnd.getDate();
         const firstDayOfWeek = monthStart.getDay();
-        
+
         const monthCalendar: DayData[] = [];
         let monthlyPL = 0;
         let monthlyTrades = 0;
-        
+
         // Create exactly 42 days (6 weeks × 7 days) for consistent layout
         for (let dayIndex = 0; dayIndex < 42; dayIndex++) {
           let dayDate: Date;
           let isCurrentMonth = false;
-          
+
           if (dayIndex < firstDayOfWeek) {
             // Days from previous month
             const prevMonth = currentDate.getMonth() === 0 ? 11 : currentDate.getMonth() - 1;
@@ -263,20 +273,20 @@ export const Calendar: React.FC<CalendarProps> = ({
             const dayOfNextMonth = dayIndex - firstDayOfWeek - daysInMonth + 1;
             dayDate = new Date(nextYear, nextMonth, dayOfNextMonth);
           }
-          
+
           const dayTrades = trades.filter(trade => {
             const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
             return isSameDay(tradeDate, dayDate);
           });
-          
-          const totalPL = dayTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
-          
+
+          const totalPL = getAdjustedPL(dayTrades.reduce((sum, trade) => sum + trade.realizedPL, 0), dayTrades.length);
+
           // Add to monthly totals if it's a current month day
           if (isCurrentMonth && dayTrades.length > 0) {
             monthlyPL += totalPL;
             monthlyTrades += dayTrades.length;
           }
-          
+
           monthCalendar.push({
             date: dayDate,
             totalPL,
@@ -285,7 +295,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             isCurrentMonth
           });
         }
-        
+
         allTimeData.push({
           month: currentDate,
           monthName: format(currentDate, 'MMM yyyy'),
@@ -293,10 +303,10 @@ export const Calendar: React.FC<CalendarProps> = ({
           monthlyPL,
           monthlyTrades
         });
-        
+
         currentDate = addMonths(currentDate, 1);
       }
-      
+
       return allTimeData;
     } else {
       // Regular monthly view with weekly data
@@ -304,17 +314,17 @@ export const Calendar: React.FC<CalendarProps> = ({
       const monthEnd = endOfMonth(currentMonth);
       const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 });
       const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
-      
+
       const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
-      
+
       return days.map(day => {
         const dayTrades = trades.filter(trade => {
           const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
           return isSameDay(tradeDate, day);
         });
-        
-        const totalPL = dayTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
-        
+
+        const totalPL = getAdjustedPL(dayTrades.reduce((sum, trade) => sum + trade.realizedPL, 0), dayTrades.length);
+
         return {
           date: day,
           totalPL,
@@ -324,27 +334,27 @@ export const Calendar: React.FC<CalendarProps> = ({
         };
       });
     }
-  }, [trades, currentMonth, selectedChartView, tradeDataRange]);
+  }, [trades, currentMonth, selectedChartView, tradeDataRange, applyCommission, commissionAmount, getAdjustedPL]);
 
   // Calculate weekly P&L data
   const weeklyData = useMemo((): WeekData[] => {
     if (selectedChartView === '1y' || selectedChartView === 'all' || !Array.isArray(calendarData)) return [];
-    
+
     const dailyData = calendarData as DayData[];
     const weeks: WeekData[] = [];
-    
+
     for (let i = 0; i < dailyData.length; i += 7) {
       const weekDays = dailyData.slice(i, i + 7);
-      
+
       // Calculate weekly totals
       const weekTotalPL = weekDays.reduce((sum, day) => sum + day.totalPL, 0);
       const weekTotalTrades = weekDays.reduce((sum, day) => sum + day.tradeCount, 0);
       const weekHasData = weekDays.some(day => day.hasData);
-      
+
       // Get week start (Sunday) and end (Saturday)
       const weekStart = startOfWeek(weekDays[0].date, { weekStartsOn: 0 });
       const weekEnd = endOfWeek(weekDays[0].date, { weekStartsOn: 0 });
-      
+
       weeks.push({
         weekStart,
         weekEnd,
@@ -354,7 +364,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         days: weekDays
       });
     }
-    
+
     return weeks;
   }, [calendarData, selectedChartView]);
 
@@ -367,12 +377,12 @@ export const Calendar: React.FC<CalendarProps> = ({
     } else if (Math.abs(amount) >= 1000) {
       return `${amount > 0 ? '+' : ''}${(amount / 1000).toFixed(1)}k`;
     }
-    
+
     // For mobile, be more aggressive with shortening
     if (isMobile && Math.abs(amount) >= 100) {
       return `${amount > 0 ? '+' : ''}${Math.round(amount)}`;
     }
-    
+
     return `${amount > 0 ? '+' : ''}${Math.round(amount)}`;
   };
 
@@ -444,7 +454,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const isInSelectedRange = useCallback((date: Date): boolean => {
     if (!firstDate) return false;
     if (!secondDate) return isSameDay(date, firstDate);
-    
+
     return isWithinInterval(date, {
       start: startOfDay(firstDate),
       end: endOfDay(secondDate)
@@ -456,14 +466,14 @@ export const Calendar: React.FC<CalendarProps> = ({
     const inRange = isInSelectedRange(day.date);
     const isTodayDate = isToday(day.date);
     const isSelectedDay = isSameDay(day.date, selectedDate);
-    
+
     let classes = 'relative h-14 sm:h-16 md:h-20 border border-slate-200 dark:border-slate-700 cursor-pointer transition-all duration-300 ';
-    
+
     // Currently selected day for daily view (highest priority)
     if (isSelectedDay) {
       classes += 'ring-2 ring-amber-400 ring-offset-2 ring-offset-white dark:ring-offset-slate-800 ';
     }
-    
+
     // Range selection styling
     if (inRange && (firstDate || secondDate)) {
       if (firstDate && isSameDay(day.date, firstDate)) {
@@ -502,7 +512,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     else {
       classes += 'bg-slate-50 dark:bg-slate-900 opacity-50 ';
     }
-    
+
     return classes;
   }, [selectedDate, isInSelectedRange, firstDate, secondDate]);
 
@@ -511,22 +521,22 @@ export const Calendar: React.FC<CalendarProps> = ({
     const isFirstDate = firstDate && isSameDay(day.date, firstDate);
     const isSecondDate = secondDate && isSameDay(day.date, secondDate);
     const inRange = isInSelectedRange(day.date);
-    
+
     // Selected range dates
     if (isFirstDate || isSecondDate) {
       return 'text-white';
     }
-    
+
     // In range
     if (inRange && (firstDate || secondDate)) {
       return 'text-amber-900 dark:text-amber-100';
     }
-    
+
     // Non-current month
     if (!day.isCurrentMonth) {
       return 'text-slate-400 dark:text-slate-500';
     }
-    
+
     // Days with trading data
     if (day.hasData) {
       if (day.totalPL > 0) {
@@ -535,7 +545,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         return 'text-rose-800 dark:text-rose-200';
       }
     }
-    
+
     // Regular days
     return 'text-slate-900 dark:text-slate-100';
   }, [firstDate, secondDate, isInSelectedRange]);
@@ -543,10 +553,10 @@ export const Calendar: React.FC<CalendarProps> = ({
   // Calculate range statistics
   const rangeStats = useMemo(() => {
     if (!firstDate) return null;
-    
+
     const startDate = firstDate;
     const endDate = secondDate || firstDate;
-    
+
     const rangeTrades = trades.filter(trade => {
       const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
       return isWithinInterval(tradeDate, {
@@ -554,15 +564,16 @@ export const Calendar: React.FC<CalendarProps> = ({
         end: endOfDay(endDate)
       });
     });
-    
-    const totalPL = rangeTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
-    const wins = rangeTrades.filter(trade => trade.realizedPL > 0).length;
-    const losses = rangeTrades.filter(trade => trade.realizedPL < 0).length;
+
+    const totalPLBeforeCommission = rangeTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
+    const totalPL = getAdjustedPL(totalPLBeforeCommission, rangeTrades.length);
+    const wins = rangeTrades.filter(trade => getAdjustedPL(trade.realizedPL, 1) > 0).length;
+    const losses = rangeTrades.filter(trade => getAdjustedPL(trade.realizedPL, 1) < 0).length;
     const dayCount = secondDate ? differenceInDays(endDate, startDate) + 1 : 1;
-    
+
     // Calculate average per day
     const avgPerDay = dayCount > 0 ? totalPL / dayCount : 0;
-    
+
     return {
       totalPL,
       tradeCount: rangeTrades.length,
@@ -572,7 +583,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       avgPerDay,
       winRate: rangeTrades.length > 0 ? (wins / rangeTrades.length) * 100 : 0
     };
-  }, [firstDate, secondDate, trades]);
+  }, [firstDate, secondDate, trades, getAdjustedPL]);
 
   return (
     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 p-3 sm:p-6">
@@ -586,7 +597,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             Trading Calendar
           </h3>
         </div>
-        
+
         <div className="flex items-center space-x-2 sm:space-x-4 w-full sm:w-auto">
           {/* Date Range Display with Clear */}
           {(firstDate || secondDate) && (
@@ -606,8 +617,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                   </span>
                 </div>
               ) : null}
-              
-              <button 
+
+              <button
                 onClick={(e) => {
                   e.stopPropagation();
                   clearSelection();
@@ -619,7 +630,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               </button>
             </div>
           )}
-          
+
           {/* Month Navigation - Only show for monthly view */}
           {selectedChartView === '1m' && (
             <div className="flex items-center space-x-2">
@@ -630,11 +641,11 @@ export const Calendar: React.FC<CalendarProps> = ({
               >
                 <ChevronLeft className="h-5 w-5 text-slate-600 dark:text-slate-400" />
               </button>
-              
+
               <h4 className="text-lg font-semibold text-slate-900 dark:text-white min-w-[120px] sm:min-w-[140px] text-center">
                 {format(currentMonth, 'MMM yyyy')}
               </h4>
-              
+
               <button
                 onClick={() => onMonthChange(addMonths(currentMonth, 1))}
                 className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all duration-200 hover:scale-105"
@@ -650,13 +661,65 @@ export const Calendar: React.FC<CalendarProps> = ({
       {/* Dropdown Controls */}
       <div className="mb-6">
         <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
             <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center">
               <TrendingUp className="h-4 w-4 mr-2" />
               Analysis Controls
             </h4>
+
+            {/* Commission Toggle */}
+            <div className="flex items-center space-x-3 bg-white dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-200 dark:border-slate-600">
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setApplyCommission(!applyCommission)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200 ${
+                    applyCommission
+                      ? 'bg-emerald-500 hover:bg-emerald-600'
+                      : 'bg-slate-300 dark:bg-slate-600 hover:bg-slate-400 dark:hover:bg-slate-500'
+                  }`}
+                  title={applyCommission ? 'Commission enabled' : 'Commission disabled'}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform duration-200 ${
+                      applyCommission ? 'translate-x-5' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Commission
+                </span>
+              </div>
+
+              {/* Commission Input */}
+              {applyCommission && (
+                <div className="flex items-center space-x-1">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Per Trade:</span>
+                  <div className="relative">
+                    <DollarSign className="absolute left-2 top-2 h-4 w-4 text-slate-400 dark:text-slate-500 pointer-events-none" />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={commissionAmount}
+                      onChange={(e) => setCommissionAmount(parseFloat(e.target.value) || 0)}
+                      placeholder="0.00"
+                      className="w-16 pl-6 pr-2 py-1 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all duration-200"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-          
+
+          {/* Commission Notice */}
+          {applyCommission && commissionAmount > 0 && (
+            <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+              <p className="text-xs sm:text-sm text-emerald-800 dark:text-emerald-200">
+                <span className="font-semibold">${commissionAmount.toFixed(2)}</span> commission per trade will be deducted from P&L calculations
+              </p>
+            </div>
+          )}
+
           {/* Dropdown Controls Row */}
           <div className="flex flex-col sm:flex-row gap-3">
             {/* Range Selection Dropdown */}
@@ -676,7 +739,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 </div>
                 <ChevronDown className={`h-4 w-4 text-slate-500 transition-transform duration-200 ${showRangeDropdown ? 'rotate-180' : ''}`} />
               </button>
-              
+
               {showRangeDropdown && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
                   {RANGE_PRESETS.map((preset) => (
@@ -709,7 +772,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 </div>
                 <ChevronDown className={`h-4 w-4 text-slate-500 transition-transform duration-200 ${showChartDropdown ? 'rotate-180' : ''}`} />
               </button>
-              
+
               {showChartDropdown && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg z-10">
                   {CHART_VIEWS.map((view) => (
@@ -736,7 +799,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               <h5 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
                 Custom Date Range
               </h5>
-              
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
                 {/* From Date */}
                 <div>
@@ -751,7 +814,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                         const newDate = new Date(e.target.value);
                         setFirstDate(newDate);
                         onDateSelect(newDate);
-                        // If second date is before first date, clear it
                         if (secondDate && isBefore(secondDate, newDate)) {
                           setSecondDate(null);
                         }
@@ -762,7 +824,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm transition-all duration-200"
                   />
                 </div>
-                
+
                 {/* To Date */}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
@@ -774,10 +836,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                     onChange={(e) => {
                       if (e.target.value) {
                         const newDate = new Date(e.target.value);
-                        // Only set if we have a first date and this date is after it
                         if (firstDate) {
                           if (isBefore(newDate, firstDate)) {
-                            // If selected date is before first date, swap them
                             setSecondDate(firstDate);
                             setFirstDate(newDate);
                             onDateSelect(newDate);
@@ -785,7 +845,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                             setSecondDate(newDate);
                           }
                         } else {
-                          // If no first date, this becomes the first date
                           setFirstDate(newDate);
                           onDateSelect(newDate);
                         }
@@ -797,7 +856,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm transition-all duration-200"
                   />
                 </div>
-                
+
                 {/* Clear Button */}
                 <div>
                   <button
@@ -813,7 +872,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                   </button>
                 </div>
               </div>
-              
+
               {/* Range Status */}
               {firstDate && (
                 <div className="mt-3 text-center">
@@ -844,13 +903,13 @@ export const Calendar: React.FC<CalendarProps> = ({
         <div className="space-y-6">
           <div className="text-center mb-4">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-              {selectedChartView === '1y' 
+              {selectedChartView === '1y'
                 ? `${new Date().getFullYear()} Trading Calendar`
                 : `YTD Trading Calendar (${format(tradeDataRange.earliest, 'yyyy')} - ${format(tradeDataRange.latest, 'yyyy')})`
               }
             </h3>
           </div>
-          
+
           {/* Year grid - 4 months per row */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {(calendarData as MonthData[]).map((monthData: MonthData) => {
@@ -858,7 +917,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               for (let i = 0; i < monthData.days.length; i += 7) {
                 weeks.push(monthData.days.slice(i, i + 7));
               }
-              
+
               return (
                 <div key={monthData.monthName} className="bg-slate-50 dark:bg-slate-900 rounded-lg p-3">
                   {/* Month header with P&L */}
@@ -879,7 +938,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       </div>
                     )}
                   </div>
-                  
+
                   {/* Mini day headers */}
                   <div className="grid grid-cols-7 gap-1 mb-2">
                     {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
@@ -888,28 +947,28 @@ export const Calendar: React.FC<CalendarProps> = ({
                       </div>
                     ))}
                   </div>
-                  
+
                   {/* Mini calendar days */}
                   {weeks.map((week: DayData[], weekIndex: number) => (
                     <div key={weekIndex} className="grid grid-cols-7 gap-1 mb-1">
                       {week.map((day: DayData, dayIndex: number) => {
                         const isTodayDate = isToday(day.date);
                         const isCurrentMonthDay = day.isCurrentMonth;
-                        
+
                         let colorClass = 'bg-slate-200 dark:bg-slate-700';
-                        
+
                         if (isCurrentMonthDay && day.hasData) {
                           if (day.totalPL > 0) {
                             colorClass = 'bg-green-500';
                           } else if (day.totalPL < 0) {
                             colorClass = 'bg-red-500';
                           } else {
-                            colorClass = 'bg-gray-400'; // Breakeven
+                            colorClass = 'bg-gray-400';
                           }
                         } else if (!isCurrentMonthDay) {
                           colorClass = 'bg-slate-100 dark:bg-slate-800';
                         }
-                        
+
                         return (
                           <div
                             key={dayIndex}
@@ -931,7 +990,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               );
             })}
           </div>
-          
+
           {/* Year view legend */}
           <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 mt-6 text-xs sm:text-sm">
             <div className="flex items-center space-x-1 sm:space-x-2">
@@ -994,7 +1053,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       {format(day.date, 'd')}
                     </span>
                   </div>
-                  
+
                   {/* Selection Indicators for Range */}
                   {firstDate && isSameDay(day.date, firstDate) && (
                     <div className="absolute top-1 sm:top-2 right-1 sm:right-2">
@@ -1010,19 +1069,19 @@ export const Calendar: React.FC<CalendarProps> = ({
                       </div>
                     </div>
                   )}
-                  
+
                   {/* Today Indicator */}
                   {isToday(day.date) && !isInSelectedRange(day.date) && (
                     <div className="absolute top-1 sm:top-2 right-1 sm:right-2">
                       <div className="w-2 h-2 bg-amber-500 rounded-full shadow-sm"></div>
                     </div>
                   )}
-                  
+
                   {/* Trading Data - Improved mobile formatting */}
                   {day.hasData && day.isCurrentMonth && (
                     <div className="absolute bottom-1 sm:bottom-2 left-1 sm:left-2 right-1 sm:right-2">
                       <div className={`text-xs font-semibold truncate ${getTextColor(day)}`}>
-                        {formatCompactPL(day.totalPL, window.innerWidth < 640)}
+                        {formatCompactPL(day.totalPL, typeof window !== 'undefined' && window.innerWidth < 640)}
                       </div>
                       <div className={`text-xs truncate opacity-75 ${getTextColor(day)} hidden sm:block`}>
                         {day.tradeCount} trade{day.tradeCount !== 1 ? 's' : ''}
@@ -1031,25 +1090,28 @@ export const Calendar: React.FC<CalendarProps> = ({
                   )}
                 </div>
               ))}
-              
+
               {/* Weekly P&L Cell */}
-              <div className={`relative h-14 sm:h-16 md:h-20 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center ${
-                week.hasData 
-                  ? week.totalPL >= 0 
-                    ? 'bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/30 dark:to-teal-900/30 border-emerald-300 dark:border-emerald-700'
-                    : 'bg-gradient-to-br from-rose-100 to-red-100 dark:from-rose-900/30 dark:to-red-900/30 border-rose-300 dark:border-rose-700'
-                  : 'bg-slate-50 dark:bg-slate-900'
-              }`}
-              title={week.hasData ? `Week of ${format(week.weekStart, 'MMM d')}: ${formatCurrency(week.totalPL)} (${week.tradeCount} trades)` : `Week of ${format(week.weekStart, 'MMM d')}: No trades`}
+              <div
+                className={`relative h-14 sm:h-16 md:h-20 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center ${
+                  week.hasData
+                    ? week.totalPL >= 0
+                      ? 'bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/30 dark:to-teal-900/30 border-emerald-300 dark:border-emerald-700'
+                      : 'bg-gradient-to-br from-rose-100 to-red-100 dark:from-rose-900/30 dark:to-red-900/30 border-rose-300 dark:border-rose-700'
+                    : 'bg-slate-50 dark:bg-slate-900'
+                }`}
+                title={week.hasData ? `Week of ${format(week.weekStart, 'MMM d')}: ${formatCurrency(week.totalPL)} (${week.tradeCount} trades)` : `Week of ${format(week.weekStart, 'MMM d')}: No trades`}
               >
                 {week.hasData && (
                   <>
-                    <div className={`text-xs sm:text-sm font-bold ${
-                      week.totalPL >= 0 
-                        ? 'text-emerald-700 dark:text-emerald-300' 
-                        : 'text-rose-700 dark:text-rose-300'
-                    }`}>
-                      {formatCompactPL(week.totalPL, window.innerWidth < 640)}
+                    <div
+                      className={`text-xs sm:text-sm font-bold ${
+                        week.totalPL >= 0
+                          ? 'text-emerald-700 dark:text-emerald-300'
+                          : 'text-rose-700 dark:text-rose-300'
+                      }`}
+                    >
+                      {formatCompactPL(week.totalPL, typeof window !== 'undefined' && window.innerWidth < 640)}
                     </div>
                     <div className="text-xs text-slate-600 dark:text-slate-400 mt-1 hidden sm:block">
                       {week.tradeCount} trade{week.tradeCount !== 1 ? 's' : ''}
@@ -1101,7 +1163,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 {secondDate && ` - ${format(secondDate, 'MMM d, yyyy')}`}
               </p>
             </div>
-            
+
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
               {/* Days (only show if range) */}
               {secondDate && (
@@ -1114,25 +1176,29 @@ export const Calendar: React.FC<CalendarProps> = ({
                   </div>
                 </div>
               )}
-              
+
               {/* Total P&L */}
               <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
-                <div className={`text-xl sm:text-2xl font-bold ${
-                  rangeStats.totalPL >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                }`}>
+                <div
+                  className={`text-xl sm:text-2xl font-bold ${
+                    rangeStats.totalPL >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                  }`}
+                >
                   {formatCurrency(rangeStats.totalPL)}
                 </div>
                 <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 font-medium">
                   Total P&L
                 </div>
               </div>
-              
+
               {/* Average per day (only if range) */}
               {secondDate && (
                 <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
-                  <div className={`text-xl sm:text-2xl font-bold ${
-                    rangeStats.avgPerDay >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                  }`}>
+                  <div
+                    className={`text-xl sm:text-2xl font-bold ${
+                      rangeStats.avgPerDay >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                    }`}
+                  >
                     {formatCurrency(rangeStats.avgPerDay)}
                   </div>
                   <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 font-medium">
@@ -1140,7 +1206,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                   </div>
                 </div>
               )}
-              
+
               {/* Total Trades */}
               <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
                 <div className="text-xl sm:text-2xl font-bold text-amber-900 dark:text-amber-100">
@@ -1150,19 +1216,21 @@ export const Calendar: React.FC<CalendarProps> = ({
                   Trade{rangeStats.tradeCount !== 1 ? 's' : ''}
                 </div>
               </div>
-              
+
               {/* Win Rate */}
               <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
-                <div className={`text-xl sm:text-2xl font-bold ${
-                  rangeStats.winRate >= 50 ? 'text-emerald-600' : 'text-rose-600'
-                }`}>
+                <div
+                  className={`text-xl sm:text-2xl font-bold ${
+                    rangeStats.winRate >= 50 ? 'text-emerald-600' : 'text-rose-600'
+                  }`}
+                >
                   {rangeStats.winRate.toFixed(1)}%
                 </div>
                 <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 font-medium">
                   Win Rate
                 </div>
               </div>
-              
+
               {/* Wins */}
               <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
                 <div className="text-xl sm:text-2xl font-bold text-emerald-600">
@@ -1172,7 +1240,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                   Win{rangeStats.winCount !== 1 ? 's' : ''}
                 </div>
               </div>
-              
+
               {/* Losses */}
               <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
                 <div className="text-xl sm:text-2xl font-bold text-rose-600">
@@ -1186,7 +1254,6 @@ export const Calendar: React.FC<CalendarProps> = ({
           </div>
         </div>
       )}
-
     </div>
   );
 };
