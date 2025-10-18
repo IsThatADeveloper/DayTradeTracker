@@ -10,22 +10,21 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  // CRITICAL FIX: Use relative base path for custom domains
-  base: './',
+  // Try absolute path first (works better with Cloudflare Pages)
+  base: '/',
   build: {
-    // Ensure assets use relative paths
+    outDir: 'dist',
     assetsDir: 'assets',
-    // Generate relative paths in index.html
+    // Important: generate manifest for proper asset loading
+    manifest: true,
     rollupOptions: {
       output: {
         manualChunks: undefined,
+        // Ensure consistent naming
+        entryFileNames: 'assets/[name].[hash].js',
+        chunkFileNames: 'assets/[name].[hash].js',
+        assetFileNames: 'assets/[name].[hash].[ext]'
       },
-    },
-  },
-  // Ensure proper MIME types
-  server: {
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
     },
   },
 });
