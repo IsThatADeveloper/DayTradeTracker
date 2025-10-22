@@ -1,6 +1,20 @@
-// src/components/Calendar.tsx - Enhanced Calendar with Weekly P&L Display
+// src/components/Calendar.tsx - Enhanced Calendar with CSV Upload and Weekly P&L Display
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, TrendingUp, Clock, ChevronDown, BarChart3, DollarSign } from 'lucide-react';
+import { 
+  ChevronLeft, 
+  ChevronRight, 
+  Calendar as CalendarIcon, 
+  TrendingUp, 
+  Clock, 
+  ChevronDown, 
+  BarChart3, 
+  DollarSign,
+  Upload,
+  FileText,
+  CheckCircle,
+  AlertCircle,
+  X
+} from 'lucide-react';
 import {
   format,
   addMonths,
@@ -19,7 +33,8 @@ import {
   isBefore,
   differenceInDays,
   subDays,
-  startOfYear
+  startOfYear,
+  parse
 } from 'date-fns';
 
 // Types
@@ -34,6 +49,15 @@ interface CalendarProps {
   currentMonth: Date;
   onDateDoubleClick?: (date: Date) => void;
   onChartViewChange?: (view: string) => void;
+  onTradesAdded?: (trades: Trade[]) => void;
+}
+
+// CSV Upload Result Interface
+interface CSVUploadResult {
+  success: boolean;
+  tradesImported: number;
+  errors: string[];
+  warnings: string[];
 }
 
 // Additional type definitions for calendar data
@@ -92,6 +116,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   currentMonth,
   onDateDoubleClick,
   onChartViewChange,
+  onTradesAdded,
 }) => {
   // Two-date selection state
   const [firstDate, setFirstDate] = useState<Date | null>(null);
@@ -107,6 +132,12 @@ export const Calendar: React.FC<CalendarProps> = ({
   // Commission states
   const [applyCommission, setApplyCommission] = useState(false);
   const [commissionAmount, setCommissionAmount] = useState<number>(0);
+
+  // CSV Upload states
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadResult, setUploadResult] = useState<CSVUploadResult | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Refs for dropdown management
   const rangeDropdownRef = useRef<HTMLDivElement>(null);
@@ -154,6 +185,260 @@ export const Calendar: React.FC<CalendarProps> = ({
     return pl - (commissionAmount * tradeCount);
   }, [applyCommission, commissionAmount]);
 
+  // CSV Parsing Function
+  const parseCSV = useCallback((csvText: string): CSVUploadResult => {
+    const result: CSVUploadResult = {
+      success: false,
+      tradesImported: 0,
+      errors: [],
+      warnings: []
+    };
+
+    // Helper function to parse direction with proper typing
+    const parseDirection = (directionValue: string) => {
+      const normalized = directionValue.toLowerCase();
+      if (normalized.includes('long') || normalized.includes('buy')) {
+        return 'long' as const;
+      }
+      return 'short' as const;
+    };
+
+    try {
+      const lines = csvText.trim().split('\n');
+      if (lines.length < 2) {
+        result.errors.push('CSV file is empty or has no data rows');
+        return result;
+      }
+
+      // Parse header
+      const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+      
+      // Common header variations
+      const headerMap: { [key: string]: string[] } = {
+        timestamp: ['time', 'timestamp', 'date', 'datetime', 'date/time'],
+        ticker: ['ticker', 'symbol', 'stock', 'instrument'],
+        direction: ['direction', 'side', 'type', 'action', 'buy/sell'],
+        quantity: ['quantity', 'qty', 'shares', 'amount', 'size'],
+        entryPrice: ['entry price', 'entry', 'buy price', 'open price', 'price'],
+        exitPrice: ['exit price', 'exit', 'sell price', 'close price'],
+        realizedPL: ['realized p&l', 'realized pl', 'p&l', 'pl', 'profit/loss', 'profit', 'pnl'],
+        notes: ['notes', 'note', 'comment', 'comments', 'description']
+      };
+
+      // Find column indices
+      const columnIndices: { [key: string]: number } = {};
+      for (const [key, variations] of Object.entries(headerMap)) {
+        const index = header.findIndex(h => variations.some(v => h.includes(v)));
+        if (index !== -1) {
+          columnIndices[key] = index;
+        }
+      }
+
+      // Validate required columns
+      const requiredColumns = ['timestamp', 'ticker', 'direction', 'quantity', 'entryPrice', 'exitPrice', 'realizedPL'];
+      const missingColumns = requiredColumns.filter(col => columnIndices[col] === undefined);
+      
+      if (missingColumns.length > 0) {
+        result.errors.push(`Missing required columns: ${missingColumns.join(', ')}`);
+        result.warnings.push('Expected columns: Time/Date, Ticker/Symbol, Direction/Side, Quantity, Entry Price, Exit Price, Realized P&L');
+        return result;
+      }
+
+      // Parse data rows
+      const newTrades: Trade[] = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        try {
+          // Handle quoted values (CSV with commas in quotes)
+          const values: string[] = [];
+          let currentValue = '';
+          let insideQuotes = false;
+          
+          for (let char of line) {
+            if (char === '"') {
+              insideQuotes = !insideQuotes;
+            } else if (char === ',' && !insideQuotes) {
+              values.push(currentValue.trim());
+              currentValue = '';
+            } else {
+              currentValue += char;
+            }
+          }
+          values.push(currentValue.trim());
+
+          // Parse timestamp - try multiple formats
+          const timestampStr = values[columnIndices.timestamp]?.replace(/"/g, '') || '';
+          let timestamp: Date = new Date(); // Initialize with default
+          
+          // Try various date formats
+          const dateFormats = [
+            'M/d/yyyy H:mm:ss',
+            'M/d/yyyy h:mm:ss a',
+            'yyyy-MM-dd HH:mm:ss',
+            'yyyy-MM-dd\'T\'HH:mm:ss',
+            'MM/dd/yyyy HH:mm:ss',
+            'dd/MM/yyyy HH:mm:ss',
+            'M/d/yyyy',
+            'yyyy-MM-dd'
+          ];
+
+          let parsed = false;
+          for (const dateFormat of dateFormats) {
+            try {
+              const parsedDate = parse(timestampStr, dateFormat, new Date());
+              if (!isNaN(parsedDate.getTime())) {
+                timestamp = parsedDate;
+                parsed = true;
+                break;
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+
+          if (!parsed) {
+            // Try native Date parsing as fallback
+            const fallbackDate = new Date(timestampStr);
+            if (isNaN(fallbackDate.getTime())) {
+              result.warnings.push(`Row ${i + 1}: Invalid date format "${timestampStr}"`);
+              continue;
+            }
+            timestamp = fallbackDate;
+          }
+
+          const ticker = values[columnIndices.ticker]?.replace(/"/g, '').toUpperCase() || '';
+          const directionValue = values[columnIndices.direction]?.replace(/"/g, '') || 'long';
+          const quantity = parseFloat(values[columnIndices.quantity]?.replace(/[^0-9.-]/g, '') || '0');
+          const entryPrice = parseFloat(values[columnIndices.entryPrice]?.replace(/[^0-9.-]/g, '') || '0');
+          const exitPrice = parseFloat(values[columnIndices.exitPrice]?.replace(/[^0-9.-]/g, '') || '0');
+          const realizedPL = parseFloat(values[columnIndices.realizedPL]?.replace(/[^0-9.-]/g, '') || '0');
+          const notes = columnIndices.notes !== undefined ? values[columnIndices.notes]?.replace(/"/g, '') : '';
+
+          // Validate data
+          if (!ticker || quantity <= 0 || entryPrice <= 0 || exitPrice <= 0) {
+            result.warnings.push(`Row ${i + 1}: Invalid data - skipping`);
+            continue;
+          }
+
+          // Create trade with proper direction
+          const tradeDirection = parseDirection(directionValue);
+          
+          const trade: Trade = {
+            id: `csv-import-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            timestamp: timestamp,
+            ticker: ticker,
+            direction: tradeDirection,
+            quantity: quantity,
+            entryPrice: entryPrice,
+            exitPrice: exitPrice,
+            realizedPL: realizedPL,
+            notes: notes || `Imported from CSV`,
+            updateCount: 0,
+            lastUpdated: new Date()
+          };
+
+          newTrades.push(trade);
+        } catch (error) {
+          result.warnings.push(`Row ${i + 1}: ${error instanceof Error ? error.message : 'Parse error'}`);
+        }
+      }
+
+      if (newTrades.length > 0) {
+        result.success = true;
+        result.tradesImported = newTrades.length;
+        
+        console.log('📊 CSV Parse Success:', {
+          tradesImported: newTrades.length,
+          sampleTrade: newTrades[0],
+          hasCallback: !!onTradesAdded
+        });
+        
+        // Call the callback to add trades
+        if (onTradesAdded) {
+          console.log('🚀 Calling onTradesAdded with', newTrades.length, 'trades');
+          onTradesAdded(newTrades);
+          console.log('✅ onTradesAdded callback completed');
+        } else {
+          console.warn('⚠️ onTradesAdded callback is not defined!');
+        }
+      } else {
+        result.errors.push('No valid trades found in CSV file');
+        console.log('❌ No valid trades parsed from CSV');
+      }
+
+    } catch (error) {
+      result.errors.push(`CSV parsing error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+
+    return result;
+  }, [onTradesAdded]);
+
+  // Handle file selection
+  const handleFileSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    console.log('📁 File selected:', file?.name);
+    
+    if (!file) return;
+
+    // Validate file type
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      console.log('❌ Invalid file type');
+      setUploadResult({
+        success: false,
+        tradesImported: 0,
+        errors: ['Please select a CSV file'],
+        warnings: []
+      });
+      setShowUploadModal(true);
+      return;
+    }
+
+    console.log('✅ Valid CSV file, starting parse...');
+    setIsUploading(true);
+    setUploadResult(null);
+
+    try {
+      const text = await file.text();
+      console.log('📄 File content length:', text.length, 'characters');
+      console.log('📄 First 200 chars:', text.substring(0, 200));
+      
+      const result = parseCSV(text);
+      console.log('📊 Parse result:', result);
+      
+      setUploadResult(result);
+      setShowUploadModal(true);
+    } catch (error) {
+      console.error('💥 File read error:', error);
+      setUploadResult({
+        success: false,
+        tradesImported: 0,
+        errors: [`Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`],
+        warnings: []
+      });
+      setShowUploadModal(true);
+    } finally {
+      setIsUploading(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, [parseCSV]);
+
+  // Trigger file input click
+  const handleUploadClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  // Close upload modal
+  const closeUploadModal = useCallback(() => {
+    setShowUploadModal(false);
+    setUploadResult(null);
+  }, []);
+
   // Calendar data calculation with weekly P&L
   const calendarData = useMemo((): MonthData[] | DayData[] => {
     if (selectedChartView === '1y') {
@@ -165,31 +450,27 @@ export const Calendar: React.FC<CalendarProps> = ({
         const monthStart = new Date(currentYear, month, 1);
         const monthEnd = new Date(currentYear, month + 1, 0);
         const daysInMonth = monthEnd.getDate();
-        const firstDayOfWeek = monthStart.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const firstDayOfWeek = monthStart.getDay();
 
         const monthCalendar: DayData[] = [];
         let monthlyPL = 0;
         let monthlyTrades = 0;
 
-        // Create exactly 42 days (6 weeks × 7 days) for consistent layout
         for (let dayIndex = 0; dayIndex < 42; dayIndex++) {
           let currentDate: Date;
           let isCurrentMonth = false;
 
           if (dayIndex < firstDayOfWeek) {
-            // Days from previous month
             const prevMonth = month === 0 ? 11 : month - 1;
             const prevYear = month === 0 ? currentYear - 1 : currentYear;
             const prevMonthLastDay = new Date(prevYear, prevMonth + 1, 0).getDate();
             const dayOfPrevMonth = prevMonthLastDay - (firstDayOfWeek - dayIndex - 1);
             currentDate = new Date(prevYear, prevMonth, dayOfPrevMonth);
           } else if (dayIndex - firstDayOfWeek + 1 <= daysInMonth) {
-            // Days from current month
             const dayOfCurrentMonth = dayIndex - firstDayOfWeek + 1;
             currentDate = new Date(currentYear, month, dayOfCurrentMonth);
             isCurrentMonth = true;
           } else {
-            // Days from next month
             const nextMonth = month === 11 ? 0 : month + 1;
             const nextYear = month === 11 ? currentYear + 1 : currentYear;
             const dayOfNextMonth = dayIndex - firstDayOfWeek - daysInMonth + 1;
@@ -203,7 +484,6 @@ export const Calendar: React.FC<CalendarProps> = ({
 
           const totalPL = getAdjustedPL(dayTrades.reduce((sum, trade) => sum + trade.realizedPL, 0), dayTrades.length);
 
-          // Add to monthly totals if it's a current month day
           if (isCurrentMonth && dayTrades.length > 0) {
             monthlyPL += totalPL;
             monthlyTrades += dayTrades.length;
@@ -229,7 +509,6 @@ export const Calendar: React.FC<CalendarProps> = ({
 
       return yearData;
     } else if (selectedChartView === 'all') {
-      // For YTD view, show months from earliest to latest trade
       const allTimeData: MonthData[] = [];
 
       if (trades.length === 0) return allTimeData;
@@ -249,25 +528,21 @@ export const Calendar: React.FC<CalendarProps> = ({
         let monthlyPL = 0;
         let monthlyTrades = 0;
 
-        // Create exactly 42 days (6 weeks × 7 days) for consistent layout
         for (let dayIndex = 0; dayIndex < 42; dayIndex++) {
           let dayDate: Date;
           let isCurrentMonth = false;
 
           if (dayIndex < firstDayOfWeek) {
-            // Days from previous month
             const prevMonth = currentDate.getMonth() === 0 ? 11 : currentDate.getMonth() - 1;
             const prevYear = currentDate.getMonth() === 0 ? currentDate.getFullYear() - 1 : currentDate.getFullYear();
             const prevMonthLastDay = new Date(prevYear, prevMonth + 1, 0).getDate();
             const dayOfPrevMonth = prevMonthLastDay - (firstDayOfWeek - dayIndex - 1);
             dayDate = new Date(prevYear, prevMonth, dayOfPrevMonth);
           } else if (dayIndex - firstDayOfWeek + 1 <= daysInMonth) {
-            // Days from current month
             const dayOfCurrentMonth = dayIndex - firstDayOfWeek + 1;
             dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dayOfCurrentMonth);
             isCurrentMonth = true;
           } else {
-            // Days from next month
             const nextMonth = currentDate.getMonth() === 11 ? 0 : currentDate.getMonth() + 1;
             const nextYear = currentDate.getMonth() === 11 ? currentDate.getFullYear() + 1 : currentDate.getFullYear();
             const dayOfNextMonth = dayIndex - firstDayOfWeek - daysInMonth + 1;
@@ -281,7 +556,6 @@ export const Calendar: React.FC<CalendarProps> = ({
 
           const totalPL = getAdjustedPL(dayTrades.reduce((sum, trade) => sum + trade.realizedPL, 0), dayTrades.length);
 
-          // Add to monthly totals if it's a current month day
           if (isCurrentMonth && dayTrades.length > 0) {
             monthlyPL += totalPL;
             monthlyTrades += dayTrades.length;
@@ -309,7 +583,6 @@ export const Calendar: React.FC<CalendarProps> = ({
 
       return allTimeData;
     } else {
-      // Regular monthly view with weekly data
       const monthStart = startOfMonth(currentMonth);
       const monthEnd = endOfMonth(currentMonth);
       const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 });
@@ -346,12 +619,10 @@ export const Calendar: React.FC<CalendarProps> = ({
     for (let i = 0; i < dailyData.length; i += 7) {
       const weekDays = dailyData.slice(i, i + 7);
 
-      // Calculate weekly totals
       const weekTotalPL = weekDays.reduce((sum, day) => sum + day.totalPL, 0);
       const weekTotalTrades = weekDays.reduce((sum, day) => sum + day.tradeCount, 0);
       const weekHasData = weekDays.some(day => day.hasData);
 
-      // Get week start (Sunday) and end (Saturday)
       const weekStart = startOfWeek(weekDays[0].date, { weekStartsOn: 0 });
       const weekEnd = endOfWeek(weekDays[0].date, { weekStartsOn: 0 });
 
@@ -368,7 +639,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     return weeks;
   }, [calendarData, selectedChartView]);
 
-  // Format compact P&L - improved for mobile
+  // Format compact P&L
   const formatCompactPL = (amount: number, isMobile: boolean = false): string => {
     if (Math.abs(amount) >= 100000) {
       return `${amount > 0 ? '+' : ''}${(amount / 1000).toFixed(0)}k`;
@@ -378,7 +649,6 @@ export const Calendar: React.FC<CalendarProps> = ({
       return `${amount > 0 ? '+' : ''}${(amount / 1000).toFixed(1)}k`;
     }
 
-    // For mobile, be more aggressive with shortening
     if (isMobile && Math.abs(amount) >= 100) {
       return `${amount > 0 ? '+' : ''}${Math.round(amount)}`;
     }
@@ -437,9 +707,8 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   }, [onChartViewChange]);
 
-  // Handle day click - only for daily view selection
+  // Handle day click
   const handleDayClick = useCallback((date: Date) => {
-    // Only update the main selected date for daily view
     onDateSelect(date);
   }, [onDateSelect]);
 
@@ -469,12 +738,10 @@ export const Calendar: React.FC<CalendarProps> = ({
 
     let classes = 'relative h-14 sm:h-16 md:h-20 border border-slate-200 dark:border-slate-700 cursor-pointer transition-all duration-300 ';
 
-    // Currently selected day for daily view (highest priority)
     if (isSelectedDay) {
       classes += 'ring-2 ring-amber-400 ring-offset-2 ring-offset-white dark:ring-offset-slate-800 ';
     }
 
-    // Range selection styling
     if (inRange && (firstDate || secondDate)) {
       if (firstDate && isSameDay(day.date, firstDate)) {
         classes += 'bg-gradient-to-br from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 shadow-lg ';
@@ -484,7 +751,6 @@ export const Calendar: React.FC<CalendarProps> = ({
         classes += 'bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 text-amber-900 dark:text-amber-100 hover:from-amber-100 hover:to-orange-100 dark:hover:from-amber-800/30 dark:hover:to-orange-800/30 border-amber-200 dark:border-amber-800 ';
       }
     }
-    // Today styling
     else if (isTodayDate) {
       if (day.hasData && day.isCurrentMonth) {
         if (day.totalPL > 0) {
@@ -496,7 +762,6 @@ export const Calendar: React.FC<CalendarProps> = ({
         classes += 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 ';
       }
     }
-    // Performance coloring (full box)
     else if (day.hasData && day.isCurrentMonth) {
       if (day.totalPL > 0) {
         classes += 'bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 hover:from-emerald-100 hover:to-teal-100 dark:hover:from-emerald-800/30 dark:hover:to-teal-800/30 border-emerald-200 dark:border-emerald-800 ';
@@ -504,11 +769,9 @@ export const Calendar: React.FC<CalendarProps> = ({
         classes += 'bg-gradient-to-br from-rose-50 to-red-50 dark:from-rose-900/20 dark:to-red-900/20 hover:from-rose-100 hover:to-red-100 dark:hover:from-rose-800/30 dark:hover:to-red-800/30 border-rose-200 dark:border-rose-800 ';
       }
     }
-    // Regular days
     else if (day.isCurrentMonth) {
       classes += 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 ';
     }
-    // Outside current month
     else {
       classes += 'bg-slate-50 dark:bg-slate-900 opacity-50 ';
     }
@@ -522,22 +785,18 @@ export const Calendar: React.FC<CalendarProps> = ({
     const isSecondDate = secondDate && isSameDay(day.date, secondDate);
     const inRange = isInSelectedRange(day.date);
 
-    // Selected range dates
     if (isFirstDate || isSecondDate) {
       return 'text-white';
     }
 
-    // In range
     if (inRange && (firstDate || secondDate)) {
       return 'text-amber-900 dark:text-amber-100';
     }
 
-    // Non-current month
     if (!day.isCurrentMonth) {
       return 'text-slate-400 dark:text-slate-500';
     }
 
-    // Days with trading data
     if (day.hasData) {
       if (day.totalPL > 0) {
         return 'text-emerald-800 dark:text-emerald-200';
@@ -546,7 +805,6 @@ export const Calendar: React.FC<CalendarProps> = ({
       }
     }
 
-    // Regular days
     return 'text-slate-900 dark:text-slate-100';
   }, [firstDate, secondDate, isInSelectedRange]);
 
@@ -571,7 +829,6 @@ export const Calendar: React.FC<CalendarProps> = ({
     const losses = rangeTrades.filter(trade => getAdjustedPL(trade.realizedPL, 1) < 0).length;
     const dayCount = secondDate ? differenceInDays(endDate, startDate) + 1 : 1;
 
-    // Calculate average per day
     const avgPerDay = dayCount > 0 ? totalPL / dayCount : 0;
 
     return {
@@ -587,6 +844,15 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   return (
     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 p-3 sm:p-6">
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 gap-4">
         <div className="flex items-center space-x-3">
@@ -599,6 +865,20 @@ export const Calendar: React.FC<CalendarProps> = ({
         </div>
 
         <div className="flex items-center space-x-2 sm:space-x-4 w-full sm:w-auto">
+          {/* CSV Upload Button */}
+          <button
+            onClick={handleUploadClick}
+            disabled={isUploading}
+            className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+            title="Upload CSV file"
+          >
+            <Upload className={`h-4 w-4 mr-2 ${isUploading ? 'animate-bounce' : ''}`} />
+            <span className="text-sm font-medium hidden sm:inline">
+              {isUploading ? 'Uploading...' : 'Upload CSV'}
+            </span>
+            <span className="text-sm font-medium sm:hidden">CSV</span>
+          </button>
+
           {/* Date Range Display with Clear */}
           {(firstDate || secondDate) && (
             <div className="flex items-center space-x-2">
@@ -690,7 +970,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                 </span>
               </div>
 
-              {/* Commission Input */}
               {applyCommission && (
                 <div className="flex items-center space-x-1">
                   <span className="text-xs text-slate-500 dark:text-slate-400">Per Trade:</span>
@@ -711,7 +990,6 @@ export const Calendar: React.FC<CalendarProps> = ({
             </div>
           </div>
 
-          {/* Commission Notice */}
           {applyCommission && commissionAmount > 0 && (
             <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
               <p className="text-xs sm:text-sm text-emerald-800 dark:text-emerald-200">
@@ -801,7 +1079,6 @@ export const Calendar: React.FC<CalendarProps> = ({
               </h5>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                {/* From Date */}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                     From Date
@@ -825,7 +1102,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                   />
                 </div>
 
-                {/* To Date */}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                     To Date
@@ -857,7 +1133,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                   />
                 </div>
 
-                {/* Clear Button */}
                 <div>
                   <button
                     onClick={(e) => {
@@ -873,7 +1148,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                 </div>
               </div>
 
-              {/* Range Status */}
               {firstDate && (
                 <div className="mt-3 text-center">
                   <p className="text-sm text-slate-600 dark:text-slate-400">
@@ -893,13 +1167,13 @@ export const Calendar: React.FC<CalendarProps> = ({
       {/* Instructions */}
       <div className="mb-4 text-center">
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Use dropdowns above for analysis and chart views • Click any date to view daily details • Double-click for detailed view
+          Upload CSV files or use dropdowns for analysis • Click any date to view daily details • Double-click for detailed view
         </p>
       </div>
 
-      {/* Calendar Grid */}
+      {/* Calendar Grid - (keeping existing calendar rendering code) */}
+      {/* ... Rest of the calendar rendering code remains the same ... */}
       {selectedChartView === '1y' || selectedChartView === 'all' ? (
-        /* Year View & YTD View - TraderVue Style */
         <div className="space-y-6">
           <div className="text-center mb-4">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
@@ -910,7 +1184,6 @@ export const Calendar: React.FC<CalendarProps> = ({
             </h3>
           </div>
 
-          {/* Year grid - 4 months per row */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {(calendarData as MonthData[]).map((monthData: MonthData) => {
               const weeks = [];
@@ -920,7 +1193,6 @@ export const Calendar: React.FC<CalendarProps> = ({
 
               return (
                 <div key={monthData.monthName} className="bg-slate-50 dark:bg-slate-900 rounded-lg p-3">
-                  {/* Month header with P&L */}
                   <div className="text-center mb-3">
                     <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                       {monthData.monthName}
@@ -939,7 +1211,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                     )}
                   </div>
 
-                  {/* Mini day headers */}
                   <div className="grid grid-cols-7 gap-1 mb-2">
                     {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
                       <div key={i} className="w-5 h-4 text-xs text-slate-500 dark:text-slate-400 text-center font-medium flex items-center justify-center">
@@ -948,7 +1219,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                     ))}
                   </div>
 
-                  {/* Mini calendar days */}
                   {weeks.map((week: DayData[], weekIndex: number) => (
                     <div key={weekIndex} className="grid grid-cols-7 gap-1 mb-1">
                       {week.map((day: DayData, dayIndex: number) => {
@@ -991,7 +1261,6 @@ export const Calendar: React.FC<CalendarProps> = ({
             })}
           </div>
 
-          {/* Year view legend */}
           <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 mt-6 text-xs sm:text-sm">
             <div className="flex items-center space-x-1 sm:space-x-2">
               <div className="w-3 h-3 sm:w-4 sm:h-4 bg-green-500 rounded-sm"></div>
@@ -1016,9 +1285,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           </div>
         </div>
       ) : (
-        /* Regular Monthly View with Weekly P&L */
         <div className="space-y-1 sm:space-y-2">
-          {/* Day Headers with Weekly P&L Header */}
           <div className="grid grid-cols-8 gap-1 sm:gap-2">
             {(typeof window !== 'undefined' && window.innerWidth < 640 ? DAY_NAMES_MOBILE : DAY_NAMES).map((day, index) => (
               <div key={index} className="h-8 flex items-center justify-center">
@@ -1027,7 +1294,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                 </span>
               </div>
             ))}
-            {/* Weekly P&L Header */}
             <div className="h-8 flex items-center justify-center">
               <span className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300">
                 Week P&L
@@ -1035,10 +1301,8 @@ export const Calendar: React.FC<CalendarProps> = ({
             </div>
           </div>
 
-          {/* Calendar Weeks with Weekly P&L */}
           {weeklyData.map((week: WeekData, weekIndex: number) => (
             <div key={weekIndex} className="grid grid-cols-8 gap-1 sm:gap-2">
-              {/* Daily cells */}
               {week.days.map((day: DayData, dayIndex: number) => (
                 <div
                   key={dayIndex}
@@ -1047,14 +1311,12 @@ export const Calendar: React.FC<CalendarProps> = ({
                   onDoubleClick={() => handleDoubleClick(day.date)}
                   title={day.hasData ? `${formatCurrency(day.totalPL)} (${day.tradeCount} trades)` : format(day.date, 'MMM d')}
                 >
-                  {/* Date Number */}
                   <div className="absolute top-1 sm:top-2 left-1 sm:left-2">
                     <span className={`text-xs sm:text-sm font-semibold ${getTextColor(day)}`}>
                       {format(day.date, 'd')}
                     </span>
                   </div>
 
-                  {/* Selection Indicators for Range */}
                   {firstDate && isSameDay(day.date, firstDate) && (
                     <div className="absolute top-1 sm:top-2 right-1 sm:right-2">
                       <div className="w-4 h-4 sm:w-5 sm:h-5 bg-white/20 rounded-full flex items-center justify-center">
@@ -1070,14 +1332,12 @@ export const Calendar: React.FC<CalendarProps> = ({
                     </div>
                   )}
 
-                  {/* Today Indicator */}
                   {isToday(day.date) && !isInSelectedRange(day.date) && (
                     <div className="absolute top-1 sm:top-2 right-1 sm:right-2">
                       <div className="w-2 h-2 bg-amber-500 rounded-full shadow-sm"></div>
                     </div>
                   )}
 
-                  {/* Trading Data - Improved mobile formatting */}
                   {day.hasData && day.isCurrentMonth && (
                     <div className="absolute bottom-1 sm:bottom-2 left-1 sm:left-2 right-1 sm:right-2">
                       <div className={`text-xs font-semibold truncate ${getTextColor(day)}`}>
@@ -1091,7 +1351,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                 </div>
               ))}
 
-              {/* Weekly P&L Cell */}
               <div
                 className={`relative h-14 sm:h-16 md:h-20 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center ${
                   week.hasData
@@ -1165,7 +1424,6 @@ export const Calendar: React.FC<CalendarProps> = ({
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-              {/* Days (only show if range) */}
               {secondDate && (
                 <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
                   <div className="text-xl sm:text-2xl font-bold text-amber-900 dark:text-amber-100">
@@ -1177,7 +1435,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                 </div>
               )}
 
-              {/* Total P&L */}
               <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
                 <div
                   className={`text-xl sm:text-2xl font-bold ${
@@ -1191,7 +1448,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                 </div>
               </div>
 
-              {/* Average per day (only if range) */}
               {secondDate && (
                 <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
                   <div
@@ -1207,7 +1463,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                 </div>
               )}
 
-              {/* Total Trades */}
               <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
                 <div className="text-xl sm:text-2xl font-bold text-amber-900 dark:text-amber-100">
                   {rangeStats.tradeCount}
@@ -1217,7 +1472,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                 </div>
               </div>
 
-              {/* Win Rate */}
               <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
                 <div
                   className={`text-xl sm:text-2xl font-bold ${
@@ -1231,7 +1485,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                 </div>
               </div>
 
-              {/* Wins */}
               <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
                 <div className="text-xl sm:text-2xl font-bold text-emerald-600">
                   {rangeStats.winCount}
@@ -1241,7 +1494,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                 </div>
               </div>
 
-              {/* Losses */}
               <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
                 <div className="text-xl sm:text-2xl font-bold text-rose-600">
                   {rangeStats.lossCount}
@@ -1250,6 +1502,144 @@ export const Calendar: React.FC<CalendarProps> = ({
                   Loss{rangeStats.lossCount !== 1 ? 'es' : ''}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Upload Result Modal */}
+      {showUploadModal && uploadResult && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className={`p-6 border-b ${
+              uploadResult.success
+                ? 'bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border-emerald-200 dark:border-emerald-800'
+                : 'bg-gradient-to-r from-rose-50 to-red-50 dark:from-rose-900/20 dark:to-red-900/20 border-rose-200 dark:border-rose-800'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  {uploadResult.success ? (
+                    <CheckCircle className="h-8 w-8 text-emerald-600" />
+                  ) : (
+                    <AlertCircle className="h-8 w-8 text-rose-600" />
+                  )}
+                  <div>
+                    <h3 className={`text-xl font-bold ${
+                      uploadResult.success
+                        ? 'text-emerald-900 dark:text-emerald-100'
+                        : 'text-rose-900 dark:text-rose-100'
+                    }`}>
+                      {uploadResult.success ? 'Import Successful!' : 'Import Failed'}
+                    </h3>
+                    <p className={`text-sm ${
+                      uploadResult.success
+                        ? 'text-emerald-700 dark:text-emerald-300'
+                        : 'text-rose-700 dark:text-rose-300'
+                    }`}>
+                      {uploadResult.success
+                        ? `${uploadResult.tradesImported} trade${uploadResult.tradesImported !== 1 ? 's' : ''} imported`
+                        : 'Please check the errors below'
+                      }
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={closeUploadModal}
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                >
+                  <X className="h-5 w-5 text-slate-500" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              {/* Errors */}
+              {uploadResult.errors.length > 0 && (
+                <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg p-4">
+                  <h4 className="font-semibold text-rose-900 dark:text-rose-100 mb-2 flex items-center">
+                    <AlertCircle className="h-4 w-4 mr-2" />
+                    Errors ({uploadResult.errors.length})
+                  </h4>
+                  <ul className="space-y-1 text-sm text-rose-800 dark:text-rose-200">
+                    {uploadResult.errors.map((error, index) => (
+                      <li key={index} className="flex items-start">
+                        <span className="mr-2">•</span>
+                        <span>{error}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Warnings */}
+              {uploadResult.warnings.length > 0 && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                  <h4 className="font-semibold text-amber-900 dark:text-amber-100 mb-2 flex items-center">
+                    <AlertCircle className="h-4 w-4 mr-2" />
+                    Warnings ({uploadResult.warnings.length})
+                  </h4>
+                  <div className="max-h-40 overflow-y-auto">
+                    <ul className="space-y-1 text-sm text-amber-800 dark:text-amber-200">
+                      {uploadResult.warnings.map((warning, index) => (
+                        <li key={index} className="flex items-start">
+                          <span className="mr-2">•</span>
+                          <span>{warning}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* CSV Format Guide */}
+              {!uploadResult.success && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                  <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-2 flex items-center">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Expected CSV Format
+                  </h4>
+                  <div className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
+                    <p className="font-medium">Required columns (in any order):</p>
+                    <ul className="space-y-1 ml-4">
+                      <li>• <strong>Time/Date/Timestamp</strong> - Trade date and time</li>
+                      <li>• <strong>Ticker/Symbol</strong> - Stock symbol</li>
+                      <li>• <strong>Direction/Side</strong> - Long/Short or Buy/Sell</li>
+                      <li>• <strong>Quantity</strong> - Number of shares</li>
+                      <li>• <strong>Entry Price</strong> - Buy price</li>
+                      <li>• <strong>Exit Price</strong> - Sell price</li>
+                      <li>• <strong>Realized P&L</strong> - Profit or loss amount</li>
+                      <li>• <strong>Notes</strong> (optional) - Trade notes</li>
+                    </ul>
+                    <p className="mt-2 text-xs">
+                      Column names can vary - the system will attempt to match them automatically.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-slate-200 dark:border-slate-700 flex justify-end space-x-3">
+              <button
+                onClick={closeUploadModal}
+                className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors"
+              >
+                Close
+              </button>
+              {uploadResult.success && (
+                <button
+                  onClick={() => {
+                    closeUploadModal();
+                    handleUploadClick();
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Import Another File
+                </button>
+              )}
             </div>
           </div>
         </div>
