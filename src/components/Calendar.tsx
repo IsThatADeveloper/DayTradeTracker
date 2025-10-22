@@ -185,8 +185,8 @@ export const Calendar: React.FC<CalendarProps> = ({
     return pl - (commissionAmount * tradeCount);
   }, [applyCommission, commissionAmount]);
 
-  // CSV Parsing Function
-  const parseCSV = useCallback((csvText: string): CSVUploadResult => {
+  // CSV Parsing Function - FIXED: Now properly async
+  const parseCSV = useCallback(async (csvText: string): Promise<CSVUploadResult> => {
     const result: CSVUploadResult = {
       success: false,
       tradesImported: 0,
@@ -356,13 +356,22 @@ export const Calendar: React.FC<CalendarProps> = ({
           hasCallback: !!onTradesAdded
         });
         
-        // Call the callback to add trades
+        // CRITICAL FIX: Call the callback to add trades and await it
         if (onTradesAdded) {
           console.log('🚀 Calling onTradesAdded with', newTrades.length, 'trades');
-          onTradesAdded(newTrades);
-          console.log('✅ onTradesAdded callback completed');
+          try {
+            // Call the parent's callback to add all trades
+            await onTradesAdded(newTrades);
+            console.log('✅ onTradesAdded callback completed successfully');
+          } catch (error) {
+            console.error('❌ Error in onTradesAdded callback:', error);
+            result.errors.push(`Failed to add trades: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            result.success = false;
+          }
         } else {
           console.warn('⚠️ onTradesAdded callback is not defined!');
+          result.errors.push('Import callback not available - trades could not be added');
+          result.success = false;
         }
       } else {
         result.errors.push('No valid trades found in CSV file');
@@ -405,7 +414,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       console.log('📄 File content length:', text.length, 'characters');
       console.log('📄 First 200 chars:', text.substring(0, 200));
       
-      const result = parseCSV(text);
+      const result = await parseCSV(text);
       console.log('📊 Parse result:', result);
       
       setUploadResult(result);
@@ -1172,7 +1181,6 @@ export const Calendar: React.FC<CalendarProps> = ({
       </div>
 
       {/* Calendar Grid - (keeping existing calendar rendering code) */}
-      {/* ... Rest of the calendar rendering code remains the same ... */}
       {selectedChartView === '1y' || selectedChartView === 'all' ? (
         <div className="space-y-6">
           <div className="text-center mb-4">
