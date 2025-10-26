@@ -1,4 +1,5 @@
 // src/services/validationService.ts - UPDATED: Removed price rounding to allow higher precision
+// FIXED: Changed timestamp validation to allow historical trades (1990+)
 import DOMPurify from 'dompurify';
 import { Trade } from '../types/trade';
 
@@ -102,14 +103,14 @@ class ValidationService {
       }
     }
 
-    // Validate timestamp
+    // ✅ FIXED: Validate timestamp - Allow historical trades from 1990 onwards
     if (trade.timestamp && trade.timestamp instanceof Date) {
       const now = new Date();
-      const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+      const minValidDate = new Date('1990-01-01'); // Changed from 1 year ago to 1990
       const oneDayFromNow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
       
-      if (trade.timestamp < oneYearAgo || trade.timestamp > oneDayFromNow) {
-        errors.push('Trade timestamp must be within the last year and not in the future');
+      if (trade.timestamp < minValidDate || trade.timestamp > oneDayFromNow) {
+        errors.push('Trade timestamp must be after 1990 and not in the future');
       } else {
         sanitized.timestamp = trade.timestamp;
       }

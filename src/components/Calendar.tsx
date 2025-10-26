@@ -1,4 +1,4 @@
-// src/components/Calendar.tsx - Enhanced Calendar with CSV Upload and Weekly P&L Display
+// src/components/Calendar.tsx - FIXED: Complete version with corrected imports
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { 
   ChevronLeft, 
@@ -15,27 +15,27 @@ import {
   AlertCircle,
   X
 } from 'lucide-react';
-import {
-  format,
-  addMonths,
-  subMonths,
-  startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
-  eachDayOfInterval,
-  isSameMonth,
-  isToday,
-  isSameDay,
-  isWithinInterval,
-  startOfDay,
-  endOfDay,
-  isBefore,
-  differenceInDays,
-  subDays,
-  startOfYear,
-  parse
-} from 'date-fns';
+
+// FIXED: Import date-fns functions individually from subpaths
+import { format } from 'date-fns/format';
+import { addMonths } from 'date-fns/addMonths';
+import { subMonths } from 'date-fns/subMonths';
+import { startOfWeek } from 'date-fns/startOfWeek';
+import { endOfWeek } from 'date-fns/endOfWeek';
+import { startOfMonth } from 'date-fns/startOfMonth';
+import { endOfMonth } from 'date-fns/endOfMonth';
+import { eachDayOfInterval } from 'date-fns/eachDayOfInterval';
+import { isSameMonth } from 'date-fns/isSameMonth';
+import { isToday } from 'date-fns/isToday';
+import { isSameDay } from 'date-fns/isSameDay';
+import { isWithinInterval } from 'date-fns/isWithinInterval';
+import { startOfDay } from 'date-fns/startOfDay';
+import { endOfDay } from 'date-fns/endOfDay';
+import { isBefore } from 'date-fns/isBefore';
+import { differenceInDays } from 'date-fns/differenceInDays';
+import { subDays } from 'date-fns/subDays';
+import { startOfYear } from 'date-fns/startOfYear';
+import { parse } from 'date-fns/parse';
 
 // Types
 import { Trade } from '../types/trade';
@@ -278,7 +278,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             'M/d/yyyy H:mm:ss',
             'M/d/yyyy h:mm:ss a',
             'yyyy-MM-dd HH:mm:ss',
-            'yyyy-MM-dd\'T\'HH:mm:ss',
+            "yyyy-MM-dd'T'HH:mm:ss",
             'MM/dd/yyyy HH:mm:ss',
             'dd/MM/yyyy HH:mm:ss',
             'M/d/yyyy',
@@ -1180,7 +1180,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         </p>
       </div>
 
-      {/* Calendar Grid - (keeping existing calendar rendering code) */}
+      {/* Calendar Grid */}
       {selectedChartView === '1y' || selectedChartView === 'all' ? (
         <div className="space-y-6">
           <div className="text-center mb-4">

@@ -1,4 +1,4 @@
-// src/App.tsx - Enhanced with Detailed Error Boundary
+// src/App.tsx - Fixed CSV Import Issue
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator, BookOpen, AlertCircle } from 'lucide-react';
 import { Trade } from './types/trade';
@@ -474,11 +474,22 @@ function AppContent() {
     }
   }, [currentUser, setLocalTrades]);
 
+  // FIX: Enhanced handleTradesAdded with better logging and error handling
   const handleTradesAdded = useCallback(async (newTrades: Trade[]) => {
-    console.log('📈 App: Multiple trades added:', newTrades.length);
+    console.log('📈 App: handleTradesAdded called with trades:', {
+      count: newTrades.length,
+      isAuthenticated: !!currentUser,
+      trades: newTrades.map(t => ({ ticker: t.ticker, timestamp: t.timestamp }))
+    });
 
-    if (currentUser) {
-      try {
+    if (!newTrades || newTrades.length === 0) {
+      console.warn('⚠️ No trades provided to handleTradesAdded');
+      return;
+    }
+
+    try {
+      if (currentUser) {
+        console.log('☁️ Saving trades to cloud...');
         const tradesWithIds = await Promise.all(
           newTrades.map(async (trade) => {
             const tradeId = await tradeService.addTrade(currentUser.uid, trade);
@@ -486,12 +497,16 @@ function AppContent() {
           })
         );
         setCloudTrades(prev => [...tradesWithIds, ...prev]);
-      } catch (error: any) {
-        console.error('Failed to save trades:', error);
-        alert(`Failed to save trades: ${error.message}`);
+        console.log('✅ Successfully saved trades to cloud');
+      } else {
+        console.log('💾 Saving trades locally...');
+        setLocalTrades(prev => [...newTrades, ...prev]);
+        console.log('✅ Successfully saved trades locally');
       }
-    } else {
-      setLocalTrades(prev => [...newTrades, ...prev]);
+    } catch (error: any) {
+      console.error('❌ Failed to save trades:', error);
+      alert(`Failed to save trades: ${error.message}`);
+      throw error; // Re-throw to let BulkTradeImport handle it
     }
   }, [currentUser, setLocalTrades]);
 
@@ -655,6 +670,15 @@ function AppContent() {
     URL.revokeObjectURL(url);
   }, [dailyTrades, selectedDate]);
 
+  // FIX: Log callback availability on mount
+  useEffect(() => {
+    console.log('🔍 Callback check:', {
+      handleTradesAdded: typeof handleTradesAdded,
+      handleTradeAdded: typeof handleTradeAdded,
+      isFunction: typeof handleTradesAdded === 'function'
+    });
+  }, [handleTradesAdded, handleTradeAdded]);
+
   if (!isMounted) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
@@ -781,6 +805,7 @@ function AppContent() {
                 selectedDate={selectedDate}
               />
             </div>
+            {/* FIX: Ensure BulkTradeImport receives valid callback */}
             <BulkTradeImport
               onTradesAdded={handleTradesAdded}
               lastTrade={lastTrade}
