@@ -92,8 +92,11 @@ export class BrokerCSVParser {
   private static detectBrokerType(headers: string[], lines: string[]): BrokerType {
     const headerStr = headers.join('|').toLowerCase();
 
-    // TD Ameritrade detection
+    // TD Ameritrade detection (both formats)
     if (
+      // Account statement format (has DESCRIPTION field)
+      (headerStr.includes('date') && headerStr.includes('description') && headerStr.includes('amount')) ||
+      // thinkorswim format (has EXEC TIME, SYMBOL columns)
       headerStr.includes('exec time') ||
       headerStr.includes('spread') ||
       (headerStr.includes('order') && headerStr.includes('price') && headerStr.includes('qty'))

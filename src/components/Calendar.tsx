@@ -41,6 +41,9 @@ import { parse } from 'date-fns/parse';
 import { Trade } from '../types/trade';
 import { formatCurrency } from '../utils/tradeUtils';
 
+// ADDED: Import BrokerCSVParser for multi-broker CSV support with auto-detect
+import { BrokerCSVParser } from '../services/brokerCSVParser';
+
 interface CalendarProps {
   trades: Trade[];
   selectedDate: Date;
@@ -186,204 +189,61 @@ export const Calendar: React.FC<CalendarProps> = ({
   }, [applyCommission, commissionAmount]);
 
   // CSV Parsing Function - FIXED: Now properly async
+
+  // UPDATED: parseCSV now uses BrokerCSVParser with auto-detect (no broker dropdown)
   const parseCSV = useCallback(async (csvText: string): Promise<CSVUploadResult> => {
-    const result: CSVUploadResult = {
-      success: false,
-      tradesImported: 0,
-      errors: [],
-      warnings: []
-    };
-
-    // Helper function to parse direction with proper typing
-    const parseDirection = (directionValue: string) => {
-      const normalized = directionValue.toLowerCase();
-      if (normalized.includes('long') || normalized.includes('buy')) {
-        return 'long' as const;
-      }
-      return 'short' as const;
-    };
-
+    console.log('📄 Starting CSV parse with BrokerCSVParser (auto-detect)');
+    
     try {
-      const lines = csvText.trim().split('\n');
-      if (lines.length < 2) {
-        result.errors.push('CSV file is empty or has no data rows');
-        return result;
-      }
-
-      // Parse header
-      const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+      // Use BrokerCSVParser with auto-detect mode
+      const brokerResult = await BrokerCSVParser.parseCSV(csvText, 'auto', selectedDate);
       
-      // Common header variations
-      const headerMap: { [key: string]: string[] } = {
-        timestamp: ['time', 'timestamp', 'date', 'datetime', 'date/time'],
-        ticker: ['ticker', 'symbol', 'stock', 'instrument'],
-        direction: ['direction', 'side', 'type', 'action', 'buy/sell'],
-        quantity: ['quantity', 'qty', 'shares', 'amount', 'size'],
-        entryPrice: ['entry price', 'entry', 'buy price', 'open price', 'price'],
-        exitPrice: ['exit price', 'exit', 'sell price', 'close price'],
-        realizedPL: ['realized p&l', 'realized pl', 'p&l', 'pl', 'profit/loss', 'profit', 'pnl'],
-        notes: ['notes', 'note', 'comment', 'comments', 'description']
+      console.log('🔍 Broker parser result:', {
+        success: brokerResult.success,
+        trades: brokerResult.tradesImported,
+        detectedBroker: brokerResult.detectedBroker,
+        errors: brokerResult.errors.length,
+        warnings: brokerResult.warnings.length
+      });
+      
+      // Transform broker result to Calendar's expected format
+      const uploadResult: CSVUploadResult = {
+        success: brokerResult.success,
+        tradesImported: brokerResult.tradesImported,
+        errors: brokerResult.errors,
+        warnings: brokerResult.warnings,
       };
-
-      // Find column indices
-      const columnIndices: { [key: string]: number } = {};
-      for (const [key, variations] of Object.entries(headerMap)) {
-        const index = header.findIndex(h => variations.some(v => h.includes(v)));
-        if (index !== -1) {
-          columnIndices[key] = index;
-        }
-      }
-
-      // Validate required columns
-      const requiredColumns = ['timestamp', 'ticker', 'direction', 'quantity', 'entryPrice', 'exitPrice', 'realizedPL'];
-      const missingColumns = requiredColumns.filter(col => columnIndices[col] === undefined);
       
-      if (missingColumns.length > 0) {
-        result.errors.push(`Missing required columns: ${missingColumns.join(', ')}`);
-        result.warnings.push('Expected columns: Time/Date, Ticker/Symbol, Direction/Side, Quantity, Entry Price, Exit Price, Realized P&L');
-        return result;
-      }
-
-      // Parse data rows
-      const newTrades: Trade[] = [];
-      
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-
-        try {
-          // Handle quoted values (CSV with commas in quotes)
-          const values: string[] = [];
-          let currentValue = '';
-          let insideQuotes = false;
-          
-          for (let char of line) {
-            if (char === '"') {
-              insideQuotes = !insideQuotes;
-            } else if (char === ',' && !insideQuotes) {
-              values.push(currentValue.trim());
-              currentValue = '';
-            } else {
-              currentValue += char;
-            }
-          }
-          values.push(currentValue.trim());
-
-          // Parse timestamp - try multiple formats
-          const timestampStr = values[columnIndices.timestamp]?.replace(/"/g, '') || '';
-          let timestamp: Date = new Date(); // Initialize with default
-          
-          // Try various date formats
-          const dateFormats = [
-            'M/d/yyyy H:mm:ss',
-            'M/d/yyyy h:mm:ss a',
-            'yyyy-MM-dd HH:mm:ss',
-            "yyyy-MM-dd'T'HH:mm:ss",
-            'MM/dd/yyyy HH:mm:ss',
-            'dd/MM/yyyy HH:mm:ss',
-            'M/d/yyyy',
-            'yyyy-MM-dd'
-          ];
-
-          let parsed = false;
-          for (const dateFormat of dateFormats) {
-            try {
-              const parsedDate = parse(timestampStr, dateFormat, new Date());
-              if (!isNaN(parsedDate.getTime())) {
-                timestamp = parsedDate;
-                parsed = true;
-                break;
-              }
-            } catch (e) {
-              continue;
-            }
-          }
-
-          if (!parsed) {
-            // Try native Date parsing as fallback
-            const fallbackDate = new Date(timestampStr);
-            if (isNaN(fallbackDate.getTime())) {
-              result.warnings.push(`Row ${i + 1}: Invalid date format "${timestampStr}"`);
-              continue;
-            }
-            timestamp = fallbackDate;
-          }
-
-          const ticker = values[columnIndices.ticker]?.replace(/"/g, '').toUpperCase() || '';
-          const directionValue = values[columnIndices.direction]?.replace(/"/g, '') || 'long';
-          const quantity = parseFloat(values[columnIndices.quantity]?.replace(/[^0-9.-]/g, '') || '0');
-          const entryPrice = parseFloat(values[columnIndices.entryPrice]?.replace(/[^0-9.-]/g, '') || '0');
-          const exitPrice = parseFloat(values[columnIndices.exitPrice]?.replace(/[^0-9.-]/g, '') || '0');
-          const realizedPL = parseFloat(values[columnIndices.realizedPL]?.replace(/[^0-9.-]/g, '') || '0');
-          const notes = columnIndices.notes !== undefined ? values[columnIndices.notes]?.replace(/"/g, '') : '';
-
-          // Validate data
-          if (!ticker || quantity <= 0 || entryPrice <= 0 || exitPrice <= 0) {
-            result.warnings.push(`Row ${i + 1}: Invalid data - skipping`);
-            continue;
-          }
-
-          // Create trade with proper direction
-          const tradeDirection = parseDirection(directionValue);
-          
-          const trade: Trade = {
-            id: `csv-import-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            timestamp: timestamp,
-            ticker: ticker,
-            direction: tradeDirection,
-            quantity: quantity,
-            entryPrice: entryPrice,
-            exitPrice: exitPrice,
-            realizedPL: realizedPL,
-            notes: notes || `Imported from CSV`,
-            updateCount: 0,
-            lastUpdated: new Date()
-          };
-
-          newTrades.push(trade);
-        } catch (error) {
-          result.warnings.push(`Row ${i + 1}: ${error instanceof Error ? error.message : 'Parse error'}`);
-        }
-      }
-
-      if (newTrades.length > 0) {
-        result.success = true;
-        result.tradesImported = newTrades.length;
+      // If successful and trades found, add them
+      if (brokerResult.success && brokerResult.trades.length > 0) {
+        console.log('✅ Adding', brokerResult.trades.length, 'trades to calendar');
         
-        console.log('📊 CSV Parse Success:', {
-          tradesImported: newTrades.length,
-          sampleTrade: newTrades[0],
-          hasCallback: !!onTradesAdded
-        });
-        
-        // CRITICAL FIX: Call the callback to add trades and await it
         if (onTradesAdded) {
-          console.log('🚀 Calling onTradesAdded with', newTrades.length, 'trades');
           try {
-            // Call the parent's callback to add all trades
-            await onTradesAdded(newTrades);
-            console.log('✅ onTradesAdded callback completed successfully');
+            await onTradesAdded(brokerResult.trades);
+            console.log('✅ Trades added successfully via callback');
           } catch (error) {
-            console.error('❌ Error in onTradesAdded callback:', error);
-            result.errors.push(`Failed to add trades: ${error instanceof Error ? error.message : 'Unknown error'}`);
-            result.success = false;
+            console.error('❌ Error adding trades:', error);
+            uploadResult.errors.push(`Failed to add trades: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            uploadResult.success = false;
           }
         } else {
-          console.warn('⚠️ onTradesAdded callback is not defined!');
-          result.errors.push('Import callback not available - trades could not be added');
-          result.success = false;
+          console.warn('⚠️ No onTradesAdded callback provided');
         }
-      } else {
-        result.errors.push('No valid trades found in CSV file');
-        console.log('❌ No valid trades parsed from CSV');
       }
-
+      
+      return uploadResult;
     } catch (error) {
-      result.errors.push(`CSV parsing error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('❌ CSV parse error:', error);
+      return {
+        success: false,
+        tradesImported: 0,
+        errors: ['Failed to parse CSV: ' + (error instanceof Error ? error.message : 'Unknown error')],
+        warnings: [],
+      };
     }
+  }, [selectedDate, onTradesAdded]);
 
-    return result;
-  }, [onTradesAdded]);
 
   // Handle file selection
   const handleFileSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
