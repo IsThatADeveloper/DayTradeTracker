@@ -1,4 +1,4 @@
-// src/services/tradeService.ts - Fixed version
+// src/services/tradeService.ts - Complete service with status field support
 import {
   collection,
   doc,
@@ -9,6 +9,7 @@ import {
   query,
   where,
   Timestamp,
+  orderBy,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Trade } from '../types/trade';
@@ -22,6 +23,9 @@ export interface FirestoreTrade extends Omit<Trade, 'timestamp'> {
 }
 
 export const tradeService = {
+  /**
+   * Add a new trade to Firestore
+   */
   async addTrade(userId: string, trade: Trade): Promise<string> {
     console.log('🔥 Adding trade with security validation');
     
@@ -53,8 +57,14 @@ export const tradeService = {
       // Handle notes field - Firestore doesn't accept undefined
       tradeData.notes = sanitizedTrade.notes || null;
       
+      // Handle status field - default to 'closed' if not provided
+      tradeData.status = sanitizedTrade.status || 'closed';
+      
+      // Remove the id field if it exists (Firestore generates it)
+      delete tradeData.id;
+      
       const docRef = await addDoc(collection(db, TRADES_COLLECTION), tradeData);
-      console.log('✅ Trade added securely with ID:', docRef.id);
+      console.log('✅ Trade added securely with ID:', docRef.id, 'Status:', tradeData.status);
       return docRef.id;
     } catch (error: any) {
       console.error('❌ Error adding trade:', error);
@@ -62,6 +72,9 @@ export const tradeService = {
     }
   },
 
+  /**
+   * Get all trades for a user
+   */
   async getUserTrades(userId: string): Promise<Trade[]> {
     console.log('🔥 Fetching trades for user:', userId);
     
@@ -71,30 +84,36 @@ export const tradeService = {
         throw new Error('Rate limit exceeded for trade fetching.');
       }
 
+      // FIXED: Removed orderBy to avoid index requirement - will sort in memory
       const q = query(
         collection(db, TRADES_COLLECTION),
         where('userId', '==', userId)
       );
-      
+
       const querySnapshot = await getDocs(q);
-      const trades: Trade[] = [];
       
-      querySnapshot.forEach((doc) => {
-        const data = doc.data() as FirestoreTrade;
-        trades.push({
-          ...data,
+      const trades: Trade[] = querySnapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
           id: doc.id,
+          ticker: data.ticker,
+          entryPrice: data.entryPrice,
+          exitPrice: data.exitPrice,
+          quantity: data.quantity,
           timestamp: data.timestamp.toDate(),
-          notes: data.notes === null ? undefined : data.notes,
+          direction: data.direction,
+          realizedPL: data.realizedPL,
+          notes: data.notes || null,
           updateCount: data.updateCount || 0,
-          lastUpdated: (data as any).lastUpdated ? ((data as any).lastUpdated as Timestamp).toDate() : undefined
-        });
+          lastUpdated: data.lastUpdated?.toDate() || new Date(),
+          status: data.status || 'closed', // Default to 'closed' for backward compatibility
+        };
       });
-      
-      // Sort in JavaScript
+
+      // Sort in memory by timestamp (descending - newest first)
       trades.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-      
-      console.log('✅ Successfully loaded', trades.length, 'trades');
+
+      console.log(`✅ Fetched ${trades.length} trades for user`);
       return trades;
     } catch (error: any) {
       console.error('❌ Error fetching trades:', error);
@@ -102,65 +121,80 @@ export const tradeService = {
     }
   },
 
-  async updateTrade(tradeId: string, updates: Partial<Trade>): Promise<void> {
-    console.log('🔥 Updating trade with security validation');
+  /**
+   * Update an existing trade
+   */
+  async updateTrade(userId: string, tradeId: string, updates: Partial<Trade>): Promise<void> {
+    console.log('🔥 Updating trade:', tradeId);
     
     try {
-      // Validate updates if they contain data to validate
-      if (Object.keys(updates).some(key => ['ticker', 'entryPrice', 'exitPrice', 'quantity', 'direction', 'notes', 'timestamp'].includes(key))) {
-        const validation = validationService.validateTrade(updates);
-        if (!validation.isValid) {
-          throw new Error(`Invalid update data: ${validation.errors.join(', ')}`);
-        }
-        updates = { ...updates, ...validation.sanitized };
+      // Rate limiting
+      if (!validationService.checkRateLimit(userId, 'updateTrade', 50, 60000)) {
+        throw new Error('Rate limit exceeded for trade updates.');
       }
 
-      const tradeRef = doc(db, TRADES_COLLECTION, tradeId);
-      const updateData: any = {};
+      // Validate updates
+      if (updates.timestamp || updates.ticker || updates.entryPrice || updates.exitPrice || 
+          updates.quantity || updates.direction || updates.realizedPL) {
+        const tradeToValidate = updates as Trade;
+        const validation = validationService.validateTrade(tradeToValidate);
+        if (!validation.isValid) {
+          throw new Error(`Invalid trade data: ${validation.errors.join(', ')}`);
+        }
+      }
+
+      const updateData: any = { ...updates };
       
-      // Copy over defined values
-      if (updates.ticker !== undefined) updateData.ticker = updates.ticker;
-      if (updates.entryPrice !== undefined) updateData.entryPrice = updates.entryPrice;
-      if (updates.exitPrice !== undefined) updateData.exitPrice = updates.exitPrice;
-      if (updates.quantity !== undefined) updateData.quantity = updates.quantity;
-      if (updates.direction !== undefined) updateData.direction = updates.direction;
-      if (updates.realizedPL !== undefined) updateData.realizedPL = updates.realizedPL;
-      
-      if (updates.timestamp !== undefined) {
-        updateData.timestamp = Timestamp.fromDate(updates.timestamp);
+      // Convert timestamp to Firestore Timestamp if present
+      if (updateData.timestamp) {
+        updateData.timestamp = Timestamp.fromDate(updateData.timestamp);
       }
       
       // Handle notes field
-      if ('notes' in updates) {
-        updateData.notes = updates.notes || null;
+      if (updateData.notes === undefined) {
+        // Don't update notes if not provided
+        delete updateData.notes;
+      } else if (updateData.notes === null || updateData.notes === '') {
+        updateData.notes = null;
       }
       
-      // Increment update count safely
-      const currentUpdateCount = updates.updateCount || 0;
-      updateData.updateCount = currentUpdateCount + 1;
+      // Handle status field
+      if (updateData.status) {
+        updateData.status = updateData.status;
+      }
+      
+      // Update metadata
       updateData.lastUpdated = Timestamp.fromDate(new Date());
+      updateData.updateCount = (updates.updateCount || 0) + 1;
       
-      // Security check for excessive updates
-      if (updateData.updateCount > 10) {
-        console.warn('Excessive updates detected for trade:', tradeId);
-        throw new Error('Trade has been updated too many times. Please contact support if needed.');
-      }
-      
+      // Remove id field if present
+      delete updateData.id;
+
+      const tradeRef = doc(db, TRADES_COLLECTION, tradeId);
       await updateDoc(tradeRef, updateData);
-      console.log('✅ Trade updated securely with updateCount:', updateData.updateCount);
       
+      console.log('✅ Trade updated successfully');
     } catch (error: any) {
       console.error('❌ Error updating trade:', error);
       throw new Error(`Failed to update trade: ${error.message}`);
     }
   },
 
-  async deleteTrade(tradeId: string): Promise<void> {
+  /**
+   * Delete a trade
+   */
+  async deleteTrade(userId: string, tradeId: string): Promise<void> {
     console.log('🔥 Deleting trade:', tradeId);
     
     try {
+      // Rate limiting
+      if (!validationService.checkRateLimit(userId, 'deleteTrade', 30, 60000)) {
+        throw new Error('Rate limit exceeded for trade deletion.');
+      }
+
       const tradeRef = doc(db, TRADES_COLLECTION, tradeId);
       await deleteDoc(tradeRef);
+      
       console.log('✅ Trade deleted successfully');
     } catch (error: any) {
       console.error('❌ Error deleting trade:', error);
@@ -168,17 +202,128 @@ export const tradeService = {
     }
   },
 
-  // Keep existing methods
-  async syncLocalTrades(userId: string, localTrades: Trade[]): Promise<void> {
-    console.log('🔥 Syncing', localTrades.length, 'local trades to Firestore');
-    
+  /**
+   * Get trades for a specific date
+   */
+  async getTradesForDate(userId: string, date: Date): Promise<Trade[]> {
     try {
-      const promises = localTrades.map(trade => this.addTrade(userId, trade));
-      await Promise.all(promises);
-      console.log('✅ All local trades synced successfully');
+      const allTrades = await this.getUserTrades(userId);
+      
+      return allTrades.filter(trade => {
+        const tradeDate = new Date(trade.timestamp);
+        return (
+          tradeDate.getFullYear() === date.getFullYear() &&
+          tradeDate.getMonth() === date.getMonth() &&
+          tradeDate.getDate() === date.getDate()
+        );
+      });
     } catch (error: any) {
-      console.error('❌ Error syncing local trades:', error);
-      throw new Error(`Failed to sync local trades: ${error.message}`);
+      console.error('❌ Error fetching trades for date:', error);
+      throw new Error(`Failed to fetch trades for date: ${error.message}`);
     }
-  }
+  },
+
+  /**
+   * Get trades within a date range
+   */
+  async getTradesInRange(userId: string, startDate: Date, endDate: Date): Promise<Trade[]> {
+    try {
+      const allTrades = await this.getUserTrades(userId);
+      
+      return allTrades.filter(trade => {
+        const tradeDate = new Date(trade.timestamp);
+        return tradeDate >= startDate && tradeDate <= endDate;
+      });
+    } catch (error: any) {
+      console.error('❌ Error fetching trades in range:', error);
+      throw new Error(`Failed to fetch trades in range: ${error.message}`);
+    }
+  },
+
+  /**
+   * Get only open positions
+   */
+  async getOpenPositions(userId: string): Promise<Trade[]> {
+    try {
+      const allTrades = await this.getUserTrades(userId);
+      return allTrades.filter(trade => trade.status === 'open');
+    } catch (error: any) {
+      console.error('❌ Error fetching open positions:', error);
+      throw new Error(`Failed to fetch open positions: ${error.message}`);
+    }
+  },
+
+  /**
+   * Get only closed positions
+   */
+  async getClosedPositions(userId: string): Promise<Trade[]> {
+    try {
+      const allTrades = await this.getUserTrades(userId);
+      return allTrades.filter(trade => trade.status === 'closed' || !trade.status);
+    } catch (error: any) {
+      console.error('❌ Error fetching closed positions:', error);
+      throw new Error(`Failed to fetch closed positions: ${error.message}`);
+    }
+  },
+
+  /**
+   * Close an open position by updating exit price and calculating P&L
+   */
+  async closePosition(userId: string, tradeId: string, exitPrice: number): Promise<void> {
+    try {
+      // Get the trade first to calculate P&L
+      const allTrades = await this.getUserTrades(userId);
+      const trade = allTrades.find(t => t.id === tradeId);
+      
+      if (!trade) {
+        throw new Error('Trade not found');
+      }
+      
+      if (trade.status === 'closed') {
+        throw new Error('Position is already closed');
+      }
+      
+      // Calculate realized P&L
+      const realizedPL = trade.direction === 'long'
+        ? (exitPrice - trade.entryPrice) * trade.quantity
+        : (trade.entryPrice - exitPrice) * trade.quantity;
+      
+      // Update the trade
+      await this.updateTrade(userId, tradeId, {
+        exitPrice,
+        realizedPL,
+        status: 'closed',
+      });
+      
+      console.log(`✅ Position closed: ${trade.ticker}, P&L: ${realizedPL}`);
+    } catch (error: any) {
+      console.error('❌ Error closing position:', error);
+      throw new Error(`Failed to close position: ${error.message}`);
+    }
+  },
+
+  /**
+   * Bulk add trades (for imports)
+   */
+  async bulkAddTrades(userId: string, trades: Trade[]): Promise<{ success: number; failed: number; errors: string[] }> {
+    console.log(`🔥 Bulk adding ${trades.length} trades`);
+    
+    let success = 0;
+    let failed = 0;
+    const errors: string[] = [];
+    
+    for (const trade of trades) {
+      try {
+        await this.addTrade(userId, trade);
+        success++;
+      } catch (error: any) {
+        failed++;
+        errors.push(`${trade.ticker}: ${error.message}`);
+        console.error(`Failed to add trade ${trade.ticker}:`, error);
+      }
+    }
+    
+    console.log(`✅ Bulk import complete: ${success} success, ${failed} failed`);
+    return { success, failed, errors };
+  },
 };

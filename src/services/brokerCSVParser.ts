@@ -356,6 +356,7 @@ export class BrokerCSVParser {
   /**
    * Parse TD Ameritrade thinkorswim format
    * Has separate columns: SYMBOL, QTY, PRICE, SIDE, etc.
+   * UPDATED: Handles multi-line options strategies (STRANGLE, SPREAD, etc.)
    */
   private static parseTDAmeritradethinkorswim(
     lines: string[],
@@ -374,14 +375,32 @@ export class BrokerCSVParser {
     try {
       // Find column indices
       const mapping = this.findTDAmeritradeColumns(headers);
+      
+      console.log('🔍 TOS Column Mapping:', {
+        timestamp: mapping.timestamp,
+        ticker: mapping.ticker,
+        direction: mapping.direction,
+        quantity: mapping.quantity,
+        entryPrice: mapping.entryPrice,
+        headers: headers
+      });
 
       if (!mapping.timestamp || !mapping.ticker || !mapping.quantity || !mapping.entryPrice) {
         result.errors.push('Could not find required columns in thinkorswim format');
+        result.errors.push(`Found: timestamp=${mapping.timestamp}, ticker=${mapping.ticker}, qty=${mapping.quantity}, price=${mapping.entryPrice}`);
         return result;
       }
 
-      // Group trades by matching pairs (buy/sell)
+      // Find SPREAD column for multi-leg detection
+      const spreadCol = headers.findIndex(h => h.toLowerCase().trim() === 'spread');
+      const timestampCol = headers.findIndex(h => h.toLowerCase().includes('exec time') || h.toLowerCase() === 'time' || h.toLowerCase() === 'date');
+
+      // Group trades by matching pairs (buy/sell) 
       const tradeMap = new Map<string, any[]>();
+
+      // NEW: Track multi-leg trades
+      let currentMultiLeg: any[] = [];
+      let lastSpreadType = '';
 
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -390,18 +409,96 @@ export class BrokerCSVParser {
         const cols = this.parseCSVLine(line);
 
         try {
+          // Check if this is part of a multi-leg strategy
+          const spreadType = spreadCol !== -1 ? cols[spreadCol]?.trim() : '';
+          const execTime = timestampCol !== -1 ? cols[timestampCol]?.trim() : '';
+          const isMultiLegStart = spreadType && spreadType !== '' && spreadType.toUpperCase() !== 'STOCK';
+          const isMultiLegContinuation = (!execTime || execTime === '') && currentMultiLeg.length > 0;
+
+          // Handle multi-leg strategies (STRANGLE, SPREAD, etc.)
+          if (isMultiLegStart) {
+            // Start of a new multi-leg trade
+            lastSpreadType = spreadType;
+            currentMultiLeg = [];
+          }
+
           const ticker = cols[mapping.ticker]?.trim().toUpperCase();
-          const direction = this.parseTDDirection(cols[mapping.direction || 0]);
+          const sideStr = cols[mapping.direction || 0]?.trim() || '';
+          
+          // For continuation lines (no exec time), we still need ticker
+          if (!ticker) {
+            continue;
+          }
+          
           const timestamp = this.parseDate(cols[mapping.timestamp], selectedDate);
-          const quantity = Math.abs(parseFloat(cols[mapping.quantity]));
+          const quantityStr = cols[mapping.quantity]?.trim() || '0';
+          const quantity = Math.abs(parseFloat(quantityStr.replace(/[+\-]/g, '')));
           const price = parseFloat(cols[mapping.entryPrice]);
 
-          if (!ticker || !timestamp || isNaN(quantity) || isNaN(price)) {
+          // For multi-leg continuations, timestamp from first leg is OK
+          if (!timestamp && !isMultiLegContinuation) {
+            result.warnings.push(`Line ${i + 1}: Missing timestamp, skipping`);
+            continue;
+          }
+          
+          if (isNaN(quantity) || isNaN(price)) {
             result.warnings.push(`Line ${i + 1}: Missing required data, skipping`);
             continue;
           }
 
-          // Create unique key for matching trades
+          // Parse direction from SIDE column (BUY/SELL)
+          const isBuy = sideStr.toUpperCase().includes('BUY');
+          const direction = isBuy ? 'long' : 'short';
+
+          // For multi-leg options, aggregate the legs
+          if (isMultiLegStart || isMultiLegContinuation) {
+            // Use timestamp from first leg for all legs
+            const legTimestamp = timestamp || (currentMultiLeg.length > 0 ? currentMultiLeg[0].timestamp : new Date());
+            
+            currentMultiLeg.push({
+              ticker,
+              direction,
+              timestamp: legTimestamp,
+              quantity,
+              price,
+              lineNumber: i + 1,
+            });
+
+            // Check if next line is part of same multi-leg
+            const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : '';
+            const nextCols = nextLine ? this.parseCSVLine(nextLine) : [];
+            const nextExecTime = timestampCol !== -1 && nextCols[timestampCol] ? nextCols[timestampCol].trim() : '';
+            
+            // If next line HAS an exec time, OR we're at end, process the multi-leg trade
+            if (nextExecTime || i === lines.length - 1) {
+              // For multi-leg options, use the first leg as primary ticker
+              // Calculate net price (sum of all legs)
+              const netPrice = currentMultiLeg.reduce((sum, leg) => sum + leg.price, 0);
+              const avgQuantity = currentMultiLeg[0].quantity;
+              
+              // Create entry for the multi-leg strategy
+              const key = `${currentMultiLeg[0].ticker}_${avgQuantity}_${lastSpreadType}`;
+              if (!tradeMap.has(key)) {
+                tradeMap.set(key, []);
+              }
+
+              tradeMap.get(key)!.push({
+                ticker: currentMultiLeg[0].ticker,
+                direction: currentMultiLeg[0].direction,
+                timestamp: currentMultiLeg[0].timestamp,
+                quantity: avgQuantity,
+                price: netPrice,
+                lineNumber: currentMultiLeg[0].lineNumber,
+                notes: `${lastSpreadType} strategy (${currentMultiLeg.length} legs)`,
+              });
+
+              currentMultiLeg = [];
+            }
+            
+            continue;
+          }
+
+          // Regular stock trade (not multi-leg)
           const key = `${ticker}_${quantity}`;
           if (!tradeMap.has(key)) {
             tradeMap.set(key, []);
@@ -422,15 +519,32 @@ export class BrokerCSVParser {
 
       // Match buy/sell pairs to create complete trades
       for (const [key, transactions] of tradeMap.entries()) {
-        if (transactions.length < 2) {
-          result.warnings.push(`Incomplete trade for ${key}: only one side found`);
-          continue;
-        }
-
         // Sort by timestamp
         transactions.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-        // Match pairs
+        if (transactions.length === 1) {
+          // UPDATED: Handle single-sided trades (open positions) with status field
+          const trade = transactions[0];
+          
+          // For open positions, use the entry price for both entry and exit
+          // Set status to 'open' and realizedPL to 0
+          result.trades.push({
+            id: generateTradeId(),
+            ticker: trade.ticker,
+            direction: trade.direction,
+            quantity: trade.quantity,
+            entryPrice: trade.price,
+            exitPrice: trade.price, // Same as entry for open positions
+            timestamp: trade.timestamp,
+            realizedPL: 0, // No realized P&L until closed
+            status: 'open', // Mark as open position
+            notes: trade.notes || 'Imported from TD Ameritrade',
+          });
+          
+          continue;
+        }
+
+        // Match pairs for closed positions
         for (let i = 0; i < transactions.length - 1; i += 2) {
           const first = transactions[i];
           const second = transactions[i + 1];
@@ -444,6 +558,8 @@ export class BrokerCSVParser {
             ? (exitPrice - entryPrice) * first.quantity
             : (entryPrice - exitPrice) * first.quantity;
 
+          const notes = first.notes || 'Imported from TD Ameritrade';
+
           result.trades.push({
             id: generateTradeId(),
             ticker: first.ticker,
@@ -453,7 +569,25 @@ export class BrokerCSVParser {
             exitPrice,
             timestamp: first.timestamp,
             realizedPL,
-            notes: `Imported from TD Ameritrade`,
+            status: 'closed', // Mark as closed position
+            notes,
+          });
+        }
+        
+        // Handle odd number of transactions (last one is open)
+        if (transactions.length % 2 === 1) {
+          const lastTrade = transactions[transactions.length - 1];
+          result.trades.push({
+            id: generateTradeId(),
+            ticker: lastTrade.ticker,
+            direction: lastTrade.direction,
+            quantity: lastTrade.quantity,
+            entryPrice: lastTrade.price,
+            exitPrice: lastTrade.price,
+            timestamp: lastTrade.timestamp,
+            realizedPL: 0,
+            status: 'open', // Mark as open position
+            notes: lastTrade.notes || 'Imported from TD Ameritrade',
           });
         }
       }
@@ -481,19 +615,24 @@ export class BrokerCSVParser {
     headers.forEach((header, index) => {
       const h = header.toLowerCase().trim();
 
-      if (h.includes('exec time') || h.includes('date') || h.includes('time')) {
+      if (h.includes('exec time') || h === 'date' || h === 'time') {
         mapping.timestamp = index;
       }
-      if (h.includes('symbol') || h.includes('ticker')) {
+      if (h === 'symbol' || h === 'ticker') {
         mapping.ticker = index;
       }
-      if (h.includes('side') || h.includes('type')) {
+      if (h === 'side' || h === 'type' || h === 'action') {
         mapping.direction = index;
       }
-      if (h.includes('qty') || h.includes('quantity')) {
+      if (h === 'qty' || h === 'quantity') {
         mapping.quantity = index;
       }
-      if (h.includes('price') || h.includes('net price')) {
+      // UPDATED: Prefer "price" over "net price" for individual leg pricing
+      if (h === 'price' && !mapping.entryPrice) {
+        mapping.entryPrice = index;
+      }
+      // Fall back to net price if price column not found
+      if (h === 'net price' && !mapping.entryPrice) {
         mapping.entryPrice = index;
       }
     });

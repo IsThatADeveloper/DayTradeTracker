@@ -1,4 +1,4 @@
-// src/components/TradeTable.tsx - Improved version with better organization and consistency
+// src/components/TradeTable.tsx - UPDATED: Added OPEN badge for open positions
 import React, { useState, useCallback } from 'react';
 import { Edit2, Trash2, Download, TrendingUp, TrendingDown } from 'lucide-react';
 
@@ -30,6 +30,7 @@ const TABLE_COLUMNS = [
 /**
  * Comprehensive trade table component with editing and export capabilities
  * Supports both desktop table view and mobile card layout
+ * UPDATED: Shows OPEN badge for positions without exits
  */
 export const TradeTable: React.FC<TradeTableProps> = ({
   trades,
@@ -136,6 +137,29 @@ export const TradeTable: React.FC<TradeTableProps> = ({
   );
 
   /**
+   * UPDATED: Render P&L or OPEN badge
+   * @param trade - The trade object
+   * @returns JSX element for P&L display
+   */
+  const renderPLDisplay = (trade: Trade) => {
+    // Check if position is open
+    if (trade.status === 'open') {
+      return (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+          OPEN
+        </span>
+      );
+    }
+
+    // Closed position - show P&L
+    return (
+      <span className={trade.realizedPL >= 0 ? 'text-green-600' : 'text-red-600'}>
+        {formatCurrency(trade.realizedPL)}
+      </span>
+    );
+  };
+
+  /**
    * Render action buttons for a trade
    * @param trade - The trade object
    * @returns JSX element with edit and delete buttons
@@ -179,7 +203,7 @@ export const TradeTable: React.FC<TradeTableProps> = ({
   );
 
   /**
-   * Render mobile card view for a single trade
+   * UPDATED: Render mobile card view for a single trade
    * @param trade - The trade to render
    * @returns JSX element for mobile card
    */
@@ -222,14 +246,22 @@ export const TradeTable: React.FC<TradeTableProps> = ({
         </div>
       </div>
 
-      {/* P&L Display */}
+      {/* UPDATED: P&L Display with OPEN badge support */}
       <div className="flex items-center justify-between">
-        <span className="text-sm text-gray-500 dark:text-gray-400">Realized P&L:</span>
-        <span className={`text-lg font-semibold ${
-          trade.realizedPL >= 0 ? 'text-green-600' : 'text-red-600'
-        }`}>
-          {formatCurrency(trade.realizedPL)}
+        <span className="text-sm text-gray-500 dark:text-gray-400">
+          {trade.status === 'open' ? 'Status:' : 'Realized P&L:'}
         </span>
+        {trade.status === 'open' ? (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+            OPEN
+          </span>
+        ) : (
+          <span className={`text-lg font-semibold ${
+            trade.realizedPL >= 0 ? 'text-green-600' : 'text-red-600'
+          }`}>
+            {formatCurrency(trade.realizedPL)}
+          </span>
+        )}
       </div>
 
       {/* Notes (if present) */}
@@ -245,7 +277,7 @@ export const TradeTable: React.FC<TradeTableProps> = ({
   );
 
   /**
-   * Render desktop table row for a single trade
+   * UPDATED: Render desktop table row for a single trade
    * @param trade - The trade to render
    * @returns JSX element for table row
    */
@@ -270,9 +302,7 @@ export const TradeTable: React.FC<TradeTableProps> = ({
         {formatCurrency(trade.exitPrice)}
       </td>
       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
-        <span className={trade.realizedPL >= 0 ? 'text-green-600' : 'text-red-600'}>
-          {formatCurrency(trade.realizedPL)}
-        </span>
+        {renderPLDisplay(trade)}
       </td>
       <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
         {trade.notes || '-'}

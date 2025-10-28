@@ -1,3 +1,4 @@
+// src/types/trade.ts - UPDATED: Added status field for open/closed trades
 export interface Trade {
   id: string;
   ticker: string;
@@ -7,9 +8,10 @@ export interface Trade {
   timestamp: Date;
   direction: 'long' | 'short';
   realizedPL: number;
-  notes?: string | null; // Allow both undefined and null for Firestore compatibility
-  updateCount?: number; // Track how many times this trade has been updated
-  lastUpdated?: Date; // Track when it was last updated
+  notes?: string | null;
+  updateCount?: number;
+  lastUpdated?: Date;
+  status?: 'open' | 'closed'; // NEW: Track if position is open or closed
 }
 
 export interface DailyStats {
@@ -32,11 +34,13 @@ export interface HourlyStats {
 
 // Helper type for creating new trades (ensures proper types)
 export interface NewTrade extends Omit<Trade, 'id' | 'updateCount' | 'lastUpdated'> {
-  notes?: string; // For new trades, keep it simple as string | undefined
+  notes?: string;
+  status?: 'open' | 'closed';
 }
 
 // Helper type for trade updates (allows partial updates)
 export interface TradeUpdate extends Partial<Omit<Trade, 'id' | 'timestamp'>> {
   timestamp?: Date;
-  notes?: string | null; // Allow null for clearing notes
+  notes?: string | null;
+  status?: 'open' | 'closed';
 }
