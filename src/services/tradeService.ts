@@ -1,4 +1,4 @@
-// src/services/tradeService.ts - FIXED: Added user ownership verification for update/delete
+// src/services/tradeService.ts - FIXED: Added batch processing for bulk imports to avoid rate limiting
 import {
   collection,
   doc,
@@ -329,27 +329,83 @@ export const tradeService = {
   },
 
   /**
-   * Bulk add trades (for imports)
+   * Bulk add trades (for imports) - FIXED: Batch processing to avoid rate limits
+   * Processes trades in batches of 10 with 100ms delays between batches
    */
   async bulkAddTrades(userId: string, trades: Trade[]): Promise<{ success: number; failed: number; errors: string[] }> {
-    console.log(`🔥 Bulk adding ${trades.length} trades`);
+    console.log(`🔥 Bulk adding ${trades.length} trades in batches`);
     
     let success = 0;
     let failed = 0;
     const errors: string[] = [];
     
-    for (const trade of trades) {
-      try {
-        await this.addTrade(userId, trade);
-        success++;
-      } catch (error: any) {
-        failed++;
-        errors.push(`${trade.ticker}: ${error.message}`);
-        console.error(`Failed to add trade ${trade.ticker}:`, error);
+    // Process trades in batches to avoid rate limiting and overwhelming Firestore
+    const BATCH_SIZE = 10;
+    
+    for (let i = 0; i < trades.length; i += BATCH_SIZE) {
+      const batch = trades.slice(i, i + BATCH_SIZE);
+      console.log(`📦 Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(trades.length / BATCH_SIZE)}`);
+      
+      // Process batch concurrently using Promise.allSettled
+      const results = await Promise.allSettled(
+        batch.map(async (trade) => {
+          try {
+            // Validate trade data (skip rate limiting for bulk imports)
+            const validation = validationService.validateTrade(trade);
+            if (!validation.isValid) {
+              throw new Error(`Invalid: ${validation.errors.join(', ')}`);
+            }
+
+            const sanitizedTrade = { ...trade, ...validation.sanitized };
+
+            // Create trade data for Firestore
+            const tradeData: any = {
+              ...sanitizedTrade,
+              userId,
+              timestamp: Timestamp.fromDate(sanitizedTrade.timestamp!),
+              updateCount: 0,
+              lastUpdated: Timestamp.fromDate(new Date())
+            };
+            
+            tradeData.notes = sanitizedTrade.notes || null;
+            tradeData.status = sanitizedTrade.status || 'closed';
+            delete tradeData.id;
+            
+            const docRef = await addDoc(collection(db, TRADES_COLLECTION), tradeData);
+            return { success: true, id: docRef.id, ticker: trade.ticker };
+          } catch (error: any) {
+            return { success: false, error: error.message, ticker: trade.ticker };
+          }
+        })
+      );
+
+      // Process results from this batch
+      results.forEach((result, index) => {
+        const trade = batch[index];
+        if (result.status === 'fulfilled' && result.value.success) {
+          success++;
+          console.log(`✅ ${trade.ticker} added successfully`);
+        } else {
+          failed++;
+          const errorMsg = result.status === 'rejected' 
+            ? result.reason.message 
+            : (result.value as any).error;
+          errors.push(`${trade.ticker}: ${errorMsg}`);
+          console.error(`❌ ${trade.ticker} failed: ${errorMsg}`);
+        }
+      });
+
+      // Small delay between batches to avoid overwhelming Firestore (100ms)
+      if (i + BATCH_SIZE < trades.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
     
     console.log(`✅ Bulk import complete: ${success} success, ${failed} failed`);
+    if (errors.length > 0) {
+      console.log(`❌ Errors encountered:`, errors.slice(0, 5)); // Log first 5 errors
+    }
+    
     return { success, failed, errors };
   },
 };

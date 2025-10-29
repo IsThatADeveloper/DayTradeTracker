@@ -1,4 +1,4 @@
-// src/services/validationService.ts - UPDATED: Removed price rounding to allow higher precision
+// src/services/validationService.ts - UPDATED: Increased price limits to $1,000,000
 // FIXED: Changed timestamp validation to allow historical trades (1990+)
 import DOMPurify from 'dompurify';
 import { Trade } from '../types/trade';
@@ -49,9 +49,10 @@ class ValidationService {
     }
 
     // UPDATED: Validate prices without rounding - preserve full precision
+    // INCREASED LIMIT: Now supports prices up to $1,000,000 (was $100,000)
     if (typeof trade.entryPrice === 'number') {
-      if (trade.entryPrice <= 0 || trade.entryPrice > 100000) {
-        errors.push('Entry price must be between $0.000001 and $100,000');
+      if (trade.entryPrice <= 0 || trade.entryPrice > 1000000) {
+        errors.push('Entry price must be between $0.000001 and $1,000,000');
       } else {
         // REMOVED: Math.round(trade.entryPrice * 100) / 100
         // Now preserves full precision up to JavaScript's number limits
@@ -61,13 +62,29 @@ class ValidationService {
       errors.push('Valid entry price is required');
     }
 
+    // FIXED: Allow exit price of 0 for open positions
     if (typeof trade.exitPrice === 'number') {
-      if (trade.exitPrice <= 0 || trade.exitPrice > 100000) {
-        errors.push('Exit price must be between $0.000001 and $100,000');
+      // Check if this is an open position (status === 'open' or exitPrice === 0)
+      const isOpenPosition = trade.status === 'open' || trade.exitPrice === 0;
+      
+      if (isOpenPosition) {
+        // For open positions, exit price should be 0 or very close to 0
+        if (trade.exitPrice < 0 || trade.exitPrice > 1000000) {
+          errors.push('Exit price must be between $0 and $1,000,000');
+        } else {
+          sanitized.exitPrice = trade.exitPrice;
+          // Ensure status is set to 'open' if exit price is 0
+          if (trade.exitPrice === 0 && !trade.status) {
+            sanitized.status = 'open';
+          }
+        }
       } else {
-        // REMOVED: Math.round(trade.exitPrice * 100) / 100
-        // Now preserves full precision up to JavaScript's number limits
-        sanitized.exitPrice = trade.exitPrice;
+        // For closed positions, exit price must be greater than 0
+        if (trade.exitPrice <= 0 || trade.exitPrice > 1000000) {
+          errors.push('Exit price must be between $0.000001 and $1,000,000');
+        } else {
+          sanitized.exitPrice = trade.exitPrice;
+        }
       }
     } else {
       errors.push('Valid exit price is required');
@@ -91,6 +108,22 @@ class ValidationService {
       sanitized.direction = trade.direction;
     } else {
       errors.push('Direction must be either "long" or "short"');
+    }
+
+    // Validate status field
+    if (trade.status) {
+      if (['open', 'closed'].includes(trade.status)) {
+        sanitized.status = trade.status;
+      } else {
+        errors.push('Status must be either "open" or "closed"');
+      }
+    } else {
+      // Auto-detect status based on exit price if not provided
+      if (trade.exitPrice === 0) {
+        sanitized.status = 'open';
+      } else {
+        sanitized.status = 'closed';
+      }
     }
 
     // Validate and sanitize notes
