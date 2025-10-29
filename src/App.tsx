@@ -1,4 +1,4 @@
-// src/App.tsx - Fixed CSV Import Issue
+// src/App.tsx - Fixed CSV Import Issue + Fixed updateTrade/deleteTrade
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator, BookOpen, AlertCircle } from 'lucide-react';
 import { Trade } from './types/trade';
@@ -510,6 +510,7 @@ function AppContent() {
     }
   }, [currentUser, setLocalTrades]);
 
+  // ✅ FIXED: Added currentUser.uid as first parameter
   const handleUpdateTrade = useCallback(async (tradeId: string, updates: Partial<Trade>) => {
     console.log('🔄 App: Updating trade:', tradeId);
 
@@ -522,7 +523,8 @@ function AppContent() {
             updateCount: currentTrade.updateCount || 0
           };
 
-          await tradeService.updateTrade(tradeId, updatesWithCount);
+          // ✅ FIXED: Pass userId as first parameter
+          await tradeService.updateTrade(currentUser.uid, tradeId, updatesWithCount);
 
           setCloudTrades(prev => prev.map(trade =>
             trade.id === tradeId
@@ -555,10 +557,12 @@ function AppContent() {
     }
   }, [currentUser, cloudTrades, setLocalTrades]);
 
+  // ✅ FIXED: Added currentUser.uid as first parameter
   const handleDeleteTrade = useCallback(async (tradeId: string) => {
     if (currentUser) {
       try {
-        await tradeService.deleteTrade(tradeId);
+        // ✅ FIXED: Pass userId as first parameter
+        await tradeService.deleteTrade(currentUser.uid, tradeId);
         setCloudTrades(prev => prev.filter(trade => trade.id !== tradeId));
       } catch (error: any) {
         console.error('Delete failed:', error);
@@ -760,6 +764,7 @@ function AppContent() {
               setSelectedDate(date);
               setActiveView('daily');
             }}
+            onTradesAdded={handleTradesAdded}
           />
         );
       }

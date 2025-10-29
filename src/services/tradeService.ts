@@ -1,4 +1,4 @@
-// src/services/tradeService.ts - Complete service with status field support
+// src/services/tradeService.ts - FIXED: Added user ownership verification for update/delete
 import {
   collection,
   doc,
@@ -9,7 +9,7 @@ import {
   query,
   where,
   Timestamp,
-  orderBy,
+  getDoc,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Trade } from '../types/trade';
@@ -84,7 +84,6 @@ export const tradeService = {
         throw new Error('Rate limit exceeded for trade fetching.');
       }
 
-      // FIXED: Removed orderBy to avoid index requirement - will sort in memory
       const q = query(
         collection(db, TRADES_COLLECTION),
         where('userId', '==', userId)
@@ -106,7 +105,7 @@ export const tradeService = {
           notes: data.notes || null,
           updateCount: data.updateCount || 0,
           lastUpdated: data.lastUpdated?.toDate() || new Date(),
-          status: data.status || 'closed', // Default to 'closed' for backward compatibility
+          status: data.status || 'closed',
         };
       });
 
@@ -122,15 +121,29 @@ export const tradeService = {
   },
 
   /**
-   * Update an existing trade
+   * Update an existing trade - FIXED: Now verifies user ownership
    */
   async updateTrade(userId: string, tradeId: string, updates: Partial<Trade>): Promise<void> {
-    console.log('🔥 Updating trade:', tradeId);
+    console.log('🔥 Updating trade:', tradeId, 'for user:', userId);
     
     try {
       // Rate limiting
       if (!validationService.checkRateLimit(userId, 'updateTrade', 50, 60000)) {
         throw new Error('Rate limit exceeded for trade updates.');
+      }
+
+      // SECURITY FIX: Verify the trade belongs to this user before updating
+      const tradeRef = doc(db, TRADES_COLLECTION, tradeId);
+      const tradeDoc = await getDoc(tradeRef);
+
+      if (!tradeDoc.exists()) {
+        throw new Error('Trade not found');
+      }
+
+      const tradeData = tradeDoc.data();
+      if (tradeData.userId !== userId) {
+        console.error(`❌ Access denied: User ${userId} attempted to update trade ${tradeId} owned by ${tradeData.userId}`);
+        throw new Error('Access denied: You do not have permission to update this trade');
       }
 
       // Validate updates
@@ -165,12 +178,12 @@ export const tradeService = {
       
       // Update metadata
       updateData.lastUpdated = Timestamp.fromDate(new Date());
-      updateData.updateCount = (updates.updateCount || 0) + 1;
+      updateData.updateCount = (tradeData.updateCount || 0) + 1;
       
-      // Remove id field if present
+      // Remove id and userId fields if present (these should never be updated)
       delete updateData.id;
+      delete updateData.userId;
 
-      const tradeRef = doc(db, TRADES_COLLECTION, tradeId);
       await updateDoc(tradeRef, updateData);
       
       console.log('✅ Trade updated successfully');
@@ -181,10 +194,10 @@ export const tradeService = {
   },
 
   /**
-   * Delete a trade
+   * Delete a trade - FIXED: Now verifies user ownership
    */
   async deleteTrade(userId: string, tradeId: string): Promise<void> {
-    console.log('🔥 Deleting trade:', tradeId);
+    console.log('🔥 Deleting trade:', tradeId, 'for user:', userId);
     
     try {
       // Rate limiting
@@ -192,7 +205,20 @@ export const tradeService = {
         throw new Error('Rate limit exceeded for trade deletion.');
       }
 
+      // SECURITY FIX: Verify the trade belongs to this user before deleting
       const tradeRef = doc(db, TRADES_COLLECTION, tradeId);
+      const tradeDoc = await getDoc(tradeRef);
+
+      if (!tradeDoc.exists()) {
+        throw new Error('Trade not found');
+      }
+
+      const tradeData = tradeDoc.data();
+      if (tradeData.userId !== userId) {
+        console.error(`❌ Access denied: User ${userId} attempted to delete trade ${tradeId} owned by ${tradeData.userId}`);
+        throw new Error('Access denied: You do not have permission to delete this trade');
+      }
+
       await deleteDoc(tradeRef);
       
       console.log('✅ Trade deleted successfully');
