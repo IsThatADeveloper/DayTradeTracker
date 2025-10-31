@@ -31,7 +31,7 @@ export const tradeService = {
     
     try {
       // Rate limiting check
-      if (!validationService.checkRateLimit(userId, 'addTrade', 30, 60000)) {
+      if (!validationService.checkRateLimit(userId, 'addTrade', 1000, 60000)) {
         throw new Error('Rate limit exceeded. Please wait before adding more trades.');
       }
 

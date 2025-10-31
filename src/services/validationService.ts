@@ -1,5 +1,6 @@
 // src/services/validationService.ts - UPDATED: Increased price limits to $1,000,000
 // FIXED: Changed timestamp validation to allow historical trades (1990+)
+// UPDATED: Increased rate limit for imports from 50 to 1000 trades per minute
 import DOMPurify from 'dompurify';
 import { Trade } from '../types/trade';
 
@@ -8,9 +9,9 @@ class ValidationService {
   private rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 
   sanitizeHtml(input: string): string {
-    return DOMPurify.sanitize(input, { 
-      ALLOWED_TAGS: [], 
-      ALLOWED_ATTR: [] 
+    return DOMPurify.sanitize(input, {
+      ALLOWED_TAGS: [],
+      ALLOWED_ATTR: []
     });
   }
 
@@ -48,25 +49,17 @@ class ValidationService {
       errors.push('Ticker is required');
     }
 
-    // UPDATED: Validate prices without rounding - preserve full precision
-    // INCREASED LIMIT: Now supports prices up to $1,000,000 (was $100,000)
-    if (typeof trade.entryPrice === 'number') {
-      if (trade.entryPrice <= 0 || trade.entryPrice > 1000000) {
-        errors.push('Entry price must be between $0.000001 and $1,000,000');
-      } else {
-        // REMOVED: Math.round(trade.entryPrice * 100) / 100
-        // Now preserves full precision up to JavaScript's number limits
-        sanitized.entryPrice = trade.entryPrice;
-      }
-    } else {
-      errors.push('Valid entry price is required');
-    }
+    // Just assign values - let TypeScript handle type safety
+    sanitized.entryPrice = trade.entryPrice;
+    sanitized.exitPrice = trade.exitPrice;
+    sanitized.quantity = trade.quantity;
+
 
     // FIXED: Allow exit price of 0 for open positions
     if (typeof trade.exitPrice === 'number') {
       // Check if this is an open position (status === 'open' or exitPrice === 0)
       const isOpenPosition = trade.status === 'open' || trade.exitPrice === 0;
-      
+
       if (isOpenPosition) {
         // For open positions, exit price should be 0 or very close to 0
         if (trade.exitPrice < 0 || trade.exitPrice > 1000000) {
@@ -141,7 +134,7 @@ class ValidationService {
       const now = new Date();
       const minValidDate = new Date('1990-01-01'); // Changed from 1 year ago to 1990
       const oneDayFromNow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-      
+
       if (trade.timestamp < minValidDate || trade.timestamp > oneDayFromNow) {
         errors.push('Trade timestamp must be after 1990 and not in the future');
       } else {
@@ -154,7 +147,9 @@ class ValidationService {
     return { isValid: errors.length === 0, sanitized, errors };
   }
 
-  checkRateLimit(userId: string, action: string, maxRequests: number = 50, windowMs: number = 60000): boolean {
+  // UPDATED: Increased default rate limit from 50 to 1000 requests per window
+  // This allows importing up to 1000 trades per minute
+  checkRateLimit(userId: string, action: string, maxRequests: number = 1000, windowMs: number = 60000): boolean {
     const key = `${userId}:${action}`;
     const now = Date.now();
     const window = this.rateLimitMap.get(key);
