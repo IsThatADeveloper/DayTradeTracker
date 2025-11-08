@@ -1,5 +1,5 @@
-// src/components/EarningsProjection.tsx - Enhanced with Goals Integration
-import React, { useState, useMemo, useCallback } from 'react';
+// src/components/EarningsProjection.tsx - Debugged Version
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   TrendingUp,
   Calculator,
@@ -29,12 +29,8 @@ import { formatCurrency } from '../utils/tradeUtils';
 import {
   differenceInDays,
   differenceInMonths,
-  subDays,
-  subMonths,
   format,
-  addYears,
   startOfDay,
-  subYears,
   startOfWeek,
   startOfMonth,
   startOfYear,
@@ -43,11 +39,9 @@ import {
   endOfMonth,
   endOfYear,
   isWithinInterval,
-  differenceInCalendarDays,
-  addDays,
-  addMonths,
   getDaysInMonth,
-  getWeeksInMonth,
+  isValid,
+  parseISO,
 } from 'date-fns';
 
 interface EarningsProjectionProps {
@@ -84,7 +78,6 @@ interface PerformanceMetrics {
   annualReturnRate: number;
 }
 
-// Goals-related interfaces
 type Period = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 interface EarningsTarget {
@@ -109,9 +102,16 @@ interface PeriodStats {
 
 type TimeRange = 'today' | '7d' | '1m' | '3m' | '1y' | 'all';
 
-const MAX_CAPITAL = 1000000000; // 1 billion cap
+// Constants
+const MAX_CAPITAL = 1000000000;
+const MIN_TRADING_DAYS_WARNING = 30;
+const MARKET_OPEN_HOUR = 9.5;
+const MARKET_CLOSE_HOUR = 16;
+const MARKET_HOURS_PER_DAY = 6.5;
+const RISK_FREE_RATE = 2.0;
+const TRADING_DAYS_PER_YEAR = 252;
 
-// Goals configuration
+// Period configuration
 const PERIOD_CONFIG = {
   daily: { label: 'Daily', icon: Clock, color: 'blue' },
   weekly: { label: 'Weekly', icon: Calendar, color: 'green' },
@@ -126,31 +126,57 @@ const DEFAULT_TARGETS: Record<Period, number> = {
   yearly: 120000
 };
 
-// Helper function to safely convert timestamp to Date
+// Utility functions
+const safeParseFloat = (value: string, fallback: number = 0): number => {
+  if (!value || value.trim() === '') return fallback;
+  const parsed = parseFloat(value);
+  return isNaN(parsed) ? fallback : parsed;
+};
+
+const safeDivide = (numerator: number, denominator: number, fallback: number = 0): number => {
+  if (denominator === 0 || !isFinite(denominator) || !isFinite(numerator)) return fallback;
+  const result = numerator / denominator;
+  return isFinite(result) ? result : fallback;
+};
+
 const getValidDate = (timestamp: any): Date | null => {
-  if (!timestamp) return null;
-
-  if (timestamp instanceof Date) {
-    return isNaN(timestamp.getTime()) ? null : timestamp;
-  }
-
   try {
+    if (!timestamp) return null;
+    
+    if (timestamp instanceof Date) {
+      return isValid(timestamp) ? timestamp : null;
+    }
+
+    if (typeof timestamp === 'string') {
+      // Try parsing ISO string first
+      const isoDate = parseISO(timestamp);
+      if (isValid(isoDate)) return isoDate;
+    }
+
+    // Try direct Date constructor
     const date = new Date(timestamp);
-    return isNaN(date.getTime()) ? null : date;
+    return isValid(date) ? date : null;
   } catch (error) {
-    console.error('Error converting timestamp to date:', timestamp, error);
+    console.warn('Invalid date timestamp:', timestamp, error);
     return null;
   }
 };
 
-// Helper function to safely get timestamp for sorting
 const getTimestamp = (trade: Trade): number => {
   const date = getValidDate(trade.timestamp);
   return date ? date.getTime() : 0;
 };
 
+// Input validation
+const validateNumericInput = (value: string, max: number = MAX_CAPITAL): boolean => {
+  if (value === '') return true; // Allow empty
+  if (!/^\d*\.?\d*$/.test(value)) return false; // Only numbers and decimal
+  const num = parseFloat(value);
+  return !isNaN(num) && num >= 0 && num <= max;
+};
+
 export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, selectedDate }) => {
-  // Input states with proper validation
+  // State management with better defaults
   const [initialCapital, setInitialCapital] = useState<string>('10000');
   const [monthlyContribution, setMonthlyContribution] = useState<string>('1000');
   const [dividendYield, setDividendYield] = useState<number>(2.5);
@@ -171,295 +197,348 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
   const [tempAmount, setTempAmount] = useState<string>('');
   const [selectedPeriod, setSelectedPeriod] = useState<Period>('monthly');
 
-  // Helper to get numeric values for calculations
+  // Error state for debugging
+  const [errors, setErrors] = useState<string[]>([]);
+
+  // Debug function
+  const addError = useCallback((error: string) => {
+    console.error('EarningsProjection Error:', error);
+    setErrors(prev => [...prev.slice(-4), error]); // Keep last 5 errors
+  }, []);
+
+  // Clear errors after some time
+  useEffect(() => {
+    if (errors.length > 0) {
+      const timer = setTimeout(() => {
+        setErrors([]);
+      }, 10000);
+      return () => clearTimeout(timer);
+    }
+  }, [errors]);
+
+  // Numeric getters with validation
   const getNumericInitialCapital = useCallback((): number => {
-    const num = parseFloat(initialCapital);
-    return isNaN(num) || num < 0 ? 0 : Math.min(num, MAX_CAPITAL);
+    const num = safeParseFloat(initialCapital);
+    return Math.max(0, Math.min(num, MAX_CAPITAL));
   }, [initialCapital]);
 
   const getNumericMonthlyContribution = useCallback((): number => {
-    const num = parseFloat(monthlyContribution);
-    return isNaN(num) || num < 0 ? 0 : Math.min(num, MAX_CAPITAL / 12);
+    const num = safeParseFloat(monthlyContribution);
+    return Math.max(0, Math.min(num, MAX_CAPITAL / 12));
   }, [monthlyContribution]);
 
-  // Input validation helpers
+  // Input handlers with validation
   const handleCapitalChange = useCallback((value: string) => {
-    if (value === '') {
-      setInitialCapital('');
-      return;
-    }
-
-    if (/^\d*\.?\d*$/.test(value)) {
-      const numValue = parseFloat(value);
-      if (!isNaN(numValue) && numValue <= MAX_CAPITAL) {
-        setInitialCapital(value);
-      }
+    if (validateNumericInput(value, MAX_CAPITAL)) {
+      setInitialCapital(value);
     }
   }, []);
 
   const handleContributionChange = useCallback((value: string) => {
-    if (value === '') {
-      setMonthlyContribution('');
-      return;
-    }
-
-    if (/^\d*\.?\d*$/.test(value)) {
-      const numValue = parseFloat(value);
-      if (!isNaN(numValue) && numValue <= MAX_CAPITAL / 12) {
-        setMonthlyContribution(value);
-      }
+    if (validateNumericInput(value, MAX_CAPITAL / 12)) {
+      setMonthlyContribution(value);
     }
   }, []);
 
-  // FIXED: Calculate comprehensive performance metrics with proper return rate
+  // Filtered and sorted trades with error handling
+  const validTrades = useMemo(() => {
+    try {
+      const filtered = trades.filter(trade => {
+        const date = getValidDate(trade.timestamp);
+        const hasValidPL = typeof trade.realizedPL === 'number' && isFinite(trade.realizedPL);
+        return date !== null && hasValidPL;
+      });
+
+      return filtered.sort((a, b) => getTimestamp(a) - getTimestamp(b));
+    } catch (error) {
+      addError(`Trade filtering error: ${error}`);
+      return [];
+    }
+  }, [trades, addError]);
+
+  // Performance metrics with comprehensive error handling
   const performanceMetrics = useMemo((): PerformanceMetrics => {
-    if (trades.length === 0) {
-      return {
-        totalPL: 0,
-        totalTrades: 0,
-        winRate: 0,
-        avgDailyPL: 0,
-        avgMonthlyPL: 0,
-        avgAnnualPL: 0,
-        tradingDays: 0,
-        dailyVolatility: 0,
-        monthlyVolatility: 0,
-        sharpeRatio: 0,
-        maxDrawdown: 0,
-        profitFactor: 0,
-        consistency: 0,
-        annualReturnRate: 0,
-      };
-    }
-
-    const validTrades = trades.filter(trade => getValidDate(trade.timestamp) !== null);
-
-    if (validTrades.length === 0) {
-      return {
-        totalPL: 0,
-        totalTrades: 0,
-        winRate: 0,
-        avgDailyPL: 0,
-        avgMonthlyPL: 0,
-        avgAnnualPL: 0,
-        tradingDays: 0,
-        dailyVolatility: 0,
-        monthlyVolatility: 0,
-        sharpeRatio: 0,
-        maxDrawdown: 0,
-        profitFactor: 0,
-        consistency: 0,
-        annualReturnRate: 0,
-      };
-    }
-
-    const sortedTrades = [...validTrades].sort((a, b) => getTimestamp(a) - getTimestamp(b));
-
-    const totalPL = validTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
-    const wins = validTrades.filter((trade) => trade.realizedPL > 0);
-    const losses = validTrades.filter((trade) => trade.realizedPL < 0);
-    const winRate = (wins.length / validTrades.length) * 100;
-
-    // Calculate time-based metrics
-    const firstTradeDate = getValidDate(sortedTrades[0].timestamp)!;
-    const lastTradeDate = getValidDate(sortedTrades[sortedTrades.length - 1].timestamp)!;
-    const totalDays = Math.max(differenceInDays(lastTradeDate, firstTradeDate), 1);
-    const totalMonths = Math.max(differenceInMonths(lastTradeDate, firstTradeDate), 1);
-    const totalYears = totalDays / 365.25;
-
-    // Get unique trading days
-    const uniqueTradingDays = new Set(validTrades.map((trade) => {
-      const tradeDate = getValidDate(trade.timestamp)!;
-      return format(tradeDate, 'yyyy-MM-dd');
-    })).size;
-
-    const avgDailyPL = totalPL / Math.max(uniqueTradingDays, 1);
-    const avgMonthlyPL = totalPL / Math.max(totalMonths, 1);
-    const avgAnnualPL = totalPL / Math.max(totalYears, 1);
-
-    // FIXED: Calculate annual return rate as percentage of initial capital
-    const initialCapitalNum = getNumericInitialCapital();
-    const annualReturnRate = initialCapitalNum > 0 ? (avgAnnualPL / initialCapitalNum) * 100 : 0;
-
-    // Calculate volatility (standard deviation of daily returns)
-    const dailyPLs = Object.values(
-      validTrades.reduce((acc, trade) => {
-        const tradeDate = getValidDate(trade.timestamp)!;
-        const dateKey = format(tradeDate, 'yyyy-MM-dd');
-        acc[dateKey] = (acc[dateKey] || 0) + trade.realizedPL;
-        return acc;
-      }, {} as Record<string, number>)
-    );
-
-    const dailyMean = dailyPLs.reduce((sum, pl) => sum + pl, 0) / dailyPLs.length;
-    const dailyVariance =
-      dailyPLs.reduce((sum, pl) => sum + Math.pow(pl - dailyMean, 2), 0) / dailyPLs.length;
-    const dailyVolatility = Math.sqrt(dailyVariance);
-    const monthlyVolatility = dailyVolatility * Math.sqrt(21);
-
-    // Calculate Sharpe ratio using return rate
-    const riskFreeRate = 2.0; // 2% annual risk-free rate
-    const excessReturn = annualReturnRate - riskFreeRate;
-    const annualVolatility = initialCapitalNum > 0 ? (dailyVolatility * Math.sqrt(252) / initialCapitalNum) * 100 : 0;
-    const sharpeRatio = annualVolatility > 0 ? excessReturn / annualVolatility : 0;
-
-    // Calculate maximum drawdown
-    let runningPL = 0;
-    let peak = 0;
-    let maxDrawdown = 0;
-
-    sortedTrades.forEach((trade) => {
-      runningPL += trade.realizedPL;
-      if (runningPL > peak) peak = runningPL;
-      const drawdown = peak - runningPL;
-      if (drawdown > maxDrawdown) maxDrawdown = drawdown;
-    });
-
-    // Calculate profit factor
-    const totalWins = wins.reduce((sum, trade) => sum + trade.realizedPL, 0);
-    const totalLosses = Math.abs(losses.reduce((sum, trade) => sum + trade.realizedPL, 0));
-    const profitFactor = totalLosses > 0 ? totalWins / totalLosses : totalWins > 0 ? 999 : 0;
-
-    // Calculate consistency
-    const monthlyPLs = Object.values(
-      validTrades.reduce((acc, trade) => {
-        const tradeDate = getValidDate(trade.timestamp)!;
-        const monthKey = format(tradeDate, 'yyyy-MM');
-        acc[monthKey] = (acc[monthKey] || 0) + trade.realizedPL;
-        return acc;
-      }, {} as Record<string, number>)
-    );
-    const profitableMonths = monthlyPLs.filter((pl) => pl > 0).length;
-    const consistency = monthlyPLs.length > 0 ? (profitableMonths / monthlyPLs.length) * 100 : 0;
-
-    return {
-      totalPL,
-      totalTrades: validTrades.length,
-      winRate,
-      avgDailyPL,
-      avgMonthlyPL,
-      avgAnnualPL,
-      tradingDays: uniqueTradingDays,
-      dailyVolatility,
-      monthlyVolatility,
-      sharpeRatio,
-      maxDrawdown,
-      profitFactor,
-      consistency,
-      annualReturnRate,
+    const defaultMetrics: PerformanceMetrics = {
+      totalPL: 0,
+      totalTrades: 0,
+      winRate: 0,
+      avgDailyPL: 0,
+      avgMonthlyPL: 0,
+      avgAnnualPL: 0,
+      tradingDays: 0,
+      dailyVolatility: 0,
+      monthlyVolatility: 0,
+      sharpeRatio: 0,
+      maxDrawdown: 0,
+      profitFactor: 0,
+      consistency: 0,
+      annualReturnRate: 0,
     };
-  }, [trades, getNumericInitialCapital]);
 
-  // Goals-related functions
-  const getPeriodBounds = useCallback((period: Period, date: Date) => {
-    switch (period) {
-      case 'daily':
-        return { start: startOfDay(date), end: endOfDay(date) };
-      case 'weekly':
-        return { start: startOfWeek(date, { weekStartsOn: 1 }), end: endOfWeek(date, { weekStartsOn: 1 }) };
-      case 'monthly':
-        return { start: startOfMonth(date), end: endOfMonth(date) };
-      case 'yearly':
-        return { start: startOfYear(date), end: endOfYear(date) };
+    try {
+      if (validTrades.length === 0) {
+        return defaultMetrics;
+      }
+
+      const totalPL = validTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
+      const wins = validTrades.filter(trade => trade.realizedPL > 0);
+      const losses = validTrades.filter(trade => trade.realizedPL < 0);
+
+      // Basic calculations
+      const totalTrades = validTrades.length;
+      const winRate = safeDivide(wins.length, totalTrades) * 100;
+
+      // Time calculations
+      const firstTradeDate = getValidDate(validTrades[0].timestamp)!;
+      const lastTradeDate = getValidDate(validTrades[validTrades.length - 1].timestamp)!;
+      const totalDays = Math.max(differenceInDays(lastTradeDate, firstTradeDate), 1);
+      const totalMonths = Math.max(differenceInMonths(lastTradeDate, firstTradeDate), 1);
+      const totalYears = totalDays / 365.25;
+
+      // Unique trading days
+      const uniqueTradingDays = new Set(validTrades.map(trade => {
+        const tradeDate = getValidDate(trade.timestamp)!;
+        return format(tradeDate, 'yyyy-MM-dd');
+      })).size;
+
+      // Average calculations
+      const avgDailyPL = safeDivide(totalPL, Math.max(uniqueTradingDays, 1));
+      const avgMonthlyPL = safeDivide(totalPL, Math.max(totalMonths, 1));
+      const avgAnnualPL = safeDivide(totalPL, Math.max(totalYears, 1));
+
+      // Return rate calculation
+      const initialCapitalNum = getNumericInitialCapital();
+      const annualReturnRate = initialCapitalNum > 0 
+        ? safeDivide(avgAnnualPL, initialCapitalNum) * 100 
+        : 0;
+
+      // Volatility calculations
+      const dailyPLs = Object.values(
+        validTrades.reduce((acc, trade) => {
+          const tradeDate = getValidDate(trade.timestamp)!;
+          const dateKey = format(tradeDate, 'yyyy-MM-dd');
+          acc[dateKey] = (acc[dateKey] || 0) + trade.realizedPL;
+          return acc;
+        }, {} as Record<string, number>)
+      );
+
+      const dailyMean = safeDivide(
+        dailyPLs.reduce((sum, pl) => sum + pl, 0), 
+        dailyPLs.length
+      );
+
+      const dailyVariance = dailyPLs.length > 1 
+        ? safeDivide(
+            dailyPLs.reduce((sum, pl) => sum + Math.pow(pl - dailyMean, 2), 0),
+            dailyPLs.length
+          )
+        : 0;
+
+      const dailyVolatility = Math.sqrt(Math.max(0, dailyVariance));
+      const monthlyVolatility = dailyVolatility * Math.sqrt(21);
+
+      // Sharpe ratio
+      const annualVolatility = initialCapitalNum > 0 
+        ? safeDivide(dailyVolatility * Math.sqrt(TRADING_DAYS_PER_YEAR), initialCapitalNum) * 100
+        : 0;
+      
+      const excessReturn = annualReturnRate - RISK_FREE_RATE;
+      const sharpeRatio = safeDivide(excessReturn, annualVolatility);
+
+      // Maximum drawdown
+      let runningPL = 0;
+      let peak = 0;
+      let maxDrawdown = 0;
+
+      validTrades.forEach(trade => {
+        runningPL += trade.realizedPL;
+        if (runningPL > peak) peak = runningPL;
+        const drawdown = peak - runningPL;
+        if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+      });
+
+      // Profit factor
+      const totalWins = wins.reduce((sum, trade) => sum + trade.realizedPL, 0);
+      const totalLosses = Math.abs(losses.reduce((sum, trade) => sum + trade.realizedPL, 0));
+      const profitFactor = totalLosses > 0 
+        ? safeDivide(totalWins, totalLosses) 
+        : totalWins > 0 ? 999 : 0;
+
+      // Consistency
+      const monthlyPLs = Object.values(
+        validTrades.reduce((acc, trade) => {
+          const tradeDate = getValidDate(trade.timestamp)!;
+          const monthKey = format(tradeDate, 'yyyy-MM');
+          acc[monthKey] = (acc[monthKey] || 0) + trade.realizedPL;
+          return acc;
+        }, {} as Record<string, number>)
+      );
+
+      const profitableMonths = monthlyPLs.filter(pl => pl > 0).length;
+      const consistency = safeDivide(profitableMonths, monthlyPLs.length) * 100;
+
+      return {
+        totalPL,
+        totalTrades,
+        winRate,
+        avgDailyPL,
+        avgMonthlyPL,
+        avgAnnualPL,
+        tradingDays: uniqueTradingDays,
+        dailyVolatility,
+        monthlyVolatility,
+        sharpeRatio,
+        maxDrawdown,
+        profitFactor,
+        consistency,
+        annualReturnRate,
+      };
+
+    } catch (error) {
+      addError(`Performance calculation error: ${error}`);
+      return defaultMetrics;
     }
-  }, []);
+  }, [validTrades, getNumericInitialCapital, addError]);
 
-  // Calculate earnings stats for each period
+  // Period bounds calculation
+  const getPeriodBounds = useCallback((period: Period, date: Date) => {
+    try {
+      switch (period) {
+        case 'daily':
+          return { start: startOfDay(date), end: endOfDay(date) };
+        case 'weekly':
+          return { start: startOfWeek(date, { weekStartsOn: 1 }), end: endOfWeek(date, { weekStartsOn: 1 }) };
+        case 'monthly':
+          return { start: startOfMonth(date), end: endOfMonth(date) };
+        case 'yearly':
+          return { start: startOfYear(date), end: endOfYear(date) };
+        default:
+          throw new Error(`Invalid period: ${period}`);
+      }
+    } catch (error) {
+      addError(`Period bounds calculation error: ${error}`);
+      return { start: startOfDay(date), end: endOfDay(date) };
+    }
+  }, [addError]);
+
+  // Earnings stats with error handling
   const earningsStats = useMemo(() => {
     const stats: Record<Period, PeriodStats> = {} as Record<Period, PeriodStats>;
     const now = new Date();
 
-    (['daily', 'weekly', 'monthly', 'yearly'] as Period[]).forEach(period => {
-      const bounds = getPeriodBounds(period, selectedDate);
-      const target = targets[period];
+    try {
+      (['daily', 'weekly', 'monthly', 'yearly'] as Period[]).forEach(period => {
+        try {
+          const bounds = getPeriodBounds(period, selectedDate);
+          const target = targets[period];
 
-      // Calculate actual earnings for this period
-      const periodTrades = trades.filter(trade => {
-        const tradeDate = trade.timestamp instanceof Date ? trade.timestamp : new Date(trade.timestamp);
-        return isWithinInterval(tradeDate, bounds);
+          // Calculate actual earnings for this period
+          const periodTrades = validTrades.filter(trade => {
+            const tradeDate = getValidDate(trade.timestamp);
+            return tradeDate && isWithinInterval(tradeDate, bounds);
+          });
+
+          const actual = periodTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
+          const progress = target.amount > 0 ? Math.min((actual / target.amount) * 100, 999) : 0;
+          const remaining = target.amount - actual;
+
+          // Calculate time metrics
+          let totalDays: number;
+          let daysElapsed: number;
+          let daysLeft: number;
+
+          switch (period) {
+            case 'daily':
+              totalDays = 1;
+              const currentHour = now.getHours();
+              const currentMinute = now.getMinutes();
+              const currentTime = currentHour + currentMinute / 60;
+
+              if (currentTime < MARKET_OPEN_HOUR) {
+                daysElapsed = 0;
+                daysLeft = 1;
+              } else if (currentTime > MARKET_CLOSE_HOUR) {
+                daysElapsed = 1;
+                daysLeft = 0;
+              } else {
+                const hoursElapsed = currentTime - MARKET_OPEN_HOUR;
+                daysElapsed = safeDivide(hoursElapsed, MARKET_HOURS_PER_DAY);
+                daysLeft = 1 - daysElapsed;
+              }
+              break;
+
+            case 'weekly':
+              totalDays = 7;
+              daysElapsed = Math.min(differenceInDays(now > bounds.end ? bounds.end : now, bounds.start) + 1, totalDays);
+              daysLeft = Math.max(0, differenceInDays(bounds.end, now > bounds.end ? bounds.end : now));
+              break;
+
+            case 'monthly':
+              totalDays = getDaysInMonth(selectedDate);
+              daysElapsed = Math.min(differenceInDays(now > bounds.end ? bounds.end : now, bounds.start) + 1, totalDays);
+              daysLeft = Math.max(0, differenceInDays(bounds.end, now > bounds.end ? bounds.end : now));
+              break;
+
+            case 'yearly':
+              const yearStart = startOfYear(selectedDate);
+              const yearEnd = endOfYear(selectedDate);
+              totalDays = differenceInDays(yearEnd, yearStart) + 1;
+              daysElapsed = Math.min(differenceInDays(now > yearEnd ? yearEnd : now, yearStart) + 1, totalDays);
+              daysLeft = Math.max(0, differenceInDays(yearEnd, now > yearEnd ? yearEnd : now));
+              break;
+
+            default:
+              throw new Error(`Invalid period: ${period}`);
+          }
+
+          const timeElapsed = safeDivide(daysElapsed, totalDays) * 100;
+          const dailyRequired = daysLeft > 0 ? safeDivide(remaining, daysLeft) : 0;
+          const averageDaily = daysElapsed > 0 ? safeDivide(actual, daysElapsed) : 0;
+          const projectedEnd = totalDays > 0 ? averageDaily * totalDays : actual;
+          const onTrack = progress >= timeElapsed || actual >= target.amount;
+
+          stats[period] = {
+            period,
+            label: PERIOD_CONFIG[period].label,
+            target: target.amount,
+            actual,
+            progress: Math.max(0, Math.min(progress, 999)), // Cap at 999% for display
+            remaining,
+            daysLeft,
+            dailyRequired,
+            onTrack,
+            timeElapsed: Math.max(0, Math.min(timeElapsed, 100)),
+            projectedEnd
+          };
+
+        } catch (error) {
+          addError(`Earnings stats calculation error for ${period}: ${error}`);
+          
+          // Provide fallback stats
+          stats[period] = {
+            period,
+            label: PERIOD_CONFIG[period].label,
+            target: targets[period].amount,
+            actual: 0,
+            progress: 0,
+            remaining: targets[period].amount,
+            daysLeft: 1,
+            dailyRequired: 0,
+            onTrack: false,
+            timeElapsed: 0,
+            projectedEnd: 0
+          };
+        }
       });
 
-      const actual = periodTrades.reduce((sum, trade) => sum + trade.realizedPL, 0);
-      const progress = target.amount > 0 ? (actual / target.amount) * 100 : 0;
-      const remaining = target.amount - actual;
-
-      // Calculate time metrics
-      let totalDays: number;
-      let daysElapsed: number;
-      let daysLeft: number;
-
-      switch (period) {
-        case 'daily':
-          totalDays = 1;
-          // For daily, we calculate based on market hours (9:30 AM to 4:00 PM ET = 6.5 hours)
-          const currentHour = now.getHours();
-          const currentMinute = now.getMinutes();
-          const currentTime = currentHour + currentMinute / 60;
-
-          // Market hours: 9:30 AM to 4:00 PM (6.5 hours total)
-          const marketOpen = 9.5; // 9:30 AM
-          const marketClose = 16; // 4:00 PM
-          const totalMarketHours = marketClose - marketOpen; // 6.5 hours
-
-          if (currentTime < marketOpen) {
-            // Before market opens
-            daysElapsed = 0;
-            daysLeft = 1;
-          } else if (currentTime > marketClose) {
-            // After market closes
-            daysElapsed = 1;
-            daysLeft = 0;
-          } else {
-            // During market hours
-            const hoursElapsed = currentTime - marketOpen;
-            daysElapsed = hoursElapsed / totalMarketHours;
-            daysLeft = 1 - daysElapsed;
-          }
-          break;
-        case 'weekly':
-          totalDays = 7;
-          daysElapsed = differenceInDays(now > bounds.end ? bounds.end : now, bounds.start) + 1;
-          daysLeft = Math.max(0, differenceInDays(bounds.end, now > bounds.end ? bounds.end : now));
-          break;
-        case 'monthly':
-          totalDays = getDaysInMonth(selectedDate);
-          daysElapsed = differenceInDays(now > bounds.end ? bounds.end : now, bounds.start) + 1;
-          daysLeft = Math.max(0, differenceInDays(bounds.end, now > bounds.end ? bounds.end : now));
-          break;
-        case 'yearly':
-          const yearStart = startOfYear(selectedDate);
-          const yearEnd = endOfYear(selectedDate);
-          totalDays = differenceInDays(yearEnd, yearStart) + 1;
-          daysElapsed = differenceInDays(now > yearEnd ? yearEnd : now, yearStart) + 1;
-          daysLeft = Math.max(0, differenceInDays(yearEnd, now > yearEnd ? yearEnd : now));
-          break;
-      }
-
-      const timeElapsed = totalDays > 0 ? (daysElapsed / totalDays) * 100 : 0;
-      const dailyRequired = daysLeft > 0 ? remaining / daysLeft : 0;
-      const averageDaily = daysElapsed > 0 ? actual / daysElapsed : 0;
-      const projectedEnd = totalDays > 0 ? averageDaily * totalDays : actual;
-      const onTrack = progress >= timeElapsed || actual >= target.amount;
-
-      stats[period] = {
-        period,
-        label: PERIOD_CONFIG[period].label,
-        target: target.amount,
-        actual,
-        progress: Math.min(progress, 100),
-        remaining,
-        daysLeft,
-        dailyRequired,
-        onTrack,
-        timeElapsed,
-        projectedEnd
-      };
-    });
+    } catch (error) {
+      addError(`Overall earnings stats error: ${error}`);
+    }
 
     return stats;
-  }, [trades, selectedDate, targets, getPeriodBounds]);
+  }, [validTrades, selectedDate, targets, getPeriodBounds, addError]);
 
-  // Handle target editing
+  // Target editing functions
   const startEditing = useCallback((period: Period) => {
     setEditingTarget(period);
     setTempAmount(targets[period].amount.toString());
@@ -467,8 +546,8 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
   const saveTarget = useCallback(() => {
     if (editingTarget && tempAmount) {
-      const amount = parseFloat(tempAmount);
-      if (!isNaN(amount) && amount > 0) {
+      const amount = safeParseFloat(tempAmount, 0);
+      if (amount > 0 && amount <= MAX_CAPITAL) {
         setTargets(prev => ({
           ...prev,
           [editingTarget]: {
@@ -497,58 +576,90 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     }));
   }, []);
 
-  // FIXED: Calculate realistic projections with proper percentage calculations
+  // Projections calculation with error handling
   const projections = useMemo((): ProjectionPeriod[] => {
-    const initialCapitalNum = getNumericInitialCapital();
-    const monthlyContributionNum = getNumericMonthlyContribution();
+    try {
+      const initialCapitalNum = getNumericInitialCapital();
+      const monthlyContributionNum = getNumericMonthlyContribution();
 
-    // Use the annual return rate (percentage of capital) rather than absolute dollars
-    const baseAnnualReturnRate = performanceMetrics.annualReturnRate / 100; // Convert percentage to decimal
-    const conservativeFactor = conservativeMode ? 0.6 : 1.0;
-    const adjustedAnnualReturnRate = baseAnnualReturnRate * conservativeFactor;
-
-    const periods = [1, 3, 5, 10, 15];
-
-    return periods.map((years) => {
-      let portfolioValue = initialCapitalNum;
-      let totalContributions = initialCapitalNum;
-
-      // Compound growth with monthly contributions
-      for (let month = 1; month <= years * 12; month++) {
-        // Add monthly contribution
-        portfolioValue += monthlyContributionNum;
-        totalContributions += monthlyContributionNum;
-
-        // Apply monthly growth (annual rate divided by 12)
-        const monthlyReturnRate = adjustedAnnualReturnRate / 12;
-        portfolioValue *= (1 + monthlyReturnRate);
+      if (initialCapitalNum <= 0 && monthlyContributionNum <= 0) {
+        return [];
       }
 
-      const totalGrowth = portfolioValue - totalContributions;
+      const baseAnnualReturnRate = safeDivide(performanceMetrics.annualReturnRate, 100);
+      const conservativeFactor = conservativeMode ? 0.6 : 1.0;
+      const adjustedAnnualReturnRate = baseAnnualReturnRate * conservativeFactor;
 
-      // FIXED: Calculate growth percentage based on total contributions
-      const growthPercentage = totalContributions > 0 ? (totalGrowth / totalContributions) * 100 : 0;
+      const periods = [1, 3, 5, 10, 15];
 
-      // FIXED: Calculate CAGR properly
-      const cagr = totalContributions > 0 && years > 0
-        ? (Math.pow(portfolioValue / totalContributions, 1 / years) - 1) * 100
-        : 0;
+      return periods.map((years) => {
+        try {
+          let portfolioValue = initialCapitalNum;
+          let totalContributions = initialCapitalNum;
 
-      return {
-        period: years === 1 ? '1 Year' : `${years} Years`,
-        years,
-        projectedValue: portfolioValue,
-        totalGrowth,
-        growthPercentage,
-        projectedPL: totalGrowth, // This is the same as totalGrowth
-        monthlyContribution: monthlyContributionNum,
-        totalContributions,
-        cagr,
-      };
-    });
-  }, [performanceMetrics, getNumericInitialCapital, getNumericMonthlyContribution, conservativeMode]);
+          // Compound growth with monthly contributions
+          const monthlyReturnRate = safeDivide(adjustedAnnualReturnRate, 12);
+          
+          for (let month = 1; month <= years * 12; month++) {
+            // Add monthly contribution
+            portfolioValue += monthlyContributionNum;
+            totalContributions += monthlyContributionNum;
 
-  // Get color scheme for progress
+            // Apply monthly growth
+            portfolioValue *= (1 + monthlyReturnRate);
+            
+            // Sanity check to prevent runaway calculations
+            if (portfolioValue > MAX_CAPITAL * 1000) {
+              portfolioValue = MAX_CAPITAL * 1000;
+              break;
+            }
+          }
+
+          const totalGrowth = portfolioValue - totalContributions;
+          const growthPercentage = totalContributions > 0 
+            ? safeDivide(totalGrowth, totalContributions) * 100 
+            : 0;
+
+          const cagr = totalContributions > 0 && years > 0
+            ? (Math.pow(safeDivide(portfolioValue, totalContributions), 1 / years) - 1) * 100
+            : 0;
+
+          return {
+            period: years === 1 ? '1 Year' : `${years} Years`,
+            years,
+            projectedValue: Math.max(0, portfolioValue),
+            totalGrowth: Math.max(0, totalGrowth),
+            growthPercentage: Math.max(0, growthPercentage),
+            projectedPL: Math.max(0, totalGrowth),
+            monthlyContribution: monthlyContributionNum,
+            totalContributions: Math.max(0, totalContributions),
+            cagr: Math.max(-100, Math.min(1000, cagr)), // Cap CAGR between -100% and 1000%
+          };
+
+        } catch (error) {
+          addError(`Projection calculation error for ${years} years: ${error}`);
+          
+          return {
+            period: years === 1 ? '1 Year' : `${years} Years`,
+            years,
+            projectedValue: 0,
+            totalGrowth: 0,
+            growthPercentage: 0,
+            projectedPL: 0,
+            monthlyContribution: monthlyContributionNum,
+            totalContributions: 0,
+            cagr: 0,
+          };
+        }
+      });
+
+    } catch (error) {
+      addError(`Overall projection calculation error: ${error}`);
+      return [];
+    }
+  }, [performanceMetrics, getNumericInitialCapital, getNumericMonthlyContribution, conservativeMode, addError]);
+
+  // Progress color functions
   const getProgressColor = (progress: number, onTrack: boolean) => {
     if (progress >= 100) return 'emerald';
     if (onTrack && progress >= 75) return 'green';
@@ -619,25 +730,36 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     return colors[color as keyof typeof colors] || colors.blue;
   };
 
-  // Overall summary for goals
+  // Overall stats for goals
   const overallStats = useMemo(() => {
-    const activePeriods = Object.values(earningsStats).filter(
-      s => targets[s.period].isActive
-    );
+    try {
+      const activePeriods = Object.values(earningsStats).filter(
+        s => targets[s.period].isActive
+      );
 
-    const onTrackCount = activePeriods.filter(s => s.onTrack).length;
-    const achievedCount = activePeriods.filter(s => s.progress >= 100).length;
+      const onTrackCount = activePeriods.filter(s => s.onTrack).length;
+      const achievedCount = activePeriods.filter(s => s.progress >= 100).length;
 
-    return {
-      totalActive: activePeriods.length,
-      onTrack: onTrackCount,
-      achieved: achievedCount,
-      onTrackPercentage: activePeriods.length > 0 ? (onTrackCount / activePeriods.length) * 100 : 0,
-      achievedPercentage: activePeriods.length > 0 ? (achievedCount / activePeriods.length) * 100 : 0
-    };
-  }, [earningsStats, targets]);
+      return {
+        totalActive: activePeriods.length,
+        onTrack: onTrackCount,
+        achieved: achievedCount,
+        onTrackPercentage: safeDivide(onTrackCount, activePeriods.length) * 100,
+        achievedPercentage: safeDivide(achievedCount, activePeriods.length) * 100
+      };
+    } catch (error) {
+      addError(`Overall stats calculation error: ${error}`);
+      return {
+        totalActive: 0,
+        onTrack: 0,
+        achieved: 0,
+        onTrackPercentage: 0,
+        achievedPercentage: 0
+      };
+    }
+  }, [earningsStats, targets, addError]);
 
-  // Render period card for goals
+  // Period card renderer
   const renderPeriodCard = (stats: PeriodStats) => {
     const config = PERIOD_CONFIG[stats.period];
     const colors = getColorClasses(getProgressColor(stats.progress, stats.onTrack));
@@ -755,7 +877,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           <div className="flex justify-between items-center mb-2">
             <span className={`text-sm font-medium ${colors.text}`}>Progress</span>
             <span className={`text-sm font-bold ${colors.accent}`}>
-              {stats.progress.toFixed(1)}%
+              {stats.progress > 999 ? '999+' : stats.progress.toFixed(1)}%
             </span>
           </div>
           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
@@ -828,7 +950,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     );
   };
 
-  // Mobile-responsive input component
+  // Input component
   const renderInput = (
     label: string,
     value: string | number,
@@ -871,6 +993,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
     </div>
   );
 
+  // Early return for no trades
   if (trades.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 sm:p-8">
@@ -889,6 +1012,25 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
 
   return (
     <div className="space-y-4 sm:space-y-6">
+      {/* Error Display for debugging */}
+      {errors.length > 0 && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+          <div className="flex items-start">
+            <AlertTriangle className="h-5 w-5 text-red-600 mr-2 mt-0.5 flex-shrink-0" />
+            <div>
+              <h4 className="text-sm font-medium text-red-800 dark:text-red-200">
+                Debug Information
+              </h4>
+              <div className="text-sm text-red-700 dark:text-red-300 mt-1 space-y-1">
+                {errors.map((error, index) => (
+                  <div key={index}>• {error}</div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 gap-4">
@@ -1042,7 +1184,6 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
               </label>
             </div>
 
-            {/* FIXED: Show current return rate information */}
             <div className="mt-4 sm:mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
               <div className="flex items-start">
                 <Info className="h-5 w-5 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
@@ -1061,7 +1202,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           </div>
 
           {/* Warning for insufficient data */}
-          {performanceMetrics.tradingDays < 30 && (
+          {performanceMetrics.tradingDays < MIN_TRADING_DAYS_WARNING && (
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
               <div className="flex items-start">
                 <AlertTriangle className="h-5 w-5 text-yellow-600 mr-2 mt-0.5 flex-shrink-0" />
@@ -1071,7 +1212,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
                   </h4>
                   <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
                     Projections are based on {performanceMetrics.tradingDays} trading days. For more accurate
-                    projections, consider trading for at least 30–90 days.
+                    projections, consider trading for at least {MIN_TRADING_DAYS_WARNING}–90 days.
                   </p>
                 </div>
               </div>
@@ -1079,143 +1220,159 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           )}
 
           {/* Projections table */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
-                Portfolio Projections {conservativeMode && '(Conservative)'}
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Based on {performanceMetrics.annualReturnRate.toFixed(1)}% annual return rate
-                {conservativeMode && ' (discounted to ' + (performanceMetrics.annualReturnRate * 0.6).toFixed(1) + '%)'}
-              </p>
-            </div>
+          {projections.length > 0 ? (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
+                  Portfolio Projections {conservativeMode && '(Conservative)'}
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  Based on {performanceMetrics.annualReturnRate.toFixed(1)}% annual return rate
+                  {conservativeMode && ' (discounted to ' + (performanceMetrics.annualReturnRate * 0.6).toFixed(1) + '%)'}
+                </p>
+              </div>
 
-            {/* Desktop table view */}
-            <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 dark:bg-gray-700">
-                  <tr>
-                    <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Time Period
-                    </th>
-                    <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Portfolio Value
-                    </th>
-                    <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Total Growth
-                    </th>
-                    <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      CAGR
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                  {projections.map((projection) => (
-                    <tr key={projection.period} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                        {projection.period}
-                      </td>
-                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white text-right">
-                        <span className="font-semibold">{formatCurrency(projection.projectedValue)}</span>
-                      </td>
-                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-right">
-                        <span
+              {/* Desktop table view */}
+              <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                      <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Time Period
+                      </th>
+                      <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Portfolio Value
+                      </th>
+                      <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Total Growth
+                      </th>
+                      <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        CAGR
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {projections.map((projection) => (
+                      <tr key={projection.period} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                          {projection.period}
+                        </td>
+                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white text-right">
+                          <span className="font-semibold">{formatCurrency(projection.projectedValue)}</span>
+                        </td>
+                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-right">
+                          <span
+                            className={`font-semibold ${projection.totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'
+                              }`}
+                          >
+                            {formatCurrency(projection.totalGrowth)}
+                          </span>
+                        </td>
+                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-right">
+                          <span className={`font-semibold ${projection.cagr >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {projection.cagr.toFixed(1)}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile card view */}
+              <div className="sm:hidden divide-y divide-gray-200 dark:divide-gray-700">
+                {projections.map((projection) => (
+                  <div key={projection.period} className="p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-semibold text-gray-900 dark:text-white">{projection.period}</h4>
+                      <span
+                        className={`text-sm px-2 py-1 rounded ${projection.cagr >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          }`}
+                      >
+                        {projection.cagr.toFixed(1)}% CAGR
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400">Portfolio Value:</span>
+                        <div className="font-semibold text-gray-900 dark:text-white">
+                          {formatCurrency(projection.projectedValue)}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400">Total Growth:</span>
+                        <div
                           className={`font-semibold ${projection.totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'
                             }`}
                         >
                           {formatCurrency(projection.totalGrowth)}
-                        </span>
-                      </td>
-                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-right">
-                        <span className={`font-semibold ${projection.cagr >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {projection.cagr.toFixed(1)}%
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile card view */}
-            <div className="sm:hidden divide-y divide-gray-200 dark:divide-gray-700">
-              {projections.map((projection) => (
-                <div key={projection.period} className="p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-semibold text-gray-900 dark:text-white">{projection.period}</h4>
-                    <span
-                      className={`text-sm px-2 py-1 rounded ${projection.cagr >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}
-                    >
-                      {projection.cagr.toFixed(1)}% CAGR
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-500 dark:text-gray-400">Portfolio Value:</span>
-                      <div className="font-semibold text-gray-900 dark:text-white">
-                        {formatCurrency(projection.projectedValue)}
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 dark:text-gray-400">Total Growth:</span>
-                      <div
-                        className={`font-semibold ${projection.totalGrowth >= 0 ? 'text-green-600' : 'text-red-600'
-                          }`}
-                      >
-                        {formatCurrency(projection.totalGrowth)}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+              <div className="text-center">
+                <AlertTriangle className="mx-auto h-12 w-12 text-yellow-500 mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                  Unable to Calculate Projections
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Please check your input values and try again.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Key Insights */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-            <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4 sm:p-6">
-              <div className="flex items-center space-x-3 mb-4">
-                <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
-                <h4 className="text-sm sm:text-base font-semibold text-green-800 dark:text-green-200">
-                  5-Year Growth
-                </h4>
+          {projections.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4 sm:p-6">
+                <div className="flex items-center space-x-3 mb-4">
+                  <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
+                  <h4 className="text-sm sm:text-base font-semibold text-green-800 dark:text-green-200">
+                    5-Year Growth
+                  </h4>
+                </div>
+                <p className="text-xl sm:text-2xl font-bold text-green-600 mb-2">
+                  {projections[2] ? formatCurrency(projections[2].projectedValue) : formatCurrency(0)}
+                </p>
+                <p className="text-xs sm:text-sm text-green-700 dark:text-green-300">Projected portfolio value</p>
               </div>
-              <p className="text-xl sm:text-2xl font-bold text-green-600 mb-2">
-                {projections[2] ? formatCurrency(projections[2].projectedValue) : formatCurrency(0)}
-              </p>
-              <p className="text-xs sm:text-sm text-green-700 dark:text-green-300">Projected portfolio value</p>
-            </div>
 
-            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4 sm:p-6">
-              <div className="flex items-center space-x-3 mb-4">
-                <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
-                <h4 className="text-sm sm:text-base font-semibold text-blue-800 dark:text-blue-200">
-                  Monthly Income
-                </h4>
+              <div className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4 sm:p-6">
+                <div className="flex items-center space-x-3 mb-4">
+                  <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+                  <h4 className="text-sm sm:text-base font-semibold text-blue-800 dark:text-blue-200">
+                    Monthly Income
+                  </h4>
+                </div>
+                <p className="text-xl sm:text-2xl font-bold text-blue-600 mb-2">
+                  {formatCurrency(performanceMetrics.avgMonthlyPL)}
+                </p>
+                <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">
+                  Average monthly trading profit
+                </p>
               </div>
-              <p className="text-xl sm:text-2xl font-bold text-blue-600 mb-2">
-                {formatCurrency(performanceMetrics.avgMonthlyPL)}
-              </p>
-              <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">
-                Average monthly trading profit
-              </p>
-            </div>
 
-            <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200 dark:border-purple-800 p-4 sm:p-6">
-              <div className="flex items-center space-x-3 mb-4">
-                <Target className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
-                <h4 className="text-sm sm:text-base font-semibold text-purple-800 dark:text-purple-200">
-                  Sharpe Ratio
-                </h4>
+              <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200 dark:border-purple-800 p-4 sm:p-6">
+                <div className="flex items-center space-x-3 mb-4">
+                  <Target className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
+                  <h4 className="text-sm sm:text-base font-semibold text-purple-800 dark:text-purple-200">
+                    Sharpe Ratio
+                  </h4>
+                </div>
+                <p className="text-xl sm:text-2xl font-bold text-purple-600 mb-2">
+                  {performanceMetrics.sharpeRatio.toFixed(2)}
+                </p>
+                <p className="text-xs sm:text-sm text-purple-700 dark:text-purple-300">Risk-adjusted returns</p>
               </div>
-              <p className="text-xl sm:text-2xl font-bold text-purple-600 mb-2">
-                {performanceMetrics.sharpeRatio.toFixed(2)}
-              </p>
-              <p className="text-xs sm:text-sm text-purple-700 dark:text-purple-300">Risk-adjusted returns</p>
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -1366,7 +1523,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
           setPLTimeRange={setPLTimeRange}
           title="Trading P&L Performance"
           showTimeRangeSelector={true}
-          initialCapital={getNumericInitialCapital()} // Add this line
+          initialCapital={getNumericInitialCapital()}
         />
       )}
 
@@ -1382,7 +1539,12 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
               {renderInput(
                 'Dividend Yield (%)',
                 dividendYield,
-                (value) => setDividendYield(parseFloat(value) || 0),
+                (value) => {
+                  const num = safeParseFloat(value, 0);
+                  if (num >= 0 && num <= 100) {
+                    setDividendYield(num);
+                  }
+                },
                 '',
                 '%',
                 0.1
@@ -1391,7 +1553,12 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
               {renderInput(
                 'Dividend Growth Rate (%)',
                 dividendGrowthRate,
-                (value) => setDividendGrowthRate(parseFloat(value) || 0),
+                (value) => {
+                  const num = safeParseFloat(value, 0);
+                  if (num >= 0 && num <= 100) {
+                    setDividendGrowthRate(num);
+                  }
+                },
                 '',
                 '%',
                 0.1
@@ -1425,7 +1592,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
               </div>
               <p className="text-xl sm:text-2xl font-bold text-green-600 mb-2">
                 {formatCurrency(
-                  performanceMetrics.totalPL * (dividendYield / 100) * 15
+                  Math.max(0, performanceMetrics.totalPL * (dividendYield / 100) * 15)
                 )}
               </p>
               <p className="text-xs sm:text-sm text-green-700 dark:text-green-300">Based on current trading profits</p>
@@ -1440,7 +1607,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
               </div>
               <p className="text-xl sm:text-2xl font-bold text-blue-600 mb-2">
                 {formatCurrency(
-                  (performanceMetrics.totalPL * (dividendYield / 100)) / 12
+                  Math.max(0, performanceMetrics.totalPL * (dividendYield / 100) / 12)
                 )}
               </p>
               <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">Based on current trading profits</p>
@@ -1454,7 +1621,7 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
                 </h4>
               </div>
               <p className="text-xl sm:text-2xl font-bold text-purple-600 mb-2">
-                {(dividendYield * Math.pow(1 + dividendGrowthRate / 100, 10)).toFixed(1)}%
+                {Math.min(999, dividendYield * Math.pow(1 + dividendGrowthRate / 100, 10)).toFixed(1)}%
               </p>
               <p className="text-xs sm:text-sm text-purple-700 dark:text-purple-300">
                 Dividend yield in 10 years
@@ -1465,4 +1632,4 @@ export const EarningsProjection: React.FC<EarningsProjectionProps> = ({ trades, 
       )}
     </div>
   );
-};    
+};

@@ -1,4 +1,4 @@
-// src/App.tsx - Fixed CSV Import Issue + Fixed updateTrade/deleteTrade
+// src/App.tsx - Fixed CSV Import Issue + Fixed updateTrade/deleteTrade + Added EarningsProjection
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator, BookOpen, AlertCircle } from 'lucide-react';
 import { Trade } from './types/trade';
@@ -20,6 +20,7 @@ import { AIInsights } from './components/AIInsights';
 import { StockSearch } from './components/StockSearch';
 import { StockNews } from './components/StockNews';
 import { DailyReview } from './components/DailyReview';
+import { EarningsProjection } from './components/EarningsProjection';
 import { HomePage } from './components/HomePage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
@@ -36,6 +37,7 @@ const MemoizedCalendar = React.memo(Calendar);
 const MemoizedStockSearch = React.memo(StockSearch);
 const MemoizedStockNews = React.memo(StockNews);
 const MemoizedDailyReview = React.memo(DailyReview);
+const MemoizedEarningsProjection = React.memo(EarningsProjection);
 
 const NAVIGATION_ITEMS = [
   {
@@ -797,8 +799,14 @@ function AppContent() {
         return <MemoizedStockNews trades={activeTrades} />;
       }
 
+      // ✅ FIXED: Actually render the EarningsProjection component
       if (activeView === 'projections') {
-        return null;
+        return (
+          <MemoizedEarningsProjection
+            trades={activeTrades}
+            selectedDate={selectedDate}
+          />
+        );
       }
 
       return (
@@ -1047,6 +1055,7 @@ function AppContent() {
             </p>
           </div>
 
+          {/* Only show date selector for daily view */}
           {activeView === 'daily' && (
             <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center space-x-2">
               <label className="text-sm font-medium text-gray-600 dark:text-gray-400">
