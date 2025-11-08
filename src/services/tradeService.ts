@@ -201,7 +201,7 @@ export const tradeService = {
     
     try {
       // Rate limiting
-      if (!validationService.checkRateLimit(userId, 'deleteTrade', 30, 60000)) {
+      if (!validationService.checkRateLimit(userId, 'deleteTrade', 10000, 60000)) {
         throw new Error('Rate limit exceeded for trade deletion.');
       }
 
