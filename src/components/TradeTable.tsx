@@ -1,11 +1,189 @@
-// src/components/TradeTable.tsx - UPDATED: Added OPEN badge for open positions
+// src/components/TradeTable.tsx - UPDATED: Added Delete All Trades button with custom modal
 import React, { useState, useCallback } from 'react';
-import { Edit2, Trash2, Download, TrendingUp, TrendingDown } from 'lucide-react';
+import { Edit2, Trash2, Download, TrendingUp, TrendingDown, AlertTriangle, X } from 'lucide-react';
 
 // Types
 import { Trade } from '../types/trade';
 import { formatCurrency } from '../utils/tradeUtils';
 import { EditTradeModal } from './EditTradeModal';
+
+/**
+ * Delete All Trades Confirmation Modal Component
+ */
+interface DeleteConfirmationModalProps {
+  isOpen: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  tradeCount: number;
+}
+
+const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({
+  isOpen,
+  onConfirm,
+  onCancel,
+  tradeCount,
+}) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+        {/* Header */}
+        <div className="bg-red-600 p-4 rounded-t-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <AlertTriangle className="h-6 w-6 text-white mr-2" />
+              <h3 className="text-lg font-bold text-white">Delete All Trades</h3>
+            </div>
+            <button
+              onClick={onCancel}
+              className="text-white hover:text-gray-200 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-6">
+          <div className="mb-4 text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full mb-4">
+              <AlertTriangle className="h-8 w-8 text-red-600 dark:text-red-400" />
+            </div>
+            <p className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Delete all {tradeCount} trade{tradeCount !== 1 ? 's' : ''}?
+            </p>
+            <p className="text-gray-600 dark:text-gray-400 text-sm">
+              This will permanently delete all trades for this day.
+            </p>
+          </div>
+
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 mb-4">
+            <p className="text-sm text-red-800 dark:text-red-200 font-medium text-center">
+              ⚠️ This action cannot be undone
+            </p>
+          </div>
+
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-4">
+            <p className="text-sm text-yellow-800 dark:text-yellow-200">
+              💡 <span className="font-medium">Tip:</span> Consider exporting to CSV before deleting if you need a backup.
+            </p>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex space-x-3">
+            <button
+              onClick={onCancel}
+              className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors font-medium"
+            >
+              Delete All
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Single Trade Delete Modal Component
+ */
+interface SingleTradeDeleteModalProps {
+  isOpen: boolean;
+  trade: Trade | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+const SingleTradeDeleteModal: React.FC<SingleTradeDeleteModalProps> = ({
+  isOpen,
+  trade,
+  onConfirm,
+  onCancel,
+}) => {
+  if (!isOpen || !trade) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+        {/* Header */}
+        <div className="bg-red-600 p-4 rounded-t-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <Trash2 className="h-5 w-5 text-white mr-2" />
+              <h3 className="text-lg font-bold text-white">Delete Trade</h3>
+            </div>
+            <button
+              onClick={onCancel}
+              className="text-white hover:text-gray-200 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-6">
+          <p className="text-gray-900 dark:text-white mb-4">
+            Are you sure you want to delete this trade?
+          </p>
+          
+          {/* Trade Details */}
+          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-4">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <span className="text-gray-500 dark:text-gray-400">Ticker:</span>
+                <span className="ml-2 font-semibold text-gray-900 dark:text-white">{trade.ticker}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 dark:text-gray-400">Direction:</span>
+                <span className="ml-2 font-semibold text-gray-900 dark:text-white capitalize">{trade.direction}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 dark:text-gray-400">Quantity:</span>
+                <span className="ml-2 font-semibold text-gray-900 dark:text-white">{trade.quantity}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 dark:text-gray-400">P&L:</span>
+                <span className={`ml-2 font-semibold ${trade.realizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatCurrency(trade.realizedPL)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-4">
+            <p className="text-sm text-yellow-800 dark:text-yellow-200">
+              ⚠️ This action cannot be undone.
+            </p>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex space-x-3">
+            <button
+              onClick={onCancel}
+              className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors font-medium"
+            >
+              Delete Trade
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 interface TradeTableProps {
   trades: Trade[];
@@ -30,7 +208,7 @@ const TABLE_COLUMNS = [
 /**
  * Comprehensive trade table component with editing and export capabilities
  * Supports both desktop table view and mobile card layout
- * UPDATED: Shows OPEN badge for positions without exits
+ * UPDATED: Shows OPEN badge for positions without exits + Delete All Trades
  */
 export const TradeTable: React.FC<TradeTableProps> = ({
   trades,
@@ -41,6 +219,9 @@ export const TradeTable: React.FC<TradeTableProps> = ({
   // Component state
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [deletingTradeId, setDeletingTradeId] = useState<string | null>(null);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+  const [tradeToDelete, setTradeToDelete] = useState<Trade | null>(null);
 
   /**
    * Handle opening trade for editing
@@ -51,26 +232,81 @@ export const TradeTable: React.FC<TradeTableProps> = ({
   }, []);
 
   /**
-   * Handle deleting a trade with confirmation
-   * @param tradeId - The ID of the trade to delete
+   * Handle deleting a trade - show confirmation modal
+   * @param trade - The trade to delete
    */
-  const handleDelete = useCallback(async (tradeId: string): Promise<void> => {
-    const confirmDelete = window.confirm(
-      'Are you sure you want to delete this trade? This action cannot be undone.'
-    );
-    
-    if (!confirmDelete) return;
+  const handleDelete = useCallback((trade: Trade): void => {
+    setTradeToDelete(trade);
+  }, []);
 
-    setDeletingTradeId(tradeId);
+  /**
+   * Handle confirming single trade deletion
+   */
+  const handleConfirmDelete = useCallback(async (): Promise<void> => {
+    if (!tradeToDelete) return;
+
+    setDeletingTradeId(tradeToDelete.id);
+    setTradeToDelete(null);
+    
     try {
-      await onDeleteTrade(tradeId);
+      await onDeleteTrade(tradeToDelete.id);
     } catch (error) {
       console.error('Error deleting trade:', error);
       alert('Failed to delete trade. Please try again.');
     } finally {
       setDeletingTradeId(null);
     }
-  }, [onDeleteTrade]);
+  }, [tradeToDelete, onDeleteTrade]);
+
+  /**
+   * Handle canceling single trade deletion
+   */
+  const handleCancelDelete = useCallback((): void => {
+    setTradeToDelete(null);
+  }, []);
+
+  /**
+   * Handle initiating the delete all process
+   */
+  const handleDeleteAll = useCallback((): void => {
+    if (trades.length === 0) return;
+    setShowDeleteAllModal(true);
+  }, [trades.length]);
+
+  /**
+   * Handle confirming delete all - actually delete all trades
+   */
+  const handleConfirmDeleteAll = useCallback(async (): Promise<void> => {
+    setShowDeleteAllModal(false);
+    setIsDeletingAll(true);
+
+    try {
+      console.log(`🗑️ Starting bulk delete of ${trades.length} trades...`);
+      
+      // Delete all trades sequentially
+      for (const trade of trades) {
+        try {
+          await onDeleteTrade(trade.id);
+          console.log(`✅ Deleted trade: ${trade.ticker}`);
+        } catch (error) {
+          console.error(`❌ Failed to delete trade ${trade.id}:`, error);
+        }
+      }
+
+      console.log(`🎯 Bulk delete complete`);
+    } catch (error) {
+      console.error('❌ Error during bulk delete:', error);
+    } finally {
+      setIsDeletingAll(false);
+    }
+  }, [trades, onDeleteTrade]);
+
+  /**
+   * Handle canceling the delete all process
+   */
+  const handleCancelDeleteAll = useCallback((): void => {
+    setShowDeleteAllModal(false);
+  }, []);
 
   /**
    * Handle saving trade edits
@@ -168,15 +404,15 @@ export const TradeTable: React.FC<TradeTableProps> = ({
     <div className="flex items-center justify-center space-x-2">
       <button
         onClick={() => handleEdit(trade)}
-        disabled={deletingTradeId === trade.id}
+        disabled={deletingTradeId === trade.id || isDeletingAll}
         className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 p-1 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-50"
         title="Edit trade"
       >
         <Edit2 className="h-4 w-4" />
       </button>
       <button
-        onClick={() => handleDelete(trade.id)}
-        disabled={deletingTradeId === trade.id}
+        onClick={() => handleDelete(trade)}
+        disabled={deletingTradeId === trade.id || isDeletingAll}
         className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
         title="Delete trade"
       >
@@ -342,21 +578,47 @@ export const TradeTable: React.FC<TradeTableProps> = ({
   return (
     <>
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
-        {/* Table Header with Export */}
+        {/* Table Header with Export and Delete All */}
         <div className="px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Daily Trades ({trades.length})
             </h3>
-            <button
-              onClick={onExportTrades}
-              className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-              title="Export trades as CSV"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              <span className="hidden sm:inline">Export CSV</span>
-              <span className="sm:hidden">Export</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              {/* Export CSV Button */}
+              <button
+                onClick={onExportTrades}
+                disabled={isDeletingAll}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors disabled:opacity-50"
+                title="Export trades as CSV"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                <span className="hidden sm:inline">Export CSV</span>
+                <span className="sm:hidden">Export</span>
+              </button>
+
+              {/* Delete All Trades Button */}
+              <button
+                onClick={handleDeleteAll}
+                disabled={isDeletingAll || trades.length === 0}
+                className="inline-flex items-center px-3 py-2 border border-red-300 dark:border-red-600 rounded-md shadow-sm text-sm font-medium text-red-700 dark:text-red-300 bg-white dark:bg-gray-700 hover:bg-red-50 dark:hover:bg-red-900/20 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Delete all trades for this day"
+              >
+                {isDeletingAll ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 mr-2 border-2 border-red-600 border-t-transparent rounded-full" />
+                    <span className="hidden sm:inline">Deleting...</span>
+                    <span className="sm:hidden">...</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="h-4 w-4 mr-2" />
+                    <span className="hidden sm:inline">Delete All</span>
+                    <span className="sm:hidden">Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -382,6 +644,22 @@ export const TradeTable: React.FC<TradeTableProps> = ({
         trade={editingTrade}
         onClose={handleCloseEdit}
         onSave={handleSaveEdit}
+      />
+
+      {/* Single Trade Delete Confirmation Modal */}
+      <SingleTradeDeleteModal
+        isOpen={tradeToDelete !== null}
+        trade={tradeToDelete}
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
+      />
+
+      {/* Delete All Trades Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={showDeleteAllModal}
+        onConfirm={handleConfirmDeleteAll}
+        onCancel={handleCancelDeleteAll}
+        tradeCount={trades.length}
       />
     </>
   );

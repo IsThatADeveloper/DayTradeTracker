@@ -1,4 +1,4 @@
-// src/components/Calendar.tsx - FIXED: Complete version with corrected imports
+// src/components/Calendar.tsx - Enhanced with Broker Selection for CSV Upload
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { 
   ChevronLeft, 
@@ -13,7 +13,9 @@ import {
   FileText,
   CheckCircle,
   AlertCircle,
-  X
+  X,
+  Building2,
+  Info
 } from 'lucide-react';
 
 // FIXED: Import date-fns functions individually from subpaths
@@ -41,8 +43,18 @@ import { parse } from 'date-fns/parse';
 import { Trade } from '../types/trade';
 import { formatCurrency } from '../utils/tradeUtils';
 
-// ADDED: Import BrokerCSVParser for multi-broker CSV support with auto-detect
-import { BrokerCSVParser } from '../services/brokerCSVParser';
+// Import BrokerCSVParser for multi-broker CSV support
+import { BrokerCSVParser, BrokerType } from '../services/brokerCSVParser';
+
+// Broker options for dropdown
+const BROKER_OPTIONS = [
+  { value: 'auto' as BrokerType, label: 'Auto-Detect', icon: '🤖', description: 'Automatically detect broker format' },
+  { value: 'tdameritrade' as BrokerType, label: 'TD Ameritrade', icon: '🏦', description: 'TD Ameritrade CSV format' },
+  { value: 'interactivebrokers' as BrokerType, label: 'Interactive Brokers', icon: '📊', description: 'IB Flex Query or trade report' },
+  { value: 'robinhood' as BrokerType, label: 'Robinhood', icon: '🎯', description: 'Robinhood account statement' },
+  { value: 'webull' as BrokerType, label: 'WeBull', icon: '📱', description: 'WeBull trade history' },
+  { value: 'generic' as BrokerType, label: 'Generic/Custom', icon: '📄', description: 'Standard format with flexible columns' },
+];
 
 interface CalendarProps {
   trades: Trade[];
@@ -61,6 +73,7 @@ interface CSVUploadResult {
   tradesImported: number;
   errors: string[];
   warnings: string[];
+  detectedBroker?: BrokerType;
 }
 
 // Additional type definitions for calendar data
@@ -140,11 +153,15 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadResult, setUploadResult] = useState<CSVUploadResult | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [selectedBroker, setSelectedBroker] = useState<BrokerType>('auto');
+  const [showBrokerDropdown, setShowBrokerDropdown] = useState(false);
+  const [csvText, setCsvText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Refs for dropdown management
   const rangeDropdownRef = useRef<HTMLDivElement>(null);
   const chartDropdownRef = useRef<HTMLDivElement>(null);
+  const brokerDropdownRef = useRef<HTMLDivElement>(null);
 
   // Clear date selection
   const clearSelection = useCallback(() => {
@@ -161,6 +178,9 @@ export const Calendar: React.FC<CalendarProps> = ({
       }
       if (chartDropdownRef.current && !chartDropdownRef.current.contains(event.target as Node)) {
         setShowChartDropdown(false);
+      }
+      if (brokerDropdownRef.current && !brokerDropdownRef.current.contains(event.target as Node)) {
+        setShowBrokerDropdown(false);
       }
     };
 
@@ -188,15 +208,15 @@ export const Calendar: React.FC<CalendarProps> = ({
     return pl - (commissionAmount * tradeCount);
   }, [applyCommission, commissionAmount]);
 
-  // CSV Parsing Function - FIXED: Now properly async
-
-  // UPDATED: parseCSV now uses BrokerCSVParser with auto-detect (no broker dropdown)
+  // CSV Parsing Function with broker selection
   const parseCSV = useCallback(async (csvText: string): Promise<CSVUploadResult> => {
-    console.log('📄 Starting CSV parse with BrokerCSVParser (auto-detect)');
+    console.log('📄 Starting CSV parse with BrokerCSVParser, broker:', selectedBroker);
+    console.log('📅 NOT overriding CSV dates - using dates from file');
     
     try {
-      // Use BrokerCSVParser with auto-detect mode
-      const brokerResult = await BrokerCSVParser.parseCSV(csvText, 'auto', selectedDate);
+      // Use BrokerCSVParser with selected broker
+      // Pass undefined for date to respect the dates in the CSV file
+      const brokerResult = await BrokerCSVParser.parseCSV(csvText, selectedBroker, undefined);
       
       console.log('🔍 Broker parser result:', {
         success: brokerResult.success,
@@ -212,15 +232,36 @@ export const Calendar: React.FC<CalendarProps> = ({
         tradesImported: brokerResult.tradesImported,
         errors: brokerResult.errors,
         warnings: brokerResult.warnings,
+        detectedBroker: brokerResult.detectedBroker,
       };
       
       // If successful and trades found, add them
       if (brokerResult.success && brokerResult.trades.length > 0) {
         console.log('✅ Adding', brokerResult.trades.length, 'trades to calendar');
         
+        // CRITICAL: Preserve dates by creating new Date objects
+        // This prevents any parent component from modifying the dates
+        const tradesWithPreservedDates = brokerResult.trades.map(trade => {
+          const originalDate = trade.timestamp instanceof Date 
+            ? trade.timestamp 
+            : new Date(trade.timestamp);
+          
+          return {
+            ...trade,
+            timestamp: new Date(originalDate.getTime()) // Clone the date
+          };
+        });
+        
+        // CRITICAL DEBUG: Log the actual dates from parsed trades
+        console.log('🔍 CALENDAR CSV IMPORT - Trade dates BEFORE onTradesAdded:');
+        tradesWithPreservedDates.slice(0, 3).forEach((trade, idx) => {
+          const date = trade.timestamp;
+          console.log(`  Trade ${idx + 1} (${trade.ticker}): ${date.toISOString()} - Year: ${date.getFullYear()}, Month: ${date.getMonth() + 1}, Day: ${date.getDate()}`);
+        });
+        
         if (onTradesAdded) {
           try {
-            await onTradesAdded(brokerResult.trades);
+            await onTradesAdded(tradesWithPreservedDates);
             console.log('✅ Trades added successfully via callback');
           } catch (error) {
             console.error('❌ Error adding trades:', error);
@@ -242,8 +283,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         warnings: [],
       };
     }
-  }, [selectedDate, onTradesAdded]);
-
+  }, [selectedBroker, onTradesAdded]);
 
   // Handle file selection
   const handleFileSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -265,19 +305,12 @@ export const Calendar: React.FC<CalendarProps> = ({
       return;
     }
 
-    console.log('✅ Valid CSV file, starting parse...');
-    setIsUploading(true);
-    setUploadResult(null);
-
+    console.log('✅ Valid CSV file, reading content...');
+    
     try {
       const text = await file.text();
       console.log('📄 File content length:', text.length, 'characters');
-      console.log('📄 First 200 chars:', text.substring(0, 200));
-      
-      const result = await parseCSV(text);
-      console.log('📊 Parse result:', result);
-      
-      setUploadResult(result);
+      setCsvText(text);
       setShowUploadModal(true);
     } catch (error) {
       console.error('💥 File read error:', error);
@@ -289,13 +322,42 @@ export const Calendar: React.FC<CalendarProps> = ({
       });
       setShowUploadModal(true);
     } finally {
-      setIsUploading(false);
       // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
     }
-  }, [parseCSV]);
+  }, []);
+
+  // Handle CSV import from modal
+  const handleCSVImport = useCallback(async () => {
+    if (!csvText.trim()) return;
+
+    setIsUploading(true);
+    setUploadResult(null);
+
+    try {
+      const result = await parseCSV(csvText);
+      setUploadResult(result);
+      
+      if (result.success) {
+        // Clear CSV text on success
+        setTimeout(() => {
+          setCsvText('');
+        }, 2000);
+      }
+    } catch (error) {
+      console.error('💥 Import error:', error);
+      setUploadResult({
+        success: false,
+        tradesImported: 0,
+        errors: [`Failed to import: ${error instanceof Error ? error.message : 'Unknown error'}`],
+        warnings: []
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  }, [csvText, parseCSV]);
 
   // Trigger file input click
   const handleUploadClick = useCallback(() => {
@@ -306,7 +368,88 @@ export const Calendar: React.FC<CalendarProps> = ({
   const closeUploadModal = useCallback(() => {
     setShowUploadModal(false);
     setUploadResult(null);
+    setCsvText('');
+    setSelectedBroker('auto');
   }, []);
+
+  // Render broker selector dropdown
+  const renderBrokerSelector = () => {
+    const selectedOption = BROKER_OPTIONS.find(opt => opt.value === selectedBroker);
+
+    return (
+      <div className="mb-4" ref={brokerDropdownRef}>
+        <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 flex items-center">
+          <Building2 className="h-4 w-4 mr-2" />
+          Select Broker Format:
+        </label>
+        
+        <div className="relative">
+          <button
+            onClick={() => setShowBrokerDropdown(!showBrokerDropdown)}
+            className="w-full px-4 py-3 bg-white dark:bg-slate-700 border-2 border-slate-300 dark:border-slate-600 rounded-xl text-left flex items-center justify-between hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+          >
+            <div className="flex items-center">
+              <span className="text-2xl mr-3">{selectedOption?.icon}</span>
+              <div>
+                <div className="font-semibold text-slate-900 dark:text-white">
+                  {selectedOption?.label}
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  {selectedOption?.description}
+                </div>
+              </div>
+            </div>
+            <ChevronDown className={`h-5 w-5 text-slate-400 transition-transform ${showBrokerDropdown ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showBrokerDropdown && (
+            <div className="absolute z-50 w-full mt-2 bg-white dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded-xl shadow-xl max-h-96 overflow-y-auto">
+              {BROKER_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => {
+                    setSelectedBroker(option.value);
+                    setShowBrokerDropdown(false);
+                  }}
+                  className={`w-full px-4 py-3 text-left flex items-center hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors border-b border-slate-100 dark:border-slate-600 last:border-b-0 ${
+                    selectedBroker === option.value ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                  }`}
+                >
+                  <span className="text-2xl mr-3">{option.icon}</span>
+                  <div className="flex-1">
+                    <div className={`font-semibold ${
+                      selectedBroker === option.value 
+                        ? 'text-blue-700 dark:text-blue-300' 
+                        : 'text-slate-900 dark:text-white'
+                    }`}>
+                      {option.label}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {option.description}
+                    </div>
+                  </div>
+                  {selectedBroker === option.value && (
+                    <CheckCircle className="h-5 w-5 text-blue-600" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {uploadResult?.detectedBroker && uploadResult.detectedBroker !== selectedBroker && (
+          <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <div className="flex items-start">
+              <Info className="h-4 w-4 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-blue-800 dark:text-blue-200">
+                <strong>Auto-detected:</strong> {BROKER_OPTIONS.find(opt => opt.value === uploadResult.detectedBroker)?.label}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Calendar data calculation with weekly P&L
   const calendarData = useMemo((): MonthData[] | DayData[] => {
@@ -1040,7 +1183,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         </p>
       </div>
 
-      {/* Calendar Grid */}
+      {/* Calendar Grid - Content continues as before */}
       {selectedChartView === '1y' || selectedChartView === 'all' ? (
         <div className="space-y-6">
           <div className="text-center mb-4">
@@ -1375,40 +1518,21 @@ export const Calendar: React.FC<CalendarProps> = ({
         </div>
       )}
 
-      {/* CSV Upload Result Modal */}
-      {showUploadModal && uploadResult && (
+      {/* CSV Upload Modal - Enhanced with Broker Selection */}
+      {showUploadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
-            <div className={`p-6 border-b ${
-              uploadResult.success
-                ? 'bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border-emerald-200 dark:border-emerald-800'
-                : 'bg-gradient-to-r from-rose-50 to-red-50 dark:from-rose-900/20 dark:to-red-900/20 border-rose-200 dark:border-rose-800'
-            }`}>
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  {uploadResult.success ? (
-                    <CheckCircle className="h-8 w-8 text-emerald-600" />
-                  ) : (
-                    <AlertCircle className="h-8 w-8 text-rose-600" />
-                  )}
+                  <FileText className="h-8 w-8 text-blue-600" />
                   <div>
-                    <h3 className={`text-xl font-bold ${
-                      uploadResult.success
-                        ? 'text-emerald-900 dark:text-emerald-100'
-                        : 'text-rose-900 dark:text-rose-100'
-                    }`}>
-                      {uploadResult.success ? 'Import Successful!' : 'Import Failed'}
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                      Import CSV Trades
                     </h3>
-                    <p className={`text-sm ${
-                      uploadResult.success
-                        ? 'text-emerald-700 dark:text-emerald-300'
-                        : 'text-rose-700 dark:text-rose-300'
-                    }`}>
-                      {uploadResult.success
-                        ? `${uploadResult.tradesImported} trade${uploadResult.tradesImported !== 1 ? 's' : ''} imported`
-                        : 'Please check the errors below'
-                      }
+                    <p className="text-sm text-slate-600 dark:text-slate-400">
+                      Select broker format and paste or upload your CSV data
                     </p>
                   </div>
                 </div>
@@ -1422,68 +1546,87 @@ export const Calendar: React.FC<CalendarProps> = ({
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 space-y-4">
-              {/* Errors */}
-              {uploadResult.errors.length > 0 && (
-                <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg p-4">
-                  <h4 className="font-semibold text-rose-900 dark:text-rose-100 mb-2 flex items-center">
-                    <AlertCircle className="h-4 w-4 mr-2" />
-                    Errors ({uploadResult.errors.length})
-                  </h4>
-                  <ul className="space-y-1 text-sm text-rose-800 dark:text-rose-200">
-                    {uploadResult.errors.map((error, index) => (
-                      <li key={index} className="flex items-start">
-                        <span className="mr-2">•</span>
-                        <span>{error}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+            <div className="p-6 space-y-6">
+              {/* Broker Selector */}
+              {renderBrokerSelector()}
 
-              {/* Warnings */}
-              {uploadResult.warnings.length > 0 && (
-                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
-                  <h4 className="font-semibold text-amber-900 dark:text-amber-100 mb-2 flex items-center">
-                    <AlertCircle className="h-4 w-4 mr-2" />
-                    Warnings ({uploadResult.warnings.length})
-                  </h4>
-                  <div className="max-h-40 overflow-y-auto">
-                    <ul className="space-y-1 text-sm text-amber-800 dark:text-amber-200">
-                      {uploadResult.warnings.map((warning, index) => (
-                        <li key={index} className="flex items-start">
-                          <span className="mr-2">•</span>
-                          <span>{warning}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
+              {/* CSV Data Input */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center">
+                  <FileText className="h-4 w-4 mr-2" />
+                  CSV Data:
+                </label>
+                <textarea
+                  value={csvText}
+                  onChange={(e) => setCsvText(e.target.value)}
+                  placeholder="Paste your CSV data here..."
+                  rows={12}
+                  className="w-full px-4 py-3 border-2 border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm resize-none"
+                />
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 p-3 rounded-lg">
+                  Supports multiple broker formats. Select your broker above or use Auto-Detect.
+                </p>
+              </div>
 
-              {/* CSV Format Guide */}
-              {!uploadResult.success && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                  <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-2 flex items-center">
-                    <FileText className="h-4 w-4 mr-2" />
-                    Expected CSV Format
-                  </h4>
-                  <div className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
-                    <p className="font-medium">Required columns (in any order):</p>
-                    <ul className="space-y-1 ml-4">
-                      <li>• <strong>Time/Date/Timestamp</strong> - Trade date and time</li>
-                      <li>• <strong>Ticker/Symbol</strong> - Stock symbol</li>
-                      <li>• <strong>Direction/Side</strong> - Long/Short or Buy/Sell</li>
-                      <li>• <strong>Quantity</strong> - Number of shares</li>
-                      <li>• <strong>Entry Price</strong> - Buy price</li>
-                      <li>• <strong>Exit Price</strong> - Sell price</li>
-                      <li>• <strong>Realized P&L</strong> - Profit or loss amount</li>
-                      <li>• <strong>Notes</strong> (optional) - Trade notes</li>
-                    </ul>
-                    <p className="mt-2 text-xs">
-                      Column names can vary - the system will attempt to match them automatically.
-                    </p>
-                  </div>
+              {/* Upload Result Messages */}
+              {uploadResult && (
+                <div className="space-y-3">
+                  {/* Success Message */}
+                  {uploadResult.success && (
+                    <div className="p-4 bg-green-50 dark:bg-green-900/20 border-2 border-green-200 dark:border-green-800 rounded-xl">
+                      <div className="flex items-center">
+                        <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
+                        <span className="text-sm font-semibold text-green-800 dark:text-green-200">
+                          Successfully imported {uploadResult.tradesImported} trade{uploadResult.tradesImported !== 1 ? 's' : ''}!
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Errors */}
+                  {uploadResult.errors.length > 0 && (
+                    <div className="p-4 bg-rose-50 dark:bg-rose-900/20 border-2 border-rose-200 dark:border-rose-800 rounded-xl">
+                      <div className="flex items-center mb-2">
+                        <AlertCircle className="h-5 w-5 text-rose-500 mr-2" />
+                        <span className="text-sm font-semibold text-rose-800 dark:text-rose-200">
+                          Errors found ({uploadResult.errors.length}):
+                        </span>
+                      </div>
+                      <ul className="text-sm text-rose-700 dark:text-rose-300 space-y-1 max-h-40 overflow-y-auto">
+                        {uploadResult.errors.map((error, index) => (
+                          <li key={index} className="flex items-start">
+                            <span className="text-rose-500 mr-2">•</span>
+                            {error}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Warnings */}
+                  {uploadResult.warnings.length > 0 && (
+                    <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 dark:border-amber-800 rounded-xl">
+                      <div className="flex items-center mb-2">
+                        <AlertCircle className="h-5 w-5 text-amber-500 mr-2" />
+                        <span className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                          Warnings ({uploadResult.warnings.length}):
+                        </span>
+                      </div>
+                      <ul className="text-sm text-amber-700 dark:text-amber-300 space-y-1 max-h-40 overflow-y-auto">
+                        {uploadResult.warnings.slice(0, 10).map((warning, index) => (
+                          <li key={index} className="flex items-start">
+                            <span className="text-amber-500 mr-2">•</span>
+                            {warning}
+                          </li>
+                        ))}
+                        {uploadResult.warnings.length > 10 && (
+                          <li className="text-amber-600 dark:text-amber-400 italic">
+                            ... and {uploadResult.warnings.length - 10} more warnings
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1496,18 +1639,23 @@ export const Calendar: React.FC<CalendarProps> = ({
               >
                 Close
               </button>
-              {uploadResult.success && (
-                <button
-                  onClick={() => {
-                    closeUploadModal();
-                    handleUploadClick();
-                  }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Import Another File
-                </button>
-              )}
+              <button
+                onClick={handleCSVImport}
+                disabled={isUploading || !csvText.trim()}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+              >
+                {isUploading ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import Trades
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
