@@ -1,8 +1,10 @@
+// src/components/StockSearch.tsx - UPDATED: Added interactive TradingView charts
 import React, { useState, useMemo } from 'react';
-import { Search, TrendingUp, TrendingDown, BarChart3 } from 'lucide-react';
+import { Search, TrendingUp, TrendingDown, BarChart3, LineChart } from 'lucide-react';
 import { Trade } from '../types/trade';
 import { formatCurrency } from '../utils/tradeUtils';
 import TradingPerformanceHeatmap from './TradingPerformanceHeatmap';
+import { StockChartModal } from './StockChartModal';
 
 interface StockSearchProps {
   trades: Trade[];
@@ -35,6 +37,11 @@ export const StockSearch: React.FC<StockSearchProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStock, setSelectedStock] = useState<string | null>(null);
   const [activeAnalysisView, setActiveAnalysisView] = useState<AnalysisView>('search');
+  
+  // NEW: Chart modal state
+  const [showChartModal, setShowChartModal] = useState(false);
+  const [chartTicker, setChartTicker] = useState<string>('');
+  const [chartDate, setChartDate] = useState<Date>(new Date());
 
   const stockAnalysis = useMemo(() => {
     const stockMap = new Map<string, Trade[]>();
@@ -91,6 +98,13 @@ export const StockSearch: React.FC<StockSearchProps> = ({
   const handleTradeDoubleClick = (trade: Trade) => {
     onDateSelect(trade.timestamp);
     onViewChange('daily');
+  };
+
+  // NEW: Handle viewing stock chart
+  const handleViewChart = (ticker: string, date?: Date) => {
+    setChartTicker(ticker);
+    setChartDate(date || new Date());
+    setShowChartModal(true);
   };
 
   const getWinRateColor = (winRate: number) => {
@@ -187,9 +201,20 @@ export const StockSearch: React.FC<StockSearchProps> = ({
                 <h4 className="text-xl font-bold text-gray-900 dark:text-white">
                   {selectedStockData.ticker} Analysis
                 </h4>
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  Last traded: {selectedStockData.lastTradeDate.toLocaleDateString()}
-                </span>
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    Last traded: {selectedStockData.lastTradeDate.toLocaleDateString()}
+                  </span>
+                  {/* NEW: View Chart Button */}
+                  <button
+                    onClick={() => handleViewChart(selectedStockData.ticker, selectedStockData.lastTradeDate)}
+                    className="inline-flex items-center px-3 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors shadow-sm"
+                    title="View price chart with entry points"
+                  >
+                    <LineChart className="h-4 w-4 mr-2" />
+                    View Chart
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
@@ -245,7 +270,7 @@ export const StockSearch: React.FC<StockSearchProps> = ({
               <div className="p-4 border-b border-gray-200 dark:border-gray-700">
                 <h5 className="font-medium text-gray-900 dark:text-white flex items-center">
                   <BarChart3 className="h-4 w-4 mr-2" />
-                  Trade History (Double-click to view day)
+                  Trade History (Double-click to view day, Click chart icon to see price action)
                 </h5>
               </div>
               <div className="max-h-96 overflow-y-auto">
@@ -253,11 +278,11 @@ export const StockSearch: React.FC<StockSearchProps> = ({
                   <div
                     key={trade.id}
                     onDoubleClick={() => handleTradeDoubleClick(trade)}
-                    className="p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+                    className="p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors group"
                     title="Double-click to view this trading day"
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
+                      <div className="flex items-center space-x-3 flex-1">
                         <div className={`p-2 rounded-full ${
                           trade.direction === 'long'
                             ? 'bg-green-100 dark:bg-green-900/20'
@@ -269,8 +294,11 @@ export const StockSearch: React.FC<StockSearchProps> = ({
                             <TrendingDown className="h-4 w-4 text-red-600" />
                           )}
                         </div>
-                        <div>
+                        <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 dark:text-white">
+                            {trade.timestamp.toLocaleDateString()} {trade.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
                             {trade.quantity} shares @ ${trade.entryPrice} → ${trade.exitPrice}
                           </p>
                           {trade.notes && (
@@ -280,10 +308,21 @@ export const StockSearch: React.FC<StockSearchProps> = ({
                           )}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className={`font-bold text-lg ${getPLColor(trade.realizedPL)}`}>
+                      <div className="flex items-center space-x-3">
+                        <div className={`font-bold text-lg text-right ${getPLColor(trade.realizedPL)}`}>
                           {formatCurrency(trade.realizedPL)}
-                        </p>
+                        </div>
+                        {/* NEW: Mini chart button for individual trade */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewChart(trade.ticker, trade.timestamp);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md"
+                          title="View chart for this trade"
+                        >
+                          <LineChart className="h-4 w-4" />
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -298,7 +337,7 @@ export const StockSearch: React.FC<StockSearchProps> = ({
               Select a Stock to Analyze
             </h4>
             <p className="text-gray-500 dark:text-gray-400">
-              Choose a stock from the list to see detailed performance metrics and trade history.
+              Choose a stock from the list to see detailed performance metrics, trade history, and interactive price charts.
             </p>
           </div>
         )}
@@ -307,43 +346,54 @@ export const StockSearch: React.FC<StockSearchProps> = ({
   );
 
   return (
-    <div className="space-y-6">
-      {/* Main Header and Search - Always visible */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
-            <Search className="h-5 w-5 mr-2 text-blue-600" />
-            Stock Analysis
-          </h3>
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            {filteredStocks.length} stocks found
-          </span>
+    <>
+      <div className="space-y-6">
+        {/* Main Header and Search - Always visible */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+              <Search className="h-5 w-5 mr-2 text-blue-600" />
+              Stock Analysis
+            </h3>
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              {filteredStocks.length} stocks found
+            </span>
+          </div>
+
+          {/* Search Bar - Only shown in search view */}
+          {activeAnalysisView === 'search' && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search for stocks (e.g., AAPL, TSLA)..."
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+              />
+            </div>
+          )}
         </div>
 
-        {/* Search Bar - Only shown in search view */}
-        {activeAnalysisView === 'search' && (
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search for stocks (e.g., AAPL, TSLA)..."
-              className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
-            />
-          </div>
+        {/* Analysis View Tabs */}
+        {renderAnalysisViewTabs()}
+
+        {/* Content based on active view */}
+        {activeAnalysisView === 'search' ? (
+          renderStockSearchView()
+        ) : (
+          <TradingPerformanceHeatmap trades={trades} />
         )}
       </div>
 
-      {/* Analysis View Tabs */}
-      {renderAnalysisViewTabs()}
-
-      {/* Content based on active view */}
-      {activeAnalysisView === 'search' ? (
-        renderStockSearchView()
-      ) : (
-        <TradingPerformanceHeatmap trades={trades} />
-      )}
-    </div>
+      {/* NEW: Stock Chart Modal */}
+      <StockChartModal
+        isOpen={showChartModal}
+        onClose={() => setShowChartModal(false)}
+        ticker={chartTicker}
+        trades={trades}
+        selectedDate={chartDate}
+      />
+    </>
   );
 };
