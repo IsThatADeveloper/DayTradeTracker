@@ -1,4 +1,4 @@
-// src/components/DailyReview.tsx - Enhanced Mobile Version
+// src/components/DailyReview.tsx - Enhanced Mobile Version with Permanent Notes
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   BookOpen,
@@ -25,7 +25,8 @@ import {
   Tag,
   ChevronLeft,
   ChevronRight,
-  Menu
+  Menu,
+  BookMarked
 } from 'lucide-react';
 import { format, isToday, subDays } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
@@ -38,6 +39,7 @@ import {
   ReviewCategory 
 } from '../types/dailyReview';
 import { dailyReviewService } from '../services/dailyReviewService';
+import { permanentNotesService, PermanentNotes } from '../services/permanentNotesService';
 import { formatCurrency } from '../utils/tradeUtils';
 
 interface DailyReviewProps {
@@ -46,7 +48,7 @@ interface DailyReviewProps {
   onDateSelect: (date: Date) => void;
 }
 
-type TabType = 'overview' | 'ratings' | 'psychology' | 'notes' | 'reminders' | 'insights';
+type TabType = 'overview' | 'ratings' | 'psychology' | 'notes' | 'reminders' | 'insights' | 'permanent';
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: BarChart3, shortLabel: 'Overview' },
@@ -55,15 +57,18 @@ const TABS = [
   { id: 'notes', label: 'Notes', icon: MessageSquare, shortLabel: 'Notes' },
   { id: 'reminders', label: 'Reminders', icon: ListTodo, shortLabel: 'Tasks' },
   { id: 'insights', label: 'Insights', icon: Lightbulb, shortLabel: 'Insights' },
+  { id: 'permanent', label: 'Permanent Notes', icon: BookMarked, shortLabel: 'Permanent' },
 ] as const;
 
 export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, onDateSelect }) => {
   const { currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [dailyReview, setDailyReview] = useState<DailyReviewType | null>(null);
+  const [permanentNotes, setPermanentNotes] = useState<PermanentNotes | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [hasUnsavedPermanentNotes, setHasUnsavedPermanentNotes] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   // Reminder input states
@@ -83,6 +88,33 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
       );
     });
   }, [trades, selectedDate]);
+
+  // Load permanent notes (only once, not dependent on date)
+  const loadPermanentNotes = useCallback(async () => {
+    if (!currentUser) return;
+
+    console.log('🔍 Loading permanent notes for user:', currentUser.uid);
+    
+    try {
+      let notes = await permanentNotesService.getPermanentNotes(currentUser.uid);
+      
+      if (!notes) {
+        console.log('📝 Creating default permanent notes');
+        notes = permanentNotesService.createDefaultPermanentNotes(currentUser.uid);
+      }
+      
+      console.log('✅ Permanent notes loaded successfully');
+      setPermanentNotes(notes);
+    } catch (error: any) {
+      console.error('❌ Failed to load permanent notes:', error);
+      // Create default notes even on error so user can still use the feature
+      const defaultNotes = permanentNotesService.createDefaultPermanentNotes(currentUser.uid);
+      setPermanentNotes(defaultNotes);
+      
+      // Show error but don't block the UI
+      console.warn('⚠️ Using default permanent notes due to error. You can still save notes.');
+    }
+  }, [currentUser]);
 
   // Load daily review for selected date
   const loadDailyReview = useCallback(async () => {
@@ -158,6 +190,39 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
     }
   }, [currentUser, dailyReview, dayTrades, selectedDate]);
 
+  // Save permanent notes
+  const savePermanentNotes = useCallback(async () => {
+    if (!currentUser || !permanentNotes) return;
+
+    setIsSaving(true);
+    try {
+      await permanentNotesService.savePermanentNotes(currentUser.uid, permanentNotes);
+      setHasUnsavedPermanentNotes(false);
+    } catch (error: any) {
+      console.error('Failed to save permanent notes:', error);
+      alert(`Failed to save permanent notes: ${error.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [currentUser, permanentNotes]);
+
+  // Save both daily review and permanent notes if needed
+  const saveAll = useCallback(async () => {
+    const promises: Promise<void>[] = [];
+    
+    if (hasUnsavedChanges) {
+      promises.push(saveDailyReview());
+    }
+    
+    if (hasUnsavedPermanentNotes) {
+      promises.push(savePermanentNotes());
+    }
+    
+    if (promises.length > 0) {
+      await Promise.all(promises);
+    }
+  }, [hasUnsavedChanges, hasUnsavedPermanentNotes, saveDailyReview, savePermanentNotes]);
+
   const updateReview = useCallback((field: keyof DailyReviewType, value: any) => {
     if (!dailyReview) return;
     
@@ -181,6 +246,13 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
     setHasUnsavedChanges(true);
   }, [dailyReview]);
 
+  const updatePermanentNotes = useCallback((field: keyof PermanentNotes, value: string) => {
+    if (!permanentNotes) return;
+    
+    setPermanentNotes(prev => prev ? { ...prev, [field]: value } : prev);
+    setHasUnsavedPermanentNotes(true);
+  }, [permanentNotes]);
+
   const addReminderItem = useCallback((field: string, value: string, clearInput: () => void) => {
     if (!value.trim() || !dailyReview) return;
     
@@ -196,6 +268,11 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
     updateNestedField('reminders', field, currentItems.filter((_: any, i: number) => i !== index));
   }, [dailyReview, updateNestedField]);
 
+  // Load permanent notes when component mounts or user changes
+  useEffect(() => {
+    loadPermanentNotes();
+  }, [loadPermanentNotes]);
+
   // Load review when date changes
   useEffect(() => {
     loadDailyReview();
@@ -204,7 +281,7 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
   // Prevent leaving without saving
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasUnsavedChanges) {
+      if (hasUnsavedChanges || hasUnsavedPermanentNotes) {
         e.preventDefault();
         e.returnValue = '';
       }
@@ -212,7 +289,7 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [hasUnsavedChanges]);
+  }, [hasUnsavedChanges, hasUnsavedPermanentNotes]);
 
   if (!currentUser) {
     return (
@@ -692,6 +769,94 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
     </div>
   );
 
+  // NEW: Render Permanent Notes Tab
+  const renderPermanentNotesTab = () => {
+    // Show form even if loading - it will populate when loaded
+    const displayNotes = permanentNotes || permanentNotesService.createDefaultPermanentNotes(currentUser?.uid || '');
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-start">
+            <BookMarked className="h-6 w-6 text-blue-600 mr-3 mt-1 flex-shrink-0" />
+            <div>
+              <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-2">
+                Permanent Notes
+              </h3>
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                These notes persist across all days and are always available for quick reference. 
+                Use this space to document your core trading rules, strategies, and reminders that apply every day.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {Object.entries({
+          tradingRules: { 
+            label: 'Core Trading Rules', 
+            icon: Flag, 
+            color: 'text-red-600',
+            placeholder: 'Write your fundamental trading rules that you must follow every day...\n\nExamples:\n• Never risk more than 1% per trade\n• Cut losses at -2%\n• Take profits at +3%\n• No trading during first 15 minutes',
+          },
+          strategiesAndSetups: { 
+            label: 'Key Strategies & Setups', 
+            icon: Target, 
+            color: 'text-blue-600',
+            placeholder: 'Document your proven trading strategies and setups...\n\nExamples:\n• Bull Flag Breakout Strategy\n• Support/Resistance Bounce\n• Moving Average Crossover\n• Gap and Go Setup',
+          },
+          riskManagement: { 
+            label: 'Risk Management Guidelines', 
+            icon: AlertCircle, 
+            color: 'text-orange-600',
+            placeholder: 'Define your risk management rules...\n\nExamples:\n• Maximum daily loss: $500\n• Maximum position size: $10,000\n• Stop loss: 2% from entry\n• Risk/Reward ratio: minimum 1:2',
+          },
+          journalGuidelines: { 
+            label: 'Journal Review Checklist', 
+            icon: ListTodo, 
+            color: 'text-purple-600',
+            placeholder: 'Create your end-of-day review checklist...\n\nExamples:\n• Did I follow my trading plan?\n• What was my best trade and why?\n• What mistakes did I make?\n• What patterns did I notice?',
+          },
+          resources: { 
+            label: 'Important Resources & Links', 
+            icon: BookOpen, 
+            color: 'text-green-600',
+            placeholder: 'Save important links and resources...\n\nExamples:\n• Trading plan document\n• Favorite scanners\n• Educational videos\n• Market news sources',
+          },
+          generalReminders: { 
+            label: 'Daily Reminders & Mantras', 
+            icon: Lightbulb, 
+            color: 'text-yellow-600',
+            placeholder: 'Write reminders you want to see every day...\n\nExamples:\n• Stay disciplined, follow the plan\n• Quality over quantity\n• It\'s okay to sit on the sidelines\n• Protect your capital first',
+          },
+        }).map(([key, config]) => (
+          <div key={key} className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+            <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+              <config.icon className={`h-5 w-5 mr-3 ${config.color}`} />
+              {config.label}
+            </h3>
+            <textarea
+              value={displayNotes[key as keyof PermanentNotes] as string || ''}
+              onChange={(e) => {
+                if (permanentNotes) {
+                  updatePermanentNotes(key as keyof PermanentNotes, e.target.value);
+                } else {
+                  // If not loaded yet, create and update
+                  const newNotes = permanentNotesService.createDefaultPermanentNotes(currentUser?.uid || '');
+                  newNotes[key as keyof PermanentNotes] = e.target.value as any;
+                  setPermanentNotes(newNotes);
+                  setHasUnsavedPermanentNotes(true);
+                }
+              }}
+              placeholder={config.placeholder}
+              rows={8}
+              className="w-full p-4 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-y focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base leading-relaxed font-mono"
+            />
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-6">
       {/* Enhanced Header */}
@@ -707,14 +872,14 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
         </div>
         
         <div className="flex flex-col sm:flex-row items-center gap-3">
-          {hasUnsavedChanges && (
+          {(hasUnsavedChanges || hasUnsavedPermanentNotes) && (
             <span className="text-sm text-yellow-600 dark:text-yellow-400 flex items-center">
               <Clock className="h-4 w-4 mr-2" />
               Unsaved changes
             </span>
           )}
           <button
-            onClick={saveDailyReview}
+            onClick={saveAll}
             disabled={isSaving}
             className="w-full sm:w-auto px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center font-medium touch-manipulation"
           >
@@ -723,7 +888,7 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
             ) : (
               <Save className="h-5 w-5 mr-2" />
             )}
-            {isSaving ? 'Saving...' : 'Save Review'}
+            {isSaving ? 'Saving...' : 'Save All'}
           </button>
         </div>
       </div>
@@ -764,6 +929,7 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
           {activeTab === 'notes' && renderNotesTab()}
           {activeTab === 'reminders' && renderRemindersTab()}
           {activeTab === 'insights' && renderInsightsTab()}
+          {activeTab === 'permanent' && renderPermanentNotesTab()}
         </div>
       </div>
     </div>
