@@ -7,7 +7,6 @@ import { useBrokerIntegration } from './hooks/useBrokerIntegration';
 import { calculateDailyStats, getWeeklyStats } from './utils/tradeUtils';
 import { ManualTradeEntry } from './components/ManualTradeEntry';
 import { BulkTradeImport } from './components/BulkTradeImport';
-import { BrokerSetup } from './components/BrokerSetup';
 import { Calendar } from './components/Calendar';
 import { Dashboard } from './components/Dashboard';
 import { TimeAnalysis } from './components/TimeAnalysis';
@@ -789,10 +788,6 @@ function AppContent() {
             onViewChange={setActiveView}
           />
         );
-      }
-
-      if (activeView === 'brokers') {
-        return <BrokerSetup onTradesImported={() => loadCloudTrades()} />;
       }
 
       if (activeView === 'news') {

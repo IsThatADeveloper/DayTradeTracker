@@ -1,9 +1,10 @@
 // src/components/StockChartModal.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import { X, TrendingUp, TrendingDown } from 'lucide-react';
-import { createChart, CandlestickSeries, ISeriesApi } from 'lightweight-charts';
+import { createChart, CandlestickSeries } from 'lightweight-charts';
 import { Trade } from '../types/trade';
 import { formatCurrency } from '../utils/tradeUtils';
+import { fetchIntradayDataWithCache } from '../services/marketData';
 
 interface StockChartModalProps {
   isOpen: boolean;
@@ -23,7 +24,6 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
   const seriesRef = useRef<any>(null);
-  const markersLayerRef = useRef<HTMLCanvasElement | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [chartData, setChartData] = useState<any[]>([]);
@@ -37,269 +37,6 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
     );
   }).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-  // Generate simulated intraday data based on trades
-  // This creates realistic price action that matches your actual trade prices
-  // For production with real API data, replace this entire function
-  const generateSimulatedData = (
-    ticker: string,
-    date: Date,
-    trades: Trade[]
-  ) => {
-    const data: any[] = [];
-    
-    if (trades.length === 0) return data;
-    
-    // Get the actual price range from YOUR trades
-    const allPrices = trades.flatMap(t => [t.entryPrice, t.exitPrice]);
-    const minPrice = Math.min(...allPrices);
-    const maxPrice = Math.max(...allPrices);
-    const priceRange = maxPrice - minPrice;
-    
-    // Extended hours: 4 AM - 8 PM
-    const preMarketStart = new Date(date);
-    preMarketStart.setHours(4, 0, 0, 0);
-    
-    const marketOpen = new Date(date);
-    marketOpen.setHours(9, 30, 0, 0);
-    
-    const marketClose = new Date(date);
-    marketClose.setHours(16, 0, 0, 0);
-    
-    const afterHoursEnd = new Date(date);
-    afterHoursEnd.setHours(20, 0, 0, 0);
-    
-    let currentTime = new Date(preMarketStart);
-    
-    // Start below the minimum price to show the run-up
-    let lastClose = minPrice * 0.88;
-    
-    // Use 1-minute candles
-    const intervalMs = 1 * 60 * 1000;
-    
-    // Find when the price should peak (when max trade occurred)
-    const maxTrade = trades.find(t => 
-      Math.max(t.entryPrice, t.exitPrice) === maxPrice
-    );
-    const peakTime = maxTrade ? maxTrade.timestamp : 
-      new Date(marketOpen.getTime() + (marketClose.getTime() - marketOpen.getTime()) * 0.5);
-    
-    // Add some randomness to peak timing
-    const peakTimeOffset = (Math.random() - 0.5) * 10 * 60 * 1000; // +/- 10 minutes
-    const adjustedPeakTime = new Date(peakTime.getTime() + peakTimeOffset);
-    
-    while (currentTime <= afterHoursEnd) {
-      const currentHour = currentTime.getHours();
-      const currentMinute = currentTime.getMinutes();
-      const currentTimestamp = currentTime.getTime();
-      
-      // Determine session type
-      const isPreMarket = currentHour < 9 || (currentHour === 9 && currentMinute < 30);
-      const isRegularHours = (currentHour > 9 || (currentHour === 9 && currentMinute >= 30)) && currentHour < 16;
-      const isAfterHours = currentHour >= 16;
-      
-      // Calculate distance from peak
-      const timeToPeak = adjustedPeakTime.getTime() - currentTimestamp;
-      const timeFromPeak = currentTimestamp - adjustedPeakTime.getTime();
-      const isBeforePeak = timeToPeak > 0;
-      
-      // Base volatility as percentage of price
-      let baseVolatilityPct = 0.008; // 0.8% base
-      let momentumBias = 0;
-      
-      if (isBeforePeak) {
-        // BEFORE PEAK - Building up
-        const totalTimeToRise = adjustedPeakTime.getTime() - preMarketStart.getTime();
-        const elapsed = currentTimestamp - preMarketStart.getTime();
-        const progress = elapsed / totalTimeToRise;
-        
-        // Stronger upward bias as we approach peak
-        if (progress < 0.2) {
-          momentumBias = 0.0003; // Slow start
-          baseVolatilityPct = 0.006;
-        } else if (progress < 0.5) {
-          momentumBias = 0.0008; // Building momentum
-          baseVolatilityPct = 0.009;
-        } else if (progress < 0.8) {
-          momentumBias = 0.0015; // Strong push
-          baseVolatilityPct = 0.012;
-        } else {
-          momentumBias = 0.0025; // Explosive move to peak
-          baseVolatilityPct = 0.018;
-        }
-        
-        // Ensure we're moving toward max price
-        const priceGap = maxPrice - lastClose;
-        if (priceGap > 0) {
-          momentumBias += priceGap * 0.001; // Pull toward target
-        }
-      } else {
-        // AFTER PEAK - Fading
-        const totalTimeToFade = afterHoursEnd.getTime() - adjustedPeakTime.getTime();
-        const elapsedFade = timeFromPeak;
-        const fadeProgress = elapsedFade / totalTimeToFade;
-        
-        // Downward bias, fading over time
-        if (fadeProgress < 0.3) {
-          momentumBias = -0.0012; // Initial selloff
-          baseVolatilityPct = 0.014;
-        } else if (fadeProgress < 0.6) {
-          momentumBias = -0.0008; // Continued fade
-          baseVolatilityPct = 0.010;
-        } else {
-          momentumBias = -0.0004; // Slow bleed
-          baseVolatilityPct = 0.007;
-        }
-      }
-      
-      // Session-specific volatility adjustments
-      if (isPreMarket) {
-        baseVolatilityPct *= 0.7; // Lower volume, choppier
-      } else if (isAfterHours) {
-        baseVolatilityPct *= 0.6;
-      }
-      
-      // Calculate the candle
-      const open = lastClose;
-      
-      // Random component + momentum
-      const volatility = lastClose * baseVolatilityPct;
-      const randomMove = (Math.random() - 0.5) * volatility * 2;
-      const momentumMove = lastClose * momentumBias;
-      
-      let close = open + randomMove + momentumMove;
-      
-      // If we're very close to peak time, force price toward max
-      const nearPeak = Math.abs(currentTimestamp - adjustedPeakTime.getTime()) < 3 * 60 * 1000;
-      if (nearPeak && isBeforePeak) {
-        close = Math.max(close, maxPrice * 0.98);
-      }
-      
-      // Create realistic high/low with wicks
-      const candleRange = Math.abs(close - open);
-      const wickMultiplier = 0.3 + Math.random() * 0.7; // 30-100% wick size
-      const upperWick = candleRange * wickMultiplier * Math.random();
-      const lowerWick = candleRange * wickMultiplier * Math.random();
-      
-      let high = Math.max(open, close) + upperWick;
-      let low = Math.min(open, close) - lowerWick;
-      
-      // Force the actual max price to appear at peak
-      if (nearPeak) {
-        high = Math.max(high, maxPrice);
-      }
-      
-      // Don't go below our starting range
-      low = Math.max(low, minPrice * 0.85);
-      
-      const timeInSeconds = Math.floor(currentTime.getTime() / 1000);
-      
-      data.push({
-        time: timeInSeconds,
-        open: parseFloat(open.toFixed(4)),
-        high: parseFloat(high.toFixed(4)),
-        low: parseFloat(low.toFixed(4)),
-        close: parseFloat(close.toFixed(4)),
-      });
-      
-      lastClose = close;
-      currentTime = new Date(currentTime.getTime() + intervalMs);
-    }
-    
-    return data;
-  };
-
-  // Draw heatmap circles for entry/exit points
-  const drawTradeMarkers = () => {
-    if (!chartRef.current || !seriesRef.current || !chartContainerRef.current) return;
-
-    // Create or get canvas overlay
-    let canvas = markersLayerRef.current;
-    if (!canvas) {
-      canvas = document.createElement('canvas');
-      canvas.style.position = 'absolute';
-      canvas.style.top = '0';
-      canvas.style.left = '0';
-      canvas.style.pointerEvents = 'none';
-      canvas.style.zIndex = '10';
-      markersLayerRef.current = canvas;
-      chartContainerRef.current.appendChild(canvas);
-    }
-
-    const container = chartContainerRef.current;
-    canvas.width = container.clientWidth;
-    canvas.height = 500;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const timeScale = chartRef.current.timeScale();
-    const priceScale = seriesRef.current.priceScale();
-
-    tickerTrades.forEach((trade) => {
-      const timeInSeconds = Math.floor(trade.timestamp.getTime() / 1000);
-      
-      // Draw entry circle
-      const entryX = timeScale.timeToCoordinate(timeInSeconds);
-      const entryY = priceScale.priceToCoordinate(trade.entryPrice);
-      
-      if (entryX !== null && entryY !== null) {
-        // Outer glow circle (heatmap effect)
-        const gradient = ctx.createRadialGradient(entryX, entryY, 0, entryX, entryY, 25);
-        const entryColor = trade.direction === 'long' ? '34, 197, 94' : '239, 68, 68'; // green or red
-        gradient.addColorStop(0, `rgba(${entryColor}, 0.4)`);
-        gradient.addColorStop(0.5, `rgba(${entryColor}, 0.2)`);
-        gradient.addColorStop(1, `rgba(${entryColor}, 0)`);
-        
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(entryX, entryY, 25, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Inner solid circle
-        ctx.fillStyle = trade.direction === 'long' ? 'rgba(34, 197, 94, 0.8)' : 'rgba(239, 68, 68, 0.8)';
-        ctx.beginPath();
-        ctx.arc(entryX, entryY, 8, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // White border
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(entryX, entryY, 8, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      
-      // Draw exit circle
-      const exitX = timeScale.timeToCoordinate(timeInSeconds + 60); // Approximate exit time
-      const exitY = priceScale.priceToCoordinate(trade.exitPrice);
-      
-      if (exitX !== null && exitY !== null) {
-        // Outer glow circle (heatmap effect)
-        const gradient = ctx.createRadialGradient(exitX, exitY, 0, exitX, exitY, 25);
-        const exitColor = trade.realizedPL >= 0 ? '34, 197, 94' : '239, 68, 68';
-        gradient.addColorStop(0, `rgba(${exitColor}, 0.4)`);
-        gradient.addColorStop(0.5, `rgba(${exitColor}, 0.2)`);
-        gradient.addColorStop(1, `rgba(${exitColor}, 0)`);
-        
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(exitX, exitY, 25, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Inner solid circle (square for exit)
-        ctx.fillStyle = trade.realizedPL >= 0 ? 'rgba(34, 197, 94, 0.8)' : 'rgba(239, 68, 68, 0.8)';
-        ctx.fillRect(exitX - 7, exitY - 7, 14, 14);
-        
-        // White border
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(exitX - 7, exitY - 7, 14, 14);
-      }
-    });
-  };
-
   // Load chart data
   useEffect(() => {
     if (!isOpen) return;
@@ -309,8 +46,8 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
       setError(null);
 
       try {
-        // TODO: Replace with real API call
-        const data = generateSimulatedData(ticker, selectedDate, tickerTrades);
+        // Fetch REAL market data from Polygon.io
+        const data = await fetchIntradayDataWithCache(ticker, selectedDate);
         setChartData(data);
       } catch (err: any) {
         setError(err.message);
@@ -358,7 +95,6 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
         borderColor: colors.grid,
         timeVisible: true,
         secondsVisible: false,
-        // Fix time formatting to show proper hours
         tickMarkFormatter: (time: number) => {
           const date = new Date(time * 1000);
           const hours = date.getHours();
@@ -370,7 +106,7 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
 
     chartRef.current = chart;
 
-    // Add candlestick series - following the docs pattern
+    // Add candlestick series
     const candlestickSeries = chart.addSeries(CandlestickSeries);
     
     candlestickSeries.applyOptions({
@@ -385,19 +121,36 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
     seriesRef.current = candlestickSeries;
     candlestickSeries.setData(chartData);
     
+    // Add horizontal price lines for each trade
+    tickerTrades.forEach((trade, index) => {
+      // Entry price line (dashed)
+      candlestickSeries.createPriceLine({
+        price: trade.entryPrice,
+        color: trade.direction === 'long' ? colors.upColor : colors.downColor,
+        lineWidth: 2,
+        lineStyle: 2, // Dashed
+        axisLabelVisible: true,
+        title: `Entry #${index + 1}: ${formatCurrency(trade.entryPrice)}`,
+      });
+      
+      // Exit price line (solid)
+      candlestickSeries.createPriceLine({
+        price: trade.exitPrice,
+        color: trade.realizedPL >= 0 ? colors.upColor : colors.downColor,
+        lineWidth: 2,
+        lineStyle: 0, // Solid
+        axisLabelVisible: true,
+        title: `Exit #${index + 1}: ${formatCurrency(trade.exitPrice)}`,
+      });
+    });
+    
     chart.timeScale().fitContent();
-
-    // Draw trade markers after chart is ready
-    setTimeout(() => {
-      drawTradeMarkers();
-    }, 100);
 
     const handleResize = () => {
       if (chartContainerRef.current) {
         chart.applyOptions({
           width: chartContainerRef.current.clientWidth,
         });
-        drawTradeMarkers();
       }
     };
 
@@ -405,10 +158,6 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      if (markersLayerRef.current) {
-        markersLayerRef.current.remove();
-        markersLayerRef.current = null;
-      }
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -481,17 +230,13 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
               <div className="text-center">
                 <p className="text-red-600 mb-4">{error}</p>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Note: Using simulated data. Integrate a market data API for real charts.
+                  Check your Polygon.io API key and ensure the market was open on this date.
                 </p>
               </div>
             </div>
           )}
 
-          {!isLoading && !error && (
-            <div style={{ position: 'relative' }}>
-              <div ref={chartContainerRef} className="w-full" />
-            </div>
-          )}
+          {!isLoading && !error && <div ref={chartContainerRef} className="w-full" />}
         </div>
 
         {/* Trade List */}
