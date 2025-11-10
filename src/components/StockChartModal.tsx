@@ -102,6 +102,18 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
           return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
         },
       },
+      localization: {
+        timeFormatter: (time: number) => {
+          // time is in seconds (Unix timestamp), convert to milliseconds for local time
+          const date = new Date(time * 1000);
+          const hours = date.getHours();
+          const minutes = date.getMinutes();
+          const day = date.getDate();
+          const month = date.toLocaleString('en-US', { month: 'short' });
+          const year = date.getFullYear().toString().slice(-2);
+          return `${day} ${month} ${year}  ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        },
+      },
     });
 
     chartRef.current = chart;
