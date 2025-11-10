@@ -991,7 +991,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                       type="number"
                       min="0"
                       step="0.01"
-                      value={commissionAmount}
+                      value={commissionAmount || ''}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => setCommissionAmount(parseFloat(e.target.value) || 0)}
                       placeholder="0.00"
                       className="w-16 pl-6 pr-2 py-1 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all duration-200"

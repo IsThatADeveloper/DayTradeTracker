@@ -1,6 +1,6 @@
 // src/components/StockChartModal.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { X, TrendingUp, TrendingDown } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { createChart, CandlestickSeries } from 'lightweight-charts';
 import { Trade } from '../types/trade';
 import { formatCurrency } from '../utils/tradeUtils';
@@ -27,6 +27,7 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [chartData, setChartData] = useState<any[]>([]);
+  const [isDelayedData, setIsDelayedData] = useState(false);
 
   // Filter trades for this ticker on the selected date
   const tickerTrades = trades.filter(trade => {
@@ -37,6 +38,32 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
     );
   }).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
+  // Helper function to convert error to user-friendly message
+  const getUserFriendlyError = (err: any): string => {
+    const errorMessage = err.message || '';
+    const errorString = typeof err === 'string' ? err : JSON.stringify(err);
+    
+    // Check for common API errors
+    if (errorMessage.includes('NOT_AUTHORIZED') || errorString.includes('NOT_AUTHORIZED')) {
+      return 'Real-time data is not available until trading day is complete';
+    }
+    
+    if (errorMessage.includes('API key') || errorString.includes('API key')) {
+      return 'Unable to connect to market data. Please check your API configuration.';
+    }
+    
+    if (errorMessage.includes('market was open') || errorMessage.includes('No data')) {
+      return 'No market data available for this date. The market may have been closed.';
+    }
+    
+    if (errorMessage.includes('rate limit') || errorString.includes('rate limit')) {
+      return 'Too many requests. Please wait a moment and try again.';
+    }
+    
+    // Generic fallback
+    return 'Unable to load chart data. Please try again later.';
+  };
+
   // Load chart data
   useEffect(() => {
     if (!isOpen) return;
@@ -44,14 +71,25 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
     const loadChartData = async () => {
       setIsLoading(true);
       setError(null);
+      setIsDelayedData(false);
 
       try {
-        // Fetch REAL market data from Polygon.io
+        // Try to fetch REAL market data from Polygon.io
         const data = await fetchIntradayDataWithCache(ticker, selectedDate);
         setChartData(data);
       } catch (err: any) {
-        setError(err.message);
         console.error('Failed to load chart data:', err);
+        
+        // Try to fetch delayed/daily data as fallback
+        try {
+          // You can implement a delayed data fetch function here
+          // For now, we'll show a user-friendly error
+          const friendlyError = getUserFriendlyError(err);
+          setError(friendlyError);
+        } catch (fallbackErr) {
+          const friendlyError = getUserFriendlyError(err);
+          setError(friendlyError);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -100,18 +138,6 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
           const hours = date.getHours();
           const minutes = date.getMinutes();
           return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-        },
-      },
-      localization: {
-        timeFormatter: (time: number) => {
-          // time is in seconds (Unix timestamp), convert to milliseconds for local time
-          const date = new Date(time * 1000);
-          const hours = date.getHours();
-          const minutes = date.getMinutes();
-          const day = date.getDate();
-          const month = date.toLocaleString('en-US', { month: 'short' });
-          const year = date.getFullYear().toString().slice(-2);
-          return `${day} ${month} ${year}  ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
         },
       },
     });
@@ -204,6 +230,18 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
           </button>
         </div>
 
+        {/* Delayed Data Warning Banner */}
+        {isDelayedData && !error && (
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-200 dark:border-yellow-800 p-3">
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                Showing delayed market data. Upgrade to a paid plan for real-time intraday charts.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="text-center">
@@ -239,11 +277,20 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
 
           {error && (
             <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <p className="text-red-600 mb-4">{error}</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Check your Polygon.io API key and ensure the market was open on this date.
-                </p>
+              <div className="text-center max-w-md">
+                <div className="mb-4 inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/20">
+                  <AlertCircle className="h-8 w-8 text-red-600" />
+                </div>
+                <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                  Chart Unavailable
+                </h4>
+                <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Close
+                </button>
               </div>
             </div>
           )}
