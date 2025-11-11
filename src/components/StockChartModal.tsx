@@ -1,6 +1,6 @@
 // src/components/StockChartModal.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { X, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, AlertCircle, Clock } from 'lucide-react';
 import { createChart, CandlestickSeries } from 'lightweight-charts';
 import { Trade } from '../types/trade';
 import { formatCurrency } from '../utils/tradeUtils';
@@ -12,7 +12,23 @@ interface StockChartModalProps {
   ticker: string;
   trades: Trade[];
   selectedDate: Date;
+  selectedTradeId?: string;
 }
+
+type Timeframe = '1m' | '5m' | '15m' | '1h';
+
+interface TimeframeOption {
+  value: Timeframe;
+  label: string;
+  seconds: number;
+}
+
+const TIMEFRAME_OPTIONS: TimeframeOption[] = [
+  { value: '1m', label: '1 Min', seconds: 60 },
+  { value: '5m', label: '5 Min', seconds: 300 },
+  { value: '15m', label: '15 Min', seconds: 900 },
+  { value: '1h', label: '1 Hour', seconds: 3600 },
+];
 
 export const StockChartModal: React.FC<StockChartModalProps> = ({
   isOpen,
@@ -20,6 +36,7 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
   ticker,
   trades,
   selectedDate,
+  selectedTradeId,
 }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
@@ -28,8 +45,8 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [chartData, setChartData] = useState<any[]>([]);
   const [isDelayedData, setIsDelayedData] = useState(false);
+  const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>('1m');
 
-  // Filter trades for this ticker on the selected date
   const tickerTrades = trades.filter(trade => {
     const tradeDate = new Date(trade.timestamp);
     return (
@@ -38,12 +55,14 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
     );
   }).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-  // Helper function to convert error to user-friendly message
+  const displayTrades = selectedTradeId
+    ? tickerTrades.filter(trade => trade.id === selectedTradeId)
+    : tickerTrades;
+
   const getUserFriendlyError = (err: any): string => {
     const errorMessage = err.message || '';
     const errorString = typeof err === 'string' ? err : JSON.stringify(err);
     
-    // Check for common API errors
     if (errorMessage.includes('NOT_AUTHORIZED') || errorString.includes('NOT_AUTHORIZED')) {
       return 'Real-time data is not available until trading day is complete';
     }
@@ -60,11 +79,9 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
       return 'Too many requests. Please wait a moment and try again.';
     }
     
-    // Generic fallback
     return 'Unable to load chart data. Please try again later.';
   };
 
-  // Load chart data
   useEffect(() => {
     if (!isOpen) return;
 
@@ -74,31 +91,23 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
       setIsDelayedData(false);
 
       try {
-        // Try to fetch REAL market data from Polygon.io
-        const data = await fetchIntradayDataWithCache(ticker, selectedDate);
+        const timeframeOption = TIMEFRAME_OPTIONS.find(t => t.value === selectedTimeframe);
+        const timeframeSeconds = timeframeOption?.seconds || 60;
+        
+        const data = await fetchIntradayDataWithCache(ticker, selectedDate, timeframeSeconds);
         setChartData(data);
       } catch (err: any) {
         console.error('Failed to load chart data:', err);
-        
-        // Try to fetch delayed/daily data as fallback
-        try {
-          // You can implement a delayed data fetch function here
-          // For now, we'll show a user-friendly error
-          const friendlyError = getUserFriendlyError(err);
-          setError(friendlyError);
-        } catch (fallbackErr) {
-          const friendlyError = getUserFriendlyError(err);
-          setError(friendlyError);
-        }
+        const friendlyError = getUserFriendlyError(err);
+        setError(friendlyError);
       } finally {
         setIsLoading(false);
       }
     };
 
     loadChartData();
-  }, [isOpen, ticker, selectedDate]);
+  }, [isOpen, ticker, selectedDate, selectedTimeframe]);
 
-  // Create and configure the chart
   useEffect(() => {
     if (!isOpen || !chartContainerRef.current || !chartData.length || isLoading) return;
 
@@ -133,18 +142,11 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
         borderColor: colors.grid,
         timeVisible: true,
         secondsVisible: false,
-        tickMarkFormatter: (time: number) => {
-          const date = new Date(time * 1000);
-          const hours = date.getHours();
-          const minutes = date.getMinutes();
-          return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-        },
       },
     });
 
     chartRef.current = chart;
 
-    // Add candlestick series
     const candlestickSeries = chart.addSeries(CandlestickSeries);
     
     candlestickSeries.applyOptions({
@@ -159,26 +161,23 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
     seriesRef.current = candlestickSeries;
     candlestickSeries.setData(chartData);
     
-    // Add horizontal price lines for each trade
-    tickerTrades.forEach((trade, index) => {
-      // Entry price line (dashed)
+    displayTrades.forEach((trade, index) => {
       candlestickSeries.createPriceLine({
         price: trade.entryPrice,
         color: trade.direction === 'long' ? colors.upColor : colors.downColor,
         lineWidth: 2,
-        lineStyle: 2, // Dashed
+        lineStyle: 2,
         axisLabelVisible: true,
-        title: `Entry #${index + 1}: ${formatCurrency(trade.entryPrice)}`,
+        title: `Entry${displayTrades.length > 1 ? ` #${index + 1}` : ''}: ${formatCurrency(trade.entryPrice)}`,
       });
       
-      // Exit price line (solid)
       candlestickSeries.createPriceLine({
         price: trade.exitPrice,
         color: trade.realizedPL >= 0 ? colors.upColor : colors.downColor,
         lineWidth: 2,
-        lineStyle: 0, // Solid
+        lineStyle: 0,
         axisLabelVisible: true,
-        title: `Exit #${index + 1}: ${formatCurrency(trade.exitPrice)}`,
+        title: `Exit${displayTrades.length > 1 ? ` #${index + 1}` : ''}: ${formatCurrency(trade.exitPrice)}`,
       });
     });
     
@@ -200,22 +199,23 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [isOpen, chartData, isLoading, tickerTrades]);
+  }, [isOpen, chartData, isLoading, displayTrades, selectedTimeframe]);
 
   if (!isOpen) return null;
 
-  const totalTrades = tickerTrades.length;
-  const totalPL = tickerTrades.reduce((sum, t) => sum + t.realizedPL, 0);
-  const avgEntry = tickerTrades.reduce((sum, t) => sum + t.entryPrice, 0) / totalTrades;
-  const avgExit = tickerTrades.reduce((sum, t) => sum + t.exitPrice, 0) / totalTrades;
+  const totalTrades = displayTrades.length;
+  const totalPL = displayTrades.reduce((sum, t) => sum + t.realizedPL, 0);
+  const avgEntry = displayTrades.reduce((sum, t) => sum + t.entryPrice, 0) / totalTrades;
+  const avgExit = displayTrades.reduce((sum, t) => sum + t.exitPrice, 0) / totalTrades;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 flex items-center justify-between">
           <div>
-            <h3 className="text-xl font-bold text-white">{ticker} - Price Chart</h3>
+            <h3 className="text-xl font-bold text-white">
+              {ticker} - Price Chart {selectedTradeId && '(Single Trade)'}
+            </h3>
             <p className="text-sm text-blue-100">
               {selectedDate.toLocaleDateString('en-US', {
                 weekday: 'long',
@@ -230,7 +230,28 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
           </button>
         </div>
 
-        {/* Delayed Data Warning Banner */}
+        <div className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center space-x-2">
+            <Clock className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Timeframe:</span>
+            <div className="flex items-center space-x-1">
+              {TIMEFRAME_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setSelectedTimeframe(option.value)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
+                    selectedTimeframe === option.value
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-600'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
         {isDelayedData && !error && (
           <div className="bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-200 dark:border-yellow-800 p-3">
             <div className="flex items-center space-x-2">
@@ -242,10 +263,11 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
           </div>
         )}
 
-        {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="text-center">
-            <div className="text-xs text-gray-500 dark:text-gray-400">Trades</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {selectedTradeId ? 'Trade' : 'Trades'}
+            </div>
             <div className="text-lg font-bold text-gray-900 dark:text-white">{totalTrades}</div>
           </div>
           <div className="text-center">
@@ -255,22 +277,25 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
             </div>
           </div>
           <div className="text-center">
-            <div className="text-xs text-gray-500 dark:text-gray-400">Avg Entry</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {selectedTradeId ? 'Entry' : 'Avg Entry'}
+            </div>
             <div className="text-lg font-bold text-gray-900 dark:text-white">{formatCurrency(avgEntry)}</div>
           </div>
           <div className="text-center">
-            <div className="text-xs text-gray-500 dark:text-gray-400">Avg Exit</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {selectedTradeId ? 'Exit' : 'Avg Exit'}
+            </div>
             <div className="text-lg font-bold text-gray-900 dark:text-white">{formatCurrency(avgExit)}</div>
           </div>
         </div>
 
-        {/* Chart */}
         <div className="flex-1 overflow-auto p-4">
           {isLoading && (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
                 <div className="animate-spin h-12 w-12 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-                <p className="text-gray-600 dark:text-gray-400">Loading chart...</p>
+                <p className="text-gray-600 dark:text-gray-400">Loading {TIMEFRAME_OPTIONS.find(t => t.value === selectedTimeframe)?.label} chart...</p>
               </div>
             </div>
           )}
@@ -298,13 +323,12 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({
           {!isLoading && !error && <div ref={chartContainerRef} className="w-full" />}
         </div>
 
-        {/* Trade List */}
         <div className="border-t border-gray-200 dark:border-gray-700 p-4 max-h-48 overflow-y-auto">
           <h4 className="font-semibold text-gray-900 dark:text-white mb-3">
-            Entry Points ({tickerTrades.length})
+            {selectedTradeId ? 'Trade Details' : `Entry Points (${displayTrades.length})`}
           </h4>
           <div className="space-y-2">
-            {tickerTrades.map((trade) => (
+            {displayTrades.map((trade) => (
               <div key={trade.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                 <div className="flex items-center space-x-3">
                   <div className={`p-2 rounded-full ${

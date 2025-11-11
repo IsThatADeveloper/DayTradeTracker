@@ -12,13 +12,29 @@ export interface CandleData {
 }
 
 /**
+ * Convert timeframe in seconds to Polygon.io API format
+ */
+function getPolygonTimeframe(seconds: number): { multiplier: number; timespan: string } {
+  if (seconds < 60) {
+    return { multiplier: seconds, timespan: 'second' };
+  } else if (seconds < 3600) {
+    const minutes = seconds / 60;
+    return { multiplier: minutes, timespan: 'minute' };
+  } else {
+    const hours = seconds / 3600;
+    return { multiplier: hours, timespan: 'hour' };
+  }
+}
+
+/**
  * Fetch real intraday stock data from Polygon.io
  * Free tier works for historical data (not real-time)
  * Sign up: https://polygon.io/
  */
 export const fetchRealIntradayData = async (
   ticker: string,
-  date: Date
+  date: Date,
+  timeframeSeconds: number = 60
 ): Promise<CandleData[]> => {
   if (!POLYGON_API_KEY) {
     throw new Error('POLYGON_API_KEY not set in environment variables');
@@ -28,10 +44,13 @@ export const fetchRealIntradayData = async (
   const dateStr = date.toISOString().split('T')[0];
   
   try {
-    // Polygon.io aggregates endpoint - 1 minute bars
-    const url = `https://api.polygon.io/v2/aggs/ticker/${ticker.toUpperCase()}/range/1/minute/${dateStr}/${dateStr}?adjusted=true&sort=asc&limit=50000&apiKey=${POLYGON_API_KEY}`;
+    // Get the appropriate timeframe for Polygon API
+    const { multiplier, timespan } = getPolygonTimeframe(timeframeSeconds);
     
-    console.log(`Fetching market data for ${ticker} on ${dateStr}...`);
+    // Polygon.io aggregates endpoint
+    const url = `https://api.polygon.io/v2/aggs/ticker/${ticker.toUpperCase()}/range/${multiplier}/${timespan}/${dateStr}/${dateStr}?adjusted=true&sort=asc&limit=50000&apiKey=${POLYGON_API_KEY}`;
+    
+    console.log(`Fetching ${multiplier}${timespan} market data for ${ticker} on ${dateStr}...`);
     
     const response = await fetch(url);
     
@@ -50,8 +69,11 @@ export const fetchRealIntradayData = async (
     console.log(`Received ${data.results.length} candles for ${ticker}`);
     
     // Convert Polygon format to our format
+    // Polygon returns UTC timestamps, convert to Eastern Time (UTC-5)
+    const ET_OFFSET = 5 * 60 * 60; // 5 hours in seconds
+    
     return data.results.map((candle: any) => ({
-      time: Math.floor(candle.t / 1000), // Convert milliseconds to seconds
+      time: Math.floor(candle.t / 1000) - ET_OFFSET, // Convert to seconds and adjust to ET
       open: parseFloat(candle.o.toFixed(4)),
       high: parseFloat(candle.h.toFixed(4)),
       low: parseFloat(candle.l.toFixed(4)),
@@ -73,9 +95,10 @@ const CACHE_DURATION = 1000 * 60 * 60; // 1 hour
 
 export const fetchIntradayDataWithCache = async (
   ticker: string,
-  date: Date
+  date: Date,
+  timeframeSeconds: number = 60
 ): Promise<CandleData[]> => {
-  const cacheKey = `${ticker.toUpperCase()}-${date.toISOString().split('T')[0]}`;
+  const cacheKey = `${ticker.toUpperCase()}-${date.toISOString().split('T')[0]}-${timeframeSeconds}s`;
   const cached = cache.get(cacheKey);
   
   // Return cached data if still valid
@@ -85,7 +108,7 @@ export const fetchIntradayDataWithCache = async (
   }
   
   // Fetch fresh data
-  const data = await fetchRealIntradayData(ticker, date);
+  const data = await fetchRealIntradayData(ticker, date, timeframeSeconds);
   
   // Store in cache
   cache.set(cacheKey, { data, timestamp: Date.now() });

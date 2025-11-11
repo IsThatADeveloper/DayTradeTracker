@@ -1,4 +1,4 @@
-// src/components/StockSearch.tsx - UPDATED: Added interactive TradingView charts
+// src/components/StockSearch.tsx
 import React, { useState, useMemo } from 'react';
 import { Search, TrendingUp, TrendingDown, BarChart3, LineChart } from 'lucide-react';
 import { Trade } from '../types/trade';
@@ -37,11 +37,10 @@ export const StockSearch: React.FC<StockSearchProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStock, setSelectedStock] = useState<string | null>(null);
   const [activeAnalysisView, setActiveAnalysisView] = useState<AnalysisView>('search');
-  
-  // NEW: Chart modal state
   const [showChartModal, setShowChartModal] = useState(false);
   const [chartTicker, setChartTicker] = useState<string>('');
   const [chartDate, setChartDate] = useState<Date>(new Date());
+  const [chartTradeId, setChartTradeId] = useState<string | undefined>(undefined);
 
   const stockAnalysis = useMemo(() => {
     const stockMap = new Map<string, Trade[]>();
@@ -100,10 +99,17 @@ export const StockSearch: React.FC<StockSearchProps> = ({
     onViewChange('daily');
   };
 
-  // NEW: Handle viewing stock chart
   const handleViewChart = (ticker: string, date?: Date) => {
     setChartTicker(ticker);
     setChartDate(date || new Date());
+    setChartTradeId(undefined);
+    setShowChartModal(true);
+  };
+
+  const handleViewTradeChart = (trade: Trade) => {
+    setChartTicker(trade.ticker);
+    setChartDate(trade.timestamp);
+    setChartTradeId(trade.id);
     setShowChartModal(true);
   };
 
@@ -205,11 +211,9 @@ export const StockSearch: React.FC<StockSearchProps> = ({
                   <span className="text-sm text-gray-500 dark:text-gray-400">
                     Last traded: {selectedStockData.lastTradeDate.toLocaleDateString()}
                   </span>
-                  {/* NEW: View Chart Button */}
                   <button
                     onClick={() => handleViewChart(selectedStockData.ticker, selectedStockData.lastTradeDate)}
                     className="inline-flex items-center px-3 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors shadow-sm"
-                    title="View price chart with entry points"
                   >
                     <LineChart className="h-4 w-4 mr-2" />
                     View Chart
@@ -270,8 +274,11 @@ export const StockSearch: React.FC<StockSearchProps> = ({
               <div className="p-4 border-b border-gray-200 dark:border-gray-700">
                 <h5 className="font-medium text-gray-900 dark:text-white flex items-center">
                   <BarChart3 className="h-4 w-4 mr-2" />
-                  Trade History (Double-click to view day, Click chart icon to see price action)
+                  Trade History
                 </h5>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Double-click to view day • Click chart icon to see individual trade
+                </p>
               </div>
               <div className="max-h-96 overflow-y-auto">
                 {selectedStockData.trades.map((trade) => (
@@ -279,7 +286,6 @@ export const StockSearch: React.FC<StockSearchProps> = ({
                     key={trade.id}
                     onDoubleClick={() => handleTradeDoubleClick(trade)}
                     className="p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors group"
-                    title="Double-click to view this trading day"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3 flex-1">
@@ -312,14 +318,12 @@ export const StockSearch: React.FC<StockSearchProps> = ({
                         <div className={`font-bold text-lg text-right ${getPLColor(trade.realizedPL)}`}>
                           {formatCurrency(trade.realizedPL)}
                         </div>
-                        {/* NEW: Mini chart button for individual trade */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleViewChart(trade.ticker, trade.timestamp);
+                            handleViewTradeChart(trade);
                           }}
                           className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md"
-                          title="View chart for this trade"
                         >
                           <LineChart className="h-4 w-4" />
                         </button>
@@ -348,7 +352,6 @@ export const StockSearch: React.FC<StockSearchProps> = ({
   return (
     <>
       <div className="space-y-6">
-        {/* Main Header and Search - Always visible */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
@@ -360,7 +363,6 @@ export const StockSearch: React.FC<StockSearchProps> = ({
             </span>
           </div>
 
-          {/* Search Bar - Only shown in search view */}
           {activeAnalysisView === 'search' && (
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -375,10 +377,8 @@ export const StockSearch: React.FC<StockSearchProps> = ({
           )}
         </div>
 
-        {/* Analysis View Tabs */}
         {renderAnalysisViewTabs()}
 
-        {/* Content based on active view */}
         {activeAnalysisView === 'search' ? (
           renderStockSearchView()
         ) : (
@@ -386,13 +386,13 @@ export const StockSearch: React.FC<StockSearchProps> = ({
         )}
       </div>
 
-      {/* NEW: Stock Chart Modal */}
       <StockChartModal
         isOpen={showChartModal}
         onClose={() => setShowChartModal(false)}
         ticker={chartTicker}
         trades={trades}
         selectedDate={chartDate}
+        selectedTradeId={chartTradeId}
       />
     </>
   );
