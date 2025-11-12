@@ -1,13 +1,13 @@
 // src/components/Calendar.tsx - Enhanced with Broker Selection for CSV Upload
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { 
-  ChevronLeft, 
-  ChevronRight, 
-  Calendar as CalendarIcon, 
-  TrendingUp, 
-  Clock, 
-  ChevronDown, 
-  BarChart3, 
+import {
+  ChevronLeft,
+  ChevronRight,
+  Calendar as CalendarIcon,
+  TrendingUp,
+  Clock,
+  ChevronDown,
+  BarChart3,
   DollarSign,
   Upload,
   FileText,
@@ -212,12 +212,12 @@ export const Calendar: React.FC<CalendarProps> = ({
   const parseCSV = useCallback(async (csvText: string): Promise<CSVUploadResult> => {
     console.log('📄 Starting CSV parse with BrokerCSVParser, broker:', selectedBroker);
     console.log('📅 NOT overriding CSV dates - using dates from file');
-    
+
     try {
       // Use BrokerCSVParser with selected broker
       // Pass undefined for date to respect the dates in the CSV file
       const brokerResult = await BrokerCSVParser.parseCSV(csvText, selectedBroker, undefined);
-      
+
       console.log('🔍 Broker parser result:', {
         success: brokerResult.success,
         trades: brokerResult.tradesImported,
@@ -225,7 +225,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         errors: brokerResult.errors.length,
         warnings: brokerResult.warnings.length
       });
-      
+
       // Transform broker result to Calendar's expected format
       const uploadResult: CSVUploadResult = {
         success: brokerResult.success,
@@ -234,31 +234,31 @@ export const Calendar: React.FC<CalendarProps> = ({
         warnings: brokerResult.warnings,
         detectedBroker: brokerResult.detectedBroker,
       };
-      
+
       // If successful and trades found, add them
       if (brokerResult.success && brokerResult.trades.length > 0) {
         console.log('✅ Adding', brokerResult.trades.length, 'trades to calendar');
-        
+
         // CRITICAL: Preserve dates by creating new Date objects
         // This prevents any parent component from modifying the dates
         const tradesWithPreservedDates = brokerResult.trades.map(trade => {
-          const originalDate = trade.timestamp instanceof Date 
-            ? trade.timestamp 
+          const originalDate = trade.timestamp instanceof Date
+            ? trade.timestamp
             : new Date(trade.timestamp);
-          
+
           return {
             ...trade,
             timestamp: new Date(originalDate.getTime()) // Clone the date
           };
         });
-        
+
         // CRITICAL DEBUG: Log the actual dates from parsed trades
         console.log('🔍 CALENDAR CSV IMPORT - Trade dates BEFORE onTradesAdded:');
         tradesWithPreservedDates.slice(0, 3).forEach((trade, idx) => {
           const date = trade.timestamp;
           console.log(`  Trade ${idx + 1} (${trade.ticker}): ${date.toISOString()} - Year: ${date.getFullYear()}, Month: ${date.getMonth() + 1}, Day: ${date.getDate()}`);
         });
-        
+
         if (onTradesAdded) {
           try {
             await onTradesAdded(tradesWithPreservedDates);
@@ -272,7 +272,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           console.warn('⚠️ No onTradesAdded callback provided');
         }
       }
-      
+
       return uploadResult;
     } catch (error) {
       console.error('❌ CSV parse error:', error);
@@ -289,7 +289,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const handleFileSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     console.log('📁 File selected:', file?.name);
-    
+
     if (!file) return;
 
     // Validate file type
@@ -306,7 +306,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
 
     console.log('✅ Valid CSV file, reading content...');
-    
+
     try {
       const text = await file.text();
       console.log('📄 File content length:', text.length, 'characters');
@@ -339,7 +339,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     try {
       const result = await parseCSV(csvText);
       setUploadResult(result);
-      
+
       if (result.success) {
         // Clear CSV text on success
         setTimeout(() => {
@@ -382,7 +382,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           <Building2 className="h-4 w-4 mr-2" />
           Select Broker Format:
         </label>
-        
+
         <div className="relative">
           <button
             onClick={() => setShowBrokerDropdown(!showBrokerDropdown)}
@@ -411,17 +411,15 @@ export const Calendar: React.FC<CalendarProps> = ({
                     setSelectedBroker(option.value);
                     setShowBrokerDropdown(false);
                   }}
-                  className={`w-full px-4 py-3 text-left flex items-center hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors border-b border-slate-100 dark:border-slate-600 last:border-b-0 ${
-                    selectedBroker === option.value ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                  }`}
+                  className={`w-full px-4 py-3 text-left flex items-center hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors border-b border-slate-100 dark:border-slate-600 last:border-b-0 ${selectedBroker === option.value ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                    }`}
                 >
                   <span className="text-2xl mr-3">{option.icon}</span>
                   <div className="flex-1">
-                    <div className={`font-semibold ${
-                      selectedBroker === option.value 
-                        ? 'text-blue-700 dark:text-blue-300' 
+                    <div className={`font-semibold ${selectedBroker === option.value
+                        ? 'text-blue-700 dark:text-blue-300'
                         : 'text-slate-900 dark:text-white'
-                    }`}>
+                      }`}>
                       {option.label}
                     </div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -877,18 +875,17 @@ export const Calendar: React.FC<CalendarProps> = ({
         </div>
 
         <div className="flex items-center space-x-2 sm:space-x-4 w-full sm:w-auto">
-          {/* CSV Upload Button */}
+          {/* CSV Upload Button - Hidden on phones */}
           <button
             onClick={handleUploadClick}
             disabled={isUploading}
-            className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+            className="hidden sm:inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
             title="Upload CSV file"
           >
             <Upload className={`h-4 w-4 mr-2 ${isUploading ? 'animate-bounce' : ''}`} />
-            <span className="text-sm font-medium hidden sm:inline">
+            <span className="text-sm font-medium">
               {isUploading ? 'Uploading...' : 'Upload CSV'}
             </span>
-            <span className="text-sm font-medium sm:hidden">CSV</span>
           </button>
 
           {/* Date Range Display with Clear */}
@@ -964,17 +961,15 @@ export const Calendar: React.FC<CalendarProps> = ({
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setApplyCommission(!applyCommission)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200 ${
-                    applyCommission
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200 ${applyCommission
                       ? 'bg-emerald-500 hover:bg-emerald-600'
                       : 'bg-slate-300 dark:bg-slate-600 hover:bg-slate-400 dark:hover:bg-slate-500'
-                  }`}
+                    }`}
                   title={applyCommission ? 'Commission enabled' : 'Commission disabled'}
                 >
                   <span
-                    className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform duration-200 ${
-                      applyCommission ? 'translate-x-5' : 'translate-x-1'
-                    }`}
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform duration-200 ${applyCommission ? 'translate-x-5' : 'translate-x-1'
+                      }`}
                   />
                 </button>
                 <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -1070,11 +1065,10 @@ export const Calendar: React.FC<CalendarProps> = ({
                     <button
                       key={view.value}
                       onClick={() => handleChartViewChange(view)}
-                      className={`w-full px-4 py-2 text-left text-sm transition-colors duration-150 first:rounded-t-lg last:rounded-b-lg ${
-                        selectedChartView === view.value
+                      className={`w-full px-4 py-2 text-left text-sm transition-colors duration-150 first:rounded-t-lg last:rounded-b-lg ${selectedChartView === view.value
                           ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300'
                           : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                      }`}
+                        }`}
                     >
                       {view.label}
                     </button>
@@ -1211,9 +1205,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                     </h4>
                     {monthData.monthlyTrades > 0 && (
                       <div className="mt-1">
-                        <div className={`text-xs font-bold ${
-                          monthData.monthlyPL >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                        }`}>
+                        <div className={`text-xs font-bold ${monthData.monthlyPL >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                          }`}>
                           {formatCurrency(monthData.monthlyPL)}
                         </div>
                         <div className="text-xs text-slate-500 dark:text-slate-400">
@@ -1254,9 +1247,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                         return (
                           <div
                             key={dayIndex}
-                            className={`w-5 h-5 rounded-sm ${colorClass} ${
-                              isTodayDate ? 'ring-2 ring-blue-400' : ''
-                            } ${!isCurrentMonthDay ? 'opacity-30' : ''} hover:scale-110 transition-all duration-150 cursor-pointer flex items-center justify-center`}
+                            className={`w-5 h-5 rounded-sm ${colorClass} ${isTodayDate ? 'ring-2 ring-blue-400' : ''
+                              } ${!isCurrentMonthDay ? 'opacity-30' : ''} hover:scale-110 transition-all duration-150 cursor-pointer flex items-center justify-center`}
                             onClick={() => handleDayClick(day.date)}
                             title={
                               isCurrentMonthDay && day.hasData
@@ -1364,23 +1356,21 @@ export const Calendar: React.FC<CalendarProps> = ({
               ))}
 
               <div
-                className={`relative h-14 sm:h-16 md:h-20 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center ${
-                  week.hasData
+                className={`relative h-14 sm:h-16 md:h-20 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center ${week.hasData
                     ? week.totalPL >= 0
                       ? 'bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/30 dark:to-teal-900/30 border-emerald-300 dark:border-emerald-700'
                       : 'bg-gradient-to-br from-rose-100 to-red-100 dark:from-rose-900/30 dark:to-red-900/30 border-rose-300 dark:border-rose-700'
                     : 'bg-slate-50 dark:bg-slate-900'
-                }`}
+                  }`}
                 title={week.hasData ? `Week of ${format(week.weekStart, 'MMM d')}: ${formatCurrency(week.totalPL)} (${week.tradeCount} trades)` : `Week of ${format(week.weekStart, 'MMM d')}: No trades`}
               >
                 {week.hasData && (
                   <>
                     <div
-                      className={`text-xs sm:text-sm font-bold ${
-                        week.totalPL >= 0
+                      className={`text-xs sm:text-sm font-bold ${week.totalPL >= 0
                           ? 'text-emerald-700 dark:text-emerald-300'
                           : 'text-rose-700 dark:text-rose-300'
-                      }`}
+                        }`}
                     >
                       {formatCompactPL(week.totalPL, typeof window !== 'undefined' && window.innerWidth < 640)}
                     </div>
@@ -1449,9 +1439,8 @@ export const Calendar: React.FC<CalendarProps> = ({
 
               <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
                 <div
-                  className={`text-xl sm:text-2xl font-bold ${
-                    rangeStats.totalPL >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                  }`}
+                  className={`text-xl sm:text-2xl font-bold ${rangeStats.totalPL >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                    }`}
                 >
                   {formatCurrency(rangeStats.totalPL)}
                 </div>
@@ -1463,9 +1452,8 @@ export const Calendar: React.FC<CalendarProps> = ({
               {secondDate && (
                 <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
                   <div
-                    className={`text-xl sm:text-2xl font-bold ${
-                      rangeStats.avgPerDay >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                    }`}
+                    className={`text-xl sm:text-2xl font-bold ${rangeStats.avgPerDay >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                      }`}
                   >
                     {formatCurrency(rangeStats.avgPerDay)}
                   </div>
@@ -1486,9 +1474,8 @@ export const Calendar: React.FC<CalendarProps> = ({
 
               <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
                 <div
-                  className={`text-xl sm:text-2xl font-bold ${
-                    rangeStats.winRate >= 50 ? 'text-emerald-600' : 'text-rose-600'
-                  }`}
+                  className={`text-xl sm:text-2xl font-bold ${rangeStats.winRate >= 50 ? 'text-emerald-600' : 'text-rose-600'
+                    }`}
                 >
                   {rangeStats.winRate.toFixed(1)}%
                 </div>
