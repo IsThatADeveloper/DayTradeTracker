@@ -1,4 +1,4 @@
-// src/App.tsx - WITH CUSTOMIZABLE NAVIGATION
+// src/App.tsx - WITH CUSTOMIZABLE NAVIGATION AND MOBILE ACCESSIBILITY
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings as SettingsIcon, Calculator, BookOpen, AlertCircle, MessageSquare } from 'lucide-react';
 import { Trade } from './types/trade';
@@ -866,7 +866,14 @@ function AppContent() {
       }
 
       if (activeView === 'chat') {
-        return <MemoizedChatRoom currentUser={currentUser} />;
+        return (
+          <MemoizedChatRoom 
+            currentUser={currentUser ? {
+              uid: currentUser.uid,
+              displayName: currentUser.displayName
+            } : undefined} 
+          />
+        );
       }
 
       if (activeView === 'projections') {
@@ -1122,7 +1129,38 @@ function AppContent() {
                   );
                 })}
 
-              <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-2">
+                {/* Settings Button - Mobile Only */}
+                {currentUser && (
+                  <button
+                    onClick={() => {
+                      setShowSettings(true);
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-full flex items-center px-3 py-3 text-left rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    <SettingsIcon className="h-5 w-5 mr-3" />
+                    <span className="font-medium">Settings</span>
+                  </button>
+                )}
+
+                {/* Sync Brokers Button - Mobile Only */}
+                {currentUser && brokerConnections.length > 0 && (
+                  <button
+                    onClick={() => {
+                      handleSyncAllBrokers();
+                      setMobileMenuOpen(false);
+                    }}
+                    disabled={isAnySyncing()}
+                    className="w-full flex items-center px-3 py-3 text-left rounded-lg transition-colors bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-5 w-5 mr-3 ${isAnySyncing() ? 'animate-spin' : ''}`} />
+                    <span className="font-medium">
+                      {isAnySyncing() ? 'Syncing...' : 'Sync Brokers'}
+                    </span>
+                  </button>
+                )}
+
                 <AuthComponent onOpenProfile={() => {
                   setShowProfile(true);
                   setMobileMenuOpen(false);
