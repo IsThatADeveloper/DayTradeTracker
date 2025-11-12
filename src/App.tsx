@@ -1,6 +1,6 @@
-// src/App.tsx - Fixed CSV Import Issue + Fixed updateTrade/deleteTrade + Added EarningsProjection
+// src/App.tsx - Fixed CSV Import Issue + Fixed updateTrade/deleteTrade + Added EarningsProjection + Chat Room
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator, BookOpen, AlertCircle } from 'lucide-react';
+import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator, BookOpen, AlertCircle, MessageSquare } from 'lucide-react';
 import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useBrokerIntegration } from './hooks/useBrokerIntegration';
@@ -20,6 +20,7 @@ import { StockSearch } from './components/StockSearch';
 import { StockNews } from './components/StockNews';
 import { DailyReview } from './components/DailyReview';
 import { EarningsProjection } from './components/EarningsProjection';
+import { ChatRoom } from './components/ChatRoom';
 import { HomePage } from './components/HomePage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
@@ -37,6 +38,7 @@ const MemoizedStockSearch = React.memo(StockSearch);
 const MemoizedStockNews = React.memo(StockNews);
 const MemoizedDailyReview = React.memo(DailyReview);
 const MemoizedEarningsProjection = React.memo(EarningsProjection);
+const MemoizedChatRoom = React.memo(ChatRoom);
 
 const NAVIGATION_ITEMS = [
   {
@@ -56,6 +58,12 @@ const NAVIGATION_ITEMS = [
     label: 'Daily Review',
     icon: BookOpen,
     description: 'Daily report card and performance rating'
+  },
+  {
+    id: 'chat',
+    label: 'Chat Room',
+    icon: MessageSquare,
+    description: 'Connect with other traders'
   },
   {
     id: 'search',
@@ -83,7 +91,7 @@ const NAVIGATION_ITEMS = [
   }
 ];
 
-type ActiveViewType = 'calendar' | 'daily' | 'review' | 'search' | 'brokers' | 'news' | 'projections';
+type ActiveViewType = 'calendar' | 'daily' | 'review' | 'search' | 'brokers' | 'news' | 'projections' | 'chat';
 
 // ENHANCED Error Boundary Component with Detailed Logging
 class ErrorBoundary extends React.Component<
@@ -100,7 +108,6 @@ class ErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // ENHANCED: Detailed logging to help debug
     console.group('🔴 Application Error Caught');
     console.error('Error:', error);
     console.error('Error Message:', error.message);
@@ -121,7 +128,6 @@ class ErrorBoundary extends React.Component<
 
     this.setState({ error, errorInfo });
 
-    // Try to send to analytics if available
     try {
       if ((window as any).gtag) {
         (window as any).gtag('event', 'exception', {
@@ -177,7 +183,6 @@ Environment:
       return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
           <div className="max-w-4xl w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl overflow-hidden">
-            {/* Header */}
             <div className="bg-red-600 p-6">
               <div className="flex items-center">
                 <AlertCircle className="h-8 w-8 text-white mr-3" />
@@ -188,9 +193,7 @@ Environment:
               </div>
             </div>
 
-            {/* Error Details */}
             <div className="p-6 space-y-4">
-              {/* Error Message */}
               <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
                 <h3 className="font-semibold text-red-900 dark:text-red-100 mb-2">
                   Error Message:
@@ -200,7 +203,6 @@ Environment:
                 </p>
               </div>
 
-              {/* Environment Info */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                   <h4 className="font-semibold text-gray-900 dark:text-white mb-3 text-sm">
@@ -261,7 +263,6 @@ Environment:
                 </div>
               </div>
 
-              {/* Stack Trace */}
               <details className="bg-gray-50 dark:bg-gray-700 rounded-lg">
                 <summary className="p-3 cursor-pointer font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg text-sm">
                   📋 View Full Error Stack (Click to expand)
@@ -273,7 +274,6 @@ Environment:
                 </div>
               </details>
 
-              {/* Component Stack */}
               {errorInfo?.componentStack && (
                 <details className="bg-gray-50 dark:bg-gray-700 rounded-lg">
                   <summary className="p-3 cursor-pointer font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg text-sm">
@@ -287,7 +287,6 @@ Environment:
                 </details>
               )}
 
-              {/* Troubleshooting */}
               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
                 <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-2 text-sm">
                   💡 Troubleshooting Steps
@@ -302,7 +301,6 @@ Environment:
                 </ol>
               </div>
 
-              {/* Actions */}
               <div className="flex flex-col sm:flex-row gap-3">
                 <button
                   onClick={() => window.location.reload()}
@@ -334,7 +332,6 @@ Environment:
 }
 
 function AppContent() {
-  // CRITICAL: Console logging BEFORE any other code
   console.log('🚀 AppContent: Starting initialization...', {
     timestamp: new Date().toISOString(),
     url: window.location.href,
@@ -346,7 +343,6 @@ function AppContent() {
     nodeEnv: process.env.NODE_ENV,
   });
 
-  // Security initialization with detailed error logging
   useEffect(() => {
     console.log('🔒 Security: Initializing...');
     try {
@@ -361,10 +357,9 @@ function AppContent() {
         isProduction: process.env.NODE_ENV === 'production'
       });
       
-      // In production, prevent app from loading on security failure
       if (process.env.NODE_ENV === 'production') {
         alert(`Security check failed: ${(error as Error).message}\n\nPlease ensure you're using HTTPS.`);
-        throw error; // Re-throw to trigger error boundary
+        throw error;
       }
     }
   }, []);
@@ -380,7 +375,6 @@ function AppContent() {
     disableAutoSync
   } = useBrokerIntegration();
 
-  // Tutorial hook
   const {
     showTutorial,
     showWelcome,
@@ -393,7 +387,6 @@ function AppContent() {
     startTutorialFromWelcome
   } = useTutorial();
 
-  // All useState and useLocalStorage hooks
   const [showHomePage, setShowHomePage] = useLocalStorage('show-homepage', true);
   const [localTrades, setLocalTrades] = useLocalStorage<Trade[]>('day-trader-trades', []);
   const [cloudTrades, setCloudTrades] = useState<Trade[]>([]);
@@ -475,7 +468,6 @@ function AppContent() {
     }
   }, [currentUser, setLocalTrades]);
 
-  // FIX: Enhanced handleTradesAdded with better logging and error handling
   const handleTradesAdded = useCallback(async (newTrades: Trade[]) => {
     console.log('📈 App: handleTradesAdded called with trades:', {
       count: newTrades.length,
@@ -507,11 +499,10 @@ function AppContent() {
     } catch (error: any) {
       console.error('❌ Failed to save trades:', error);
       alert(`Failed to save trades: ${error.message}`);
-      throw error; // Re-throw to let BulkTradeImport handle it
+      throw error;
     }
   }, [currentUser, setLocalTrades]);
 
-  // ✅ FIXED: Added currentUser.uid as first parameter
   const handleUpdateTrade = useCallback(async (tradeId: string, updates: Partial<Trade>) => {
     console.log('🔄 App: Updating trade:', tradeId);
 
@@ -524,7 +515,6 @@ function AppContent() {
             updateCount: currentTrade.updateCount || 0
           };
 
-          // ✅ FIXED: Pass userId as first parameter
           await tradeService.updateTrade(currentUser.uid, tradeId, updatesWithCount);
 
           setCloudTrades(prev => prev.map(trade =>
@@ -558,11 +548,9 @@ function AppContent() {
     }
   }, [currentUser, cloudTrades, setLocalTrades]);
 
-  // ✅ FIXED: Added currentUser.uid as first parameter
   const handleDeleteTrade = useCallback(async (tradeId: string) => {
     if (currentUser) {
       try {
-        // ✅ FIXED: Pass userId as first parameter
         await tradeService.deleteTrade(currentUser.uid, tradeId);
         setCloudTrades(prev => prev.filter(trade => trade.id !== tradeId));
       } catch (error: any) {
@@ -602,7 +590,7 @@ function AppContent() {
   }, [syncAllTrades, loadCloudTrades]);
 
   const handleNavigation = useCallback((viewId: string) => {
-    if (['daily', 'review', 'calendar', 'search', 'brokers', 'news', 'projections'].includes(viewId)) {
+    if (['daily', 'review', 'calendar', 'search', 'brokers', 'news', 'projections', 'chat'].includes(viewId)) {
       setActiveView(viewId as ActiveViewType);
       setMobileMenuOpen(false);
     }
@@ -675,7 +663,6 @@ function AppContent() {
     URL.revokeObjectURL(url);
   }, [dailyTrades, selectedDate]);
 
-  // FIX: Log callback availability on mount
   useEffect(() => {
     console.log('🔍 Callback check:', {
       handleTradesAdded: typeof handleTradesAdded,
@@ -794,7 +781,10 @@ function AppContent() {
         return <MemoizedStockNews trades={activeTrades} />;
       }
 
-      // ✅ FIXED: Actually render the EarningsProjection component
+      if (activeView === 'chat') {
+        return <MemoizedChatRoom currentUser={currentUser} />;
+      }
+
       if (activeView === 'projections') {
         return (
           <MemoizedEarningsProjection
@@ -813,7 +803,6 @@ function AppContent() {
                 selectedDate={selectedDate}
               />
             </div>
-            {/* FIX: Ensure BulkTradeImport receives valid callback */}
             <BulkTradeImport
               onTradesAdded={handleTradesAdded}
               lastTrade={lastTrade}
@@ -1050,7 +1039,6 @@ function AppContent() {
             </p>
           </div>
 
-          {/* Only show date selector for daily view */}
           {activeView === 'daily' && (
             <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center space-x-2">
               <label className="text-sm font-medium text-gray-600 dark:text-gray-400">
