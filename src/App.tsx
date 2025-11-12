@@ -1,6 +1,6 @@
-// src/App.tsx - Fixed CSV Import Issue + Fixed updateTrade/deleteTrade + Added EarningsProjection + Chat Room
+// src/App.tsx - WITH CUSTOMIZABLE NAVIGATION
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings, Calculator, BookOpen, AlertCircle, MessageSquare } from 'lucide-react';
+import { Moon, Sun, TrendingUp, CalendarDays, RefreshCw, Menu, X, Search, Link, Globe, Home, BarChart3, Settings as SettingsIcon, Calculator, BookOpen, AlertCircle, MessageSquare } from 'lucide-react';
 import { Trade } from './types/trade';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useBrokerIntegration } from './hooks/useBrokerIntegration';
@@ -22,8 +22,10 @@ import { DailyReview } from './components/DailyReview';
 import { EarningsProjection } from './components/EarningsProjection';
 import { ChatRoom } from './components/ChatRoom';
 import { HomePage } from './components/HomePage';
+import { Settings, NavigationItem } from './components/Settings';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { tradeService } from './services/tradeService';
+import { userPreferencesService } from './services/userPreferencesService';
 import { Tutorial, TutorialButton, useTutorial, WelcomeMessage } from './components/Tutorial';
 import { SecurityUtils } from './utils/securityUtils';
 
@@ -40,56 +42,86 @@ const MemoizedDailyReview = React.memo(DailyReview);
 const MemoizedEarningsProjection = React.memo(EarningsProjection);
 const MemoizedChatRoom = React.memo(ChatRoom);
 
-const NAVIGATION_ITEMS = [
+const DEFAULT_NAVIGATION_ITEMS: NavigationItem[] = [
   {
     id: 'daily',
     label: 'Daily View',
-    icon: Home,
-    description: 'Today\'s trading overview'
+    icon: 'Home',
+    description: 'Today\'s trading overview',
+    visible: true,
+    order: 0
   },
   {
     id: 'calendar',
     label: 'Calendar',
-    icon: CalendarDays,
-    description: 'Monthly trading calendar'
+    icon: 'CalendarDays',
+    description: 'Monthly trading calendar',
+    visible: true,
+    order: 1
   },
   {
     id: 'review',
     label: 'Daily Review',
-    icon: BookOpen,
-    description: 'Daily report card and performance rating'
+    icon: 'BookOpen',
+    description: 'Daily report card and performance rating',
+    visible: true,
+    order: 2
   },
   {
     id: 'chat',
     label: 'Chat Room',
-    icon: MessageSquare,
-    description: 'Connect with other traders'
+    icon: 'MessageSquare',
+    description: 'Connect with other traders',
+    visible: true,
+    order: 3
   },
   {
     id: 'search',
     label: 'Stock Analysis',
-    icon: Search,
-    description: 'Search and analyze stocks'
+    icon: 'Search',
+    description: 'Search and analyze stocks',
+    visible: true,
+    order: 4
   },
   {
     id: 'news',
     label: 'Market News',
-    icon: Globe,
-    description: 'Market research center'
+    icon: 'Globe',
+    description: 'Market research center',
+    visible: true,
+    order: 5
   },
   {
     id: 'projections',
     label: 'Projections',
-    icon: Calculator,
-    description: 'Earnings and dividend calculator'
+    icon: 'Calculator',
+    description: 'Earnings and dividend calculator',
+    visible: true,
+    order: 6
   },
   {
     id: 'brokers',
     label: 'Brokers',
-    icon: Link,
-    description: 'Connect trading accounts'
+    icon: 'Link',
+    description: 'Connect trading accounts',
+    visible: true,
+    order: 7
   }
 ];
+
+const getIconComponent = (iconName: string) => {
+  const icons: Record<string, any> = {
+    Home,
+    CalendarDays,
+    BookOpen,
+    MessageSquare,
+    Search,
+    Globe,
+    Calculator,
+    Link
+  };
+  return icons[iconName] || Home;
+};
 
 type ActiveViewType = 'calendar' | 'daily' | 'review' | 'search' | 'brokers' | 'news' | 'projections' | 'chat';
 
@@ -401,6 +433,8 @@ function AppContent() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [navigationItems, setNavigationItems] = useState<NavigationItem[]>(DEFAULT_NAVIGATION_ITEMS);
+  const [showSettings, setShowSettings] = useState(false);
 
   const activeTrades = currentUser ? cloudTrades : localTrades;
   const totalBrokerTrades = getTotalBrokerTrades();
@@ -409,6 +443,14 @@ function AppContent() {
     setIsMounted(true);
     console.log('✅ AppContent: Component mounted');
   }, []);
+
+  useEffect(() => {
+    if (currentUser) {
+      loadUserPreferences();
+    } else {
+      setNavigationItems(DEFAULT_NAVIGATION_ITEMS);
+    }
+  }, [currentUser]);
 
   const handleGetStarted = useCallback(() => {
     console.log('🏠 Getting started - hiding homepage');
@@ -443,6 +485,46 @@ function AppContent() {
       alert(`Failed to load cloud data: ${error.message}`);
     } finally {
       setIsLoadingCloudData(false);
+    }
+  }, [currentUser]);
+
+  const loadUserPreferences = useCallback(async () => {
+    if (!currentUser) return;
+    
+    try {
+      const preferences = await userPreferencesService.getUserPreferences(currentUser.uid);
+      if (preferences && preferences.navigation && preferences.navigation.length > 0) {
+        const sortedItems = [...preferences.navigation].sort((a, b) => a.order - b.order);
+        setNavigationItems(sortedItems);
+        console.log('✅ User preferences loaded');
+      }
+    } catch (error) {
+      console.error('Failed to load user preferences:', error);
+    }
+  }, [currentUser]);
+
+  const handleSavePreferences = useCallback(async (items: NavigationItem[]) => {
+    if (!currentUser) return;
+    
+    try {
+      await userPreferencesService.saveUserPreferences(currentUser.uid, items);
+      setNavigationItems(items);
+      console.log('✅ Preferences saved successfully');
+    } catch (error) {
+      console.error('Failed to save preferences:', error);
+      throw error;
+    }
+  }, [currentUser]);
+
+  const handleResetPreferences = useCallback(async () => {
+    if (!currentUser) return;
+    
+    try {
+      await userPreferencesService.deleteUserPreferences(currentUser.uid);
+      setNavigationItems(DEFAULT_NAVIGATION_ITEMS);
+      console.log('✅ Preferences reset to default');
+    } catch (error) {
+      console.error('Failed to reset preferences:', error);
     }
   }, [currentUser]);
 
@@ -683,9 +765,11 @@ function AppContent() {
     return <HomePage onGetStarted={handleGetStarted} />;
   }
 
-  const renderSidebarItem = (item: typeof NAVIGATION_ITEMS[0]) => {
+  const renderSidebarItem = (item: NavigationItem) => {
+    if (!item.visible) return null;
+    
     const isActive = activeView === item.id;
-    const Icon = item.icon;
+    const Icon = getIconComponent(item.icon);
     const showBadge = item.id === 'brokers' && brokerConnections.length > 0;
     const badgeContent = item.id === 'brokers' ? brokerConnections.length : totalBrokerTrades;
 
@@ -908,7 +992,10 @@ function AppContent() {
 
         <nav className="flex-1 px-4 py-6 overflow-y-auto">
           <div className="space-y-2">
-            {NAVIGATION_ITEMS.map(renderSidebarItem)}
+            {navigationItems
+              .filter(item => item.visible)
+              .sort((a, b) => a.order - b.order)
+              .map(renderSidebarItem)}
           </div>
         </nav>
 
@@ -927,6 +1014,19 @@ function AppContent() {
                   {isAnySyncing() ? 'Syncing...' : 'Sync Brokers'}
                 </span>
               )}
+            </button>
+          )}
+
+          {currentUser && (
+            <button
+              onClick={() => setShowSettings(true)}
+              className={`flex items-center justify-center bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors text-sm font-medium ${
+                sidebarCollapsed ? 'p-2 w-full' : 'w-full px-3 py-2'
+              }`}
+              title={sidebarCollapsed ? 'Settings' : ''}
+            >
+              <SettingsIcon className={`h-4 w-4 ${!sidebarCollapsed ? 'mr-2' : ''}`} />
+              {!sidebarCollapsed && <span className="whitespace-nowrap">Settings</span>}
             </button>
           )}
 
@@ -994,30 +1094,33 @@ function AppContent() {
 
           {mobileMenuOpen && (
             <div className="border-t border-gray-200 dark:border-gray-700 py-4 px-4 space-y-2">
-              {NAVIGATION_ITEMS.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeView === item.id;
+              {navigationItems
+                .filter(item => item.visible)
+                .sort((a, b) => a.order - b.order)
+                .map((item) => {
+                  const Icon = getIconComponent(item.icon);
+                  const isActive = activeView === item.id;
 
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => handleNavigation(item.id)}
-                    data-tutorial={`${item.id}-nav`}
-                    className={`w-full flex items-center px-3 py-3 text-left rounded-lg transition-colors ${isActive
-                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}
-                  >
-                    <Icon className="h-5 w-5 mr-3" />
-                    <span className="font-medium">{item.label}</span>
-                    {item.id === 'brokers' && brokerConnections.length > 0 && (
-                      <span className="ml-auto px-2 py-1 text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 rounded-full">
-                        {brokerConnections.length}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleNavigation(item.id)}
+                      data-tutorial={`${item.id}-nav`}
+                      className={`w-full flex items-center px-3 py-3 text-left rounded-lg transition-colors ${isActive
+                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                    >
+                      <Icon className="h-5 w-5 mr-3" />
+                      <span className="font-medium">{item.label}</span>
+                      {item.id === 'brokers' && brokerConnections.length > 0 && (
+                        <span className="ml-auto px-2 py-1 text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 rounded-full">
+                          {brokerConnections.length}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
 
               <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                 <AuthComponent onOpenProfile={() => {
@@ -1032,10 +1135,10 @@ function AppContent() {
         <div className="hidden lg:flex items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 main-header">
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {NAVIGATION_ITEMS.find(item => item.id === activeView)?.label || 'Dashboard'}
+              {navigationItems.find(item => item.id === activeView)?.label || 'Dashboard'}
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              {NAVIGATION_ITEMS.find(item => item.id === activeView)?.description}
+              {navigationItems.find(item => item.id === activeView)?.description}
             </p>
           </div>
 
@@ -1092,6 +1195,14 @@ function AppContent() {
         isOpen={showProfile}
         onClose={() => setShowProfile(false)}
         trades={activeTrades}
+      />
+
+      <Settings
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        navigationItems={navigationItems}
+        onSave={handleSavePreferences}
+        onReset={handleResetPreferences}
       />
 
       <WelcomeMessage
