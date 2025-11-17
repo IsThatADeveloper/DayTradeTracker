@@ -1,4 +1,4 @@
-// src/components/DailyReview.tsx - Enhanced Mobile Version with Permanent Notes
+// src/components/DailyReview.tsx - Enhanced Mobile Version with Journal-Style Permanent Notes
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   BookOpen,
@@ -60,6 +60,58 @@ const TABS = [
   { id: 'permanent', label: 'Permanent Notes', icon: BookMarked, shortLabel: 'Permanent' },
 ] as const;
 
+// Define permanent notes pages configuration
+const PERMANENT_NOTES_PAGES = [
+  {
+    key: 'tradingRules' as keyof PermanentNotes,
+    title: 'Core Trading Rules',
+    icon: Flag,
+    color: 'text-red-600',
+    bgColor: 'bg-red-50 dark:bg-red-900/10',
+    placeholder: 'Write your fundamental trading rules that you must follow every day...\n\nExamples:\n• Never risk more than 1% per trade\n• Cut losses at -2%\n• Take profits at +3%\n• No trading during first 15 minutes\n• Always use stop losses\n• Follow your trading plan strictly',
+  },
+  {
+    key: 'strategiesAndSetups' as keyof PermanentNotes,
+    title: 'Key Strategies & Setups',
+    icon: Target,
+    color: 'text-blue-600',
+    bgColor: 'bg-blue-50 dark:bg-blue-900/10',
+    placeholder: 'Document your proven trading strategies and setups...\n\nExamples:\n• Bull Flag Breakout Strategy\n• Support/Resistance Bounce\n• Moving Average Crossover\n• Gap and Go Setup\n• VWAP Bounce\n• Opening Range Breakout',
+  },
+  {
+    key: 'riskManagement' as keyof PermanentNotes,
+    title: 'Risk Management Guidelines',
+    icon: AlertCircle,
+    color: 'text-orange-600',
+    bgColor: 'bg-orange-50 dark:bg-orange-900/10',
+    placeholder: 'Define your risk management rules...\n\nExamples:\n• Maximum daily loss: $500\n• Maximum position size: $10,000\n• Stop loss: 2% from entry\n• Risk/Reward ratio: minimum 1:2\n• Never average down on losing trades\n• Take partial profits at targets',
+  },
+  {
+    key: 'journalGuidelines' as keyof PermanentNotes,
+    title: 'Journal Review Checklist',
+    icon: ListTodo,
+    color: 'text-purple-600',
+    bgColor: 'bg-purple-50 dark:bg-purple-900/10',
+    placeholder: 'Create your end-of-day review checklist...\n\nExamples:\n• Did I follow my trading plan?\n• What was my best trade and why?\n• What mistakes did I make?\n• What patterns did I notice?\n• How was my emotional state?\n• What can I improve tomorrow?',
+  },
+  {
+    key: 'resources' as keyof PermanentNotes,
+    title: 'Important Resources & Links',
+    icon: BookOpen,
+    color: 'text-green-600',
+    bgColor: 'bg-green-50 dark:bg-green-900/10',
+    placeholder: 'Save important links and resources...\n\nExamples:\n• Trading plan document\n• Favorite scanners\n• Educational videos\n• Market news sources\n• Discord communities\n• Technical analysis tools',
+  },
+  {
+    key: 'generalReminders' as keyof PermanentNotes,
+    title: 'Daily Reminders & Mantras',
+    icon: Lightbulb,
+    color: 'text-yellow-600',
+    bgColor: 'bg-yellow-50 dark:bg-yellow-900/10',
+    placeholder: 'Write reminders you want to see every day...\n\nExamples:\n• Stay disciplined, follow the plan\n• Quality over quantity\n• It\'s okay to sit on the sidelines\n• Protect your capital first\n• Trust the process\n• Patience is key',
+  },
+];
+
 export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, onDateSelect }) => {
   const { currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -76,6 +128,9 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
   const [watchInput, setWatchInput] = useState('');
   const [strategyInput, setStrategyInput] = useState('');
   const [reminderInput, setReminderInput] = useState('');
+  
+  // Permanent notes pagination
+  const [currentPermanentNotePage, setCurrentPermanentNotePage] = useState(0);
 
   // Filter trades for selected date
   const dayTrades = useMemo(() => {
@@ -267,6 +322,15 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
     const currentItems = (dailyReview.reminders as any)[field] || [];
     updateNestedField('reminders', field, currentItems.filter((_: any, i: number) => i !== index));
   }, [dailyReview, updateNestedField]);
+
+  // Navigation functions for permanent notes
+  const goToPreviousPage = () => {
+    setCurrentPermanentNotePage(prev => Math.max(0, prev - 1));
+  };
+
+  const goToNextPage = () => {
+    setCurrentPermanentNotePage(prev => Math.min(PERMANENT_NOTES_PAGES.length - 1, prev + 1));
+  };
 
   // Load permanent notes when component mounts or user changes
   useEffect(() => {
@@ -769,90 +833,125 @@ export const DailyReview: React.FC<DailyReviewProps> = ({ trades, selectedDate, 
     </div>
   );
 
-  // NEW: Render Permanent Notes Tab
+  // NEW: Render Journal-Style Permanent Notes Tab
   const renderPermanentNotesTab = () => {
-    // Show form even if loading - it will populate when loaded
     const displayNotes = permanentNotes || permanentNotesService.createDefaultPermanentNotes(currentUser?.uid || '');
+    const currentPage = PERMANENT_NOTES_PAGES[currentPermanentNotePage];
+    const Icon = currentPage.icon;
 
     return (
       <div className="space-y-6">
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+        {/* Info Banner */}
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 sm:p-6">
           <div className="flex items-start">
-            <BookMarked className="h-6 w-6 text-blue-600 mr-3 mt-1 flex-shrink-0" />
+            <BookMarked className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600 mr-3 mt-1 flex-shrink-0" />
             <div>
-              <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-2">
-                Permanent Notes
+              <h3 className="text-base sm:text-lg font-semibold text-blue-900 dark:text-blue-100 mb-1 sm:mb-2">
+                Trading Journal - Permanent Reference
               </h3>
-              <p className="text-sm text-blue-700 dark:text-blue-300">
-                These notes persist across all days and are always available for quick reference. 
-                Use this space to document your core trading rules, strategies, and reminders that apply every day.
+              <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">
+                These notes persist across all days. Document your core trading principles, strategies, and reminders that apply every day.
               </p>
             </div>
           </div>
         </div>
 
-        {Object.entries({
-          tradingRules: { 
-            label: 'Core Trading Rules', 
-            icon: Flag, 
-            color: 'text-red-600',
-            placeholder: 'Write your fundamental trading rules that you must follow every day...\n\nExamples:\n• Never risk more than 1% per trade\n• Cut losses at -2%\n• Take profits at +3%\n• No trading during first 15 minutes',
-          },
-          strategiesAndSetups: { 
-            label: 'Key Strategies & Setups', 
-            icon: Target, 
-            color: 'text-blue-600',
-            placeholder: 'Document your proven trading strategies and setups...\n\nExamples:\n• Bull Flag Breakout Strategy\n• Support/Resistance Bounce\n• Moving Average Crossover\n• Gap and Go Setup',
-          },
-          riskManagement: { 
-            label: 'Risk Management Guidelines', 
-            icon: AlertCircle, 
-            color: 'text-orange-600',
-            placeholder: 'Define your risk management rules...\n\nExamples:\n• Maximum daily loss: $500\n• Maximum position size: $10,000\n• Stop loss: 2% from entry\n• Risk/Reward ratio: minimum 1:2',
-          },
-          journalGuidelines: { 
-            label: 'Journal Review Checklist', 
-            icon: ListTodo, 
-            color: 'text-purple-600',
-            placeholder: 'Create your end-of-day review checklist...\n\nExamples:\n• Did I follow my trading plan?\n• What was my best trade and why?\n• What mistakes did I make?\n• What patterns did I notice?',
-          },
-          resources: { 
-            label: 'Important Resources & Links', 
-            icon: BookOpen, 
-            color: 'text-green-600',
-            placeholder: 'Save important links and resources...\n\nExamples:\n• Trading plan document\n• Favorite scanners\n• Educational videos\n• Market news sources',
-          },
-          generalReminders: { 
-            label: 'Daily Reminders & Mantras', 
-            icon: Lightbulb, 
-            color: 'text-yellow-600',
-            placeholder: 'Write reminders you want to see every day...\n\nExamples:\n• Stay disciplined, follow the plan\n• Quality over quantity\n• It\'s okay to sit on the sidelines\n• Protect your capital first',
-          },
-        }).map(([key, config]) => (
-          <div key={key} className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
-            <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-              <config.icon className={`h-5 w-5 mr-3 ${config.color}`} />
-              {config.label}
-            </h3>
+        {/* Journal Page Container */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+          {/* Page Header with Navigation */}
+          <div className={`${currentPage.bgColor} border-b border-gray-200 dark:border-gray-700 px-4 sm:px-6 py-4`}>
+            <div className="flex items-center justify-between mb-2">
+              <button
+                onClick={goToPreviousPage}
+                disabled={currentPermanentNotePage === 0}
+                className="p-2 rounded-lg hover:bg-white/50 dark:hover:bg-gray-700/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed touch-manipulation"
+                aria-label="Previous page"
+              >
+                <ChevronLeft className={`h-5 w-5 sm:h-6 sm:w-6 ${currentPage.color}`} />
+              </button>
+              
+              <div className="flex items-center space-x-3">
+                <Icon className={`h-6 w-6 sm:h-7 sm:w-7 ${currentPage.color}`} />
+                <div className="text-center">
+                  <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
+                    {currentPage.title}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                    Page {currentPermanentNotePage + 1} of {PERMANENT_NOTES_PAGES.length}
+                  </p>
+                </div>
+              </div>
+              
+              <button
+                onClick={goToNextPage}
+                disabled={currentPermanentNotePage === PERMANENT_NOTES_PAGES.length - 1}
+                className="p-2 rounded-lg hover:bg-white/50 dark:hover:bg-gray-700/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed touch-manipulation"
+                aria-label="Next page"
+              >
+                <ChevronRight className={`h-5 w-5 sm:h-6 sm:w-6 ${currentPage.color}`} />
+              </button>
+            </div>
+          </div>
+
+          {/* Lined Paper Textarea */}
+          <div className="relative p-4 sm:p-6">
+            {/* Lined paper background effect */}
+            <div 
+              className="absolute inset-0 pointer-events-none opacity-30 dark:opacity-10"
+              style={{
+                backgroundImage: 'repeating-linear-gradient(transparent, transparent 31px, #cbd5e1 31px, #cbd5e1 32px)',
+                backgroundSize: '100% 32px'
+              }}
+            />
+            
+            {/* Red vertical margin line */}
+            <div 
+              className="absolute top-0 bottom-0 left-16 sm:left-20 w-0.5 bg-red-300 dark:bg-red-800 pointer-events-none opacity-50"
+            />
+            
             <textarea
-              value={displayNotes[key as keyof PermanentNotes] as string || ''}
+              value={displayNotes[currentPage.key] as string || ''}
               onChange={(e) => {
                 if (permanentNotes) {
-                  updatePermanentNotes(key as keyof PermanentNotes, e.target.value);
+                  updatePermanentNotes(currentPage.key, e.target.value);
                 } else {
-                  // If not loaded yet, create and update
                   const newNotes = permanentNotesService.createDefaultPermanentNotes(currentUser?.uid || '');
-                  newNotes[key as keyof PermanentNotes] = e.target.value as any;
+                  newNotes[currentPage.key] = e.target.value as any;
                   setPermanentNotes(newNotes);
                   setHasUnsavedPermanentNotes(true);
                 }
               }}
-              placeholder={config.placeholder}
-              rows={8}
-              className="w-full p-4 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-y focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base leading-relaxed font-mono"
+              placeholder={currentPage.placeholder}
+              className="relative w-full min-h-[500px] sm:min-h-[600px] p-4 pl-20 sm:pl-24 bg-transparent border-none text-gray-900 dark:text-white resize-y focus:ring-0 focus:outline-none text-base sm:text-lg leading-8 font-mono"
+              style={{
+                lineHeight: '32px', // Match the lined paper background
+              }}
             />
           </div>
-        ))}
+
+          {/* Page Dots Navigation */}
+          <div className="border-t border-gray-200 dark:border-gray-700 px-4 sm:px-6 py-4">
+            <div className="flex justify-center items-center space-x-2">
+              {PERMANENT_NOTES_PAGES.map((page, index) => (
+                <button
+                  key={page.key}
+                  onClick={() => setCurrentPermanentNotePage(index)}
+                  className={`h-2 rounded-full transition-all duration-200 touch-manipulation ${
+                    index === currentPermanentNotePage
+                      ? 'w-8 bg-blue-600'
+                      : 'w-2 bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500'
+                  }`}
+                  aria-label={`Go to ${page.title}`}
+                />
+              ))}
+            </div>
+            
+            {/* Keyboard hint */}
+            <p className="text-xs text-gray-500 dark:text-gray-400 text-center mt-3">
+              Use arrow buttons or dots to navigate between pages
+            </p>
+          </div>
+        </div>
       </div>
     );
   };
