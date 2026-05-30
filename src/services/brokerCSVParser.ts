@@ -385,7 +385,12 @@ export class BrokerCSVParser {
         headers: headers
       });
 
-      if (!mapping.timestamp || !mapping.ticker || !mapping.quantity || !mapping.entryPrice) {
+      if (
+          mapping.timestamp === undefined ||
+          mapping.ticker === undefined ||
+          mapping.quantity === undefined ||
+          mapping.entryPrice === undefined
+      )
         result.errors.push('Could not find required columns in thinkorswim format');
         result.errors.push(`Found: timestamp=${mapping.timestamp}, ticker=${mapping.ticker}, qty=${mapping.quantity}, price=${mapping.entryPrice}`);
         return result;
