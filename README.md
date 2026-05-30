@@ -1,4 +1,5 @@
-# 📈 DayTradeTracker
+# 📈 DayTradeTracker (Update?)
+
 
 > A comprehensive day trading journal and analytics platform built with React, TypeScript, and Firebase
 
